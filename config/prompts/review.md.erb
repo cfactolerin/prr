@@ -1,0 +1,107 @@
+# PR Review Task
+
+## Context
+
+- **PR:** #<%= pr_number %> — <%= pr_title %>
+- **URL:** <%= pr_url %>
+- **Author:** <%= pr_author %>
+- **Branch:** `<%= head_branch %>` -> `<%= base_branch %>`
+- **Ticket:** <%= ticket_id %><%= ticket_summary ? " — #{ticket_summary}" : "" %>
+
+## Ticket Details
+
+<% if ticket_description -%>
+<%= ticket_description %>
+<% else -%>
+No ticket details available.
+<% end -%>
+
+## Repo Conventions
+
+<% if repo_docs -%>
+<%= repo_docs %>
+<% else -%>
+No CLAUDE.md, AGENTS.md, or README.md found. Infer conventions from the codebase.
+<% end -%>
+
+<% if previous_review -%>
+## Previous Review
+
+This is a re-review. The previous review found the following issues. Check whether they were addressed and if the fixes introduced new problems.
+
+<%= previous_review %>
+<% end -%>
+
+## Changed Files
+
+<%= changed_files %>
+
+## Diff
+
+```diff
+<%= diff %>
+```
+
+## Instructions
+
+You are reviewing PR #<%= pr_number %> for `<%= repo %>`. Your goal is to help a senior engineer catch issues before merge. Be thorough but precise — flag real problems, not style nitpicks already covered by linters.
+
+You have full access to the repository. Read any file you need to trace the flow. You can also modify files in this sandbox to prove findings (write tests, add debug output).
+
+**Budget your exploration.** Spend at most 15 shell commands on exploration. Start with the changed files, trace one level of callers/callees, then write your review. If evidence is incomplete, make the best-supported inference and label it clearly. A thorough partial review is better than running out of time with nothing written.
+
+Review checklist:
+
+1. **Ticket alignment** — Does the code achieve the ticket goals and acceptance criteria?
+2. **Flow tracing** — Trace the execution path through modified files. Check how changes interact with callers, downstream services, events, and side effects. Flag integration risks.
+3. **Code quality** — Run any available linters (check the repo docs for which ones). Check for convention violations. Flag AI slop: unnecessary abstractions, over-engineering, dead code, suspiciously generic patterns.
+4. **Missing things** — Error handling, tests, logging, migrations, documentation.
+5. **Logic bugs** — Wrong conditions, edge cases, off-by-one, race conditions.
+6. **Security** — Injection, auth issues, exposed secrets, unsafe deserialization.
+7. **Memory** — Leaks, unbounded growth, unclosed resources.
+8. **Hallucination check** — Verify that every API, method, gem, or library call actually exists in the project or its dependencies. Flag anything suspicious.
+9. **Proof of findings** — If you find a bug or issue, write a test case or add debug output to prove it. Show, don't just tell.
+
+## Output Format
+
+Write your review in this exact markdown format. Do not deviate from this structure:
+
+```
+## Verdict: [APPROVE | REQUEST_CHANGES | NEEDS_DISCUSSION]
+## Confidence: [HIGH | MEDIUM | LOW]
+
+<1-3 sentence summary of the overall assessment>
+
+## Ticket Alignment
+<findings or "No issues found.">
+
+## Flow Analysis
+<findings or "No issues found.">
+
+## Code Quality
+<findings or "No issues found.">
+
+## Missing Things
+<findings or "No issues found.">
+
+## Logic Issues
+<findings or "No issues found.">
+
+## Security
+<findings or "No issues found.">
+
+## Memory
+<findings or "No issues found.">
+
+## Hallucination Check
+<findings or "No issues found.">
+
+## Proof of Findings
+<list of test files or debug output you created, with paths, or "No proofs created.">
+
+## Line Comments
+<list in format: - `path/to/file:LINE` — description>
+
+## Open Questions
+<things needing human judgment, with full context for follow-up>
+```
