@@ -56,9 +56,14 @@ module Prr
       user = @config.github_user
       Progress.abort("GitHub user not configured. Run 'prr setup' first.") if user.empty?
 
-      cmd = "gh search prs --review-requested=#{user} --state=open --json repository,number,title,url --limit 20"
-      output, status = Open3.capture2(cmd)
-      Progress.abort("Failed to fetch PRs: #{output}") unless status.success?
+      output, err, status = Open3.capture3(
+        "gh", "search", "prs",
+        "--review-requested=#{user}",
+        "--state=open",
+        "--json", "repository,number,title,url",
+        "--limit", "20"
+      )
+      Progress.abort("Failed to fetch PRs: #{err.empty? ? output : err}") unless status.success?
 
       prs = JSON.parse(output)
       if prs.empty?
@@ -85,9 +90,12 @@ module Prr
     def fetch_pr_metadata!
       Progress.log("Fetching PR ##{@pr_number} metadata...")
       fields = "number,title,body,headRefName,baseRefName,author,files,url,commits"
-      cmd = "gh pr view #{@pr_number} --repo #{@owner}/#{@repo} --json #{fields}"
-      output, status = Open3.capture2(cmd)
-      Progress.abort("Failed to fetch PR metadata: #{output}") unless status.success?
+      output, err, status = Open3.capture3(
+        "gh", "pr", "view", @pr_number.to_s,
+        "--repo", "#{@owner}/#{@repo}",
+        "--json", fields
+      )
+      Progress.abort("Failed to fetch PR metadata: #{err.empty? ? output : err}") unless status.success?
 
       @pr_data = JSON.parse(output)
       Progress.log("PR: #{@pr_data["title"]}")
