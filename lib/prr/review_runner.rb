@@ -9,7 +9,6 @@ require "prr/prompt_builder"
 require "prr/agent_runner"
 require "prr/arbiter"
 require "prr/report"
-require "prr/github_commenter"
 
 module Prr
   class ReviewRunner
@@ -65,11 +64,10 @@ module Prr
       puts "Verdict: #{report.verdict} (#{report.confidence} Confidence)"
       puts "#{report.line_comments.length} line comment(s) ready."
       puts
-
-      commenter = GithubCommenter.new(
-        @config, preflight.owner, preflight.repo, preflight.pr_number, report
-      )
-      commenter.run!
+      puts "Next steps:"
+      puts "  1. Read and edit: #{report_path}"
+      puts "  2. Check line comment boxes, edit review comment"
+      puts "  3. Post: bin/prr --comments #{report_path}"
     end
 
     private

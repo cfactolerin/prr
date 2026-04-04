@@ -10,32 +10,30 @@ require "prr/preflight"
 
 module Prr
   class GithubCommenter
-    REVIEW_STATUS_MAP = {
-      "APPROVE" => "APPROVE",
-      "REQUEST_CHANGES" => "REQUEST_CHANGES",
-      "NEEDS_DISCUSSION" => "COMMENT"
+    GH_ENV = { "NO_COLOR" => "1" }.freeze
+    ANSI_PATTERN = /\e\[[0-9;]*m/
+
+    REVIEW_EVENT_MAP = {
+      "Comment" => "COMMENT",
+      "Approve" => "APPROVE",
+      "Request Changes" => "REQUEST_CHANGES"
     }.freeze
 
-    def self.run_from_latest(options)
+    def self.run_from_file(report_path, options)
       config = Config.load(options)
-      pr_url = options[:pr_url]
-      Progress.abort("PR URL required for --comments") unless pr_url
+
+      Progress.abort("Report file not found: #{report_path}") unless File.exist?(report_path)
+
+      report = Report.from_edited_file(report_path)
+
+      # Extract PR info from report content
+      pr_url = extract_pr_url(report.content)
+      Progress.abort("Could not find PR URL in report.") unless pr_url
 
       match = pr_url.match(Preflight::PR_URL_PATTERN)
-      Progress.abort("Invalid PR URL") unless match
+      Progress.abort("Invalid PR URL in report: #{pr_url}") unless match
 
-      repo = match[2]
-      pr_number = match[3].to_i
-      review_dir = File.join(config.tmp_path, "#{repo}-pr-#{pr_number}", "results")
-
-      Progress.abort("No previous reviews found.") unless Dir.exist?(review_dir)
-
-      latest = Dir.children(review_dir).sort.last
-      report_path = File.join(review_dir, latest, "final-report.md")
-      Progress.abort("No final report found.") unless File.exist?(report_path)
-
-      report = Report.new(File.read(report_path))
-      new(config, match[1], repo, pr_number, report).run!
+      new(config, match[1], match[2], match[3].to_i, report).run!
     end
 
     def initialize(config, owner, repo, pr_number, report)
@@ -47,63 +45,53 @@ module Prr
     end
 
     def run!
-      comments = @report.line_comments
-      if comments.empty?
-        puts "No line comments to post."
+      comments = @report.checked_comments
+      review_body = @report.review_body
+      review_action = @report.review_action
+
+      if comments.empty? && review_body.nil?
+        puts "No checked comments and no review body. Nothing to post."
         return
       end
 
+      # Show what will be posted
       puts
-      puts "#{comments.length} line comment(s) ready."
-      puts
-      comments.each_with_index do |c, i|
-        puts "  #{i + 1}. #{c[:path]}:#{c[:line]} — #{c[:body]}"
+      if comments.any?
+        Progress.log("#{comments.length} line comment(s) selected:")
+        comments.each { |c| Progress.indent("#{c[:path]}#L#{c[:line]} — #{c[:body]}") }
       end
+
+      if review_body
+        puts
+        Progress.log("Review action: #{review_action || "Comment"}")
+        Progress.log("Review body preview:")
+        review_body.lines.first(5).each { |l| Progress.indent(l.chomp) }
+        Progress.indent("...") if review_body.lines.length > 5
+      end
+
       puts
-      print "Post to GitHub? (a)ll / (s)elect / (e)dit / (n)one: "
+      print "Post to GitHub? (y/N): "
       choice = $stdin.gets&.strip&.downcase
+      return unless choice == "y"
 
-      selected = case choice
-                 when "a" then comments
-                 when "s" then select_comments(comments)
-                 when "e" then edit_comments(comments)
-                 when "n" then return
-                 else
-                   puts "Invalid choice."
-                   return
-                 end
-
-      post_review!(selected)
+      post_review!(comments, review_body, review_action)
     end
 
     private
 
-    def select_comments(comments)
-      print "Enter numbers (e.g., 1,3,5): "
-      input = $stdin.gets&.strip || ""
-      indices = input.split(",").map { |s| s.strip.to_i - 1 }
-      indices.filter_map { |i| comments[i] if i >= 0 && i < comments.length }
+    def self.extract_pr_url(content)
+      # Try table format: | **PR** | <url> |
+      match = content.match(/\|\s*\*\*PR\*\*\s*\|\s*(https:\/\/[^\s|]+)/)
+      return match[1].strip if match
+
+      # Try header format: PR: <url>
+      match = content.match(/^PR:\s*(https:\/\/\S+)/)
+      return match[1].strip if match
+
+      nil
     end
 
-    def edit_comments(comments)
-      editor = ENV["EDITOR"] || "vim"
-      comments.map do |c|
-        tmp = File.join(@config.tmp_path, "comment-edit.tmp")
-        File.write(tmp, "#{c[:path]}:#{c[:line]}\n\n#{c[:body]}")
-        system("#{editor} #{tmp}")
-        content = File.read(tmp)
-        lines = content.split("\n", 2)
-        loc = lines[0]
-        body = lines[1]&.strip || c[:body]
-        path, line = loc.split(":")
-        { path: path, line: line.to_i, body: body }
-      end
-    end
-
-    GH_ENV = { "NO_COLOR" => "1" }.freeze
-    ANSI_PATTERN = /\e\[[0-9;]*m/
-
-    def post_review!(comments)
+    def post_review!(comments, review_body, review_action)
       Progress.log("Posting review to GitHub...")
 
       sha, err, status = Open3.capture3(
@@ -116,18 +104,19 @@ module Prr
       Progress.abort("Failed to get PR head SHA: #{err}") unless status.success?
       sha = sha.gsub(ANSI_PATTERN, "").strip
 
-      review_event = REVIEW_STATUS_MAP[@report.verdict] || "COMMENT"
+      event = REVIEW_EVENT_MAP[review_action] || "COMMENT"
 
-      body = {
-        commit_id: sha,
-        event: review_event,
-        body: "PRR Review — Verdict: #{@report.verdict} (#{@report.confidence} confidence)",
-        comments: comments.map do |c|
+      body = { commit_id: sha, event: event }
+      body[:body] = review_body if review_body && !review_body.empty?
+
+      if comments.any?
+        body[:comments] = comments.map do |c|
           { path: c[:path], line: c[:line], body: c[:body] }
         end
-      }
+      end
 
-      json_path = File.join(@config.tmp_path, "review-payload.json")
+      json_path = File.join(File.dirname(__FILE__), "../../tmp/review-payload.json")
+      FileUtils.mkdir_p(File.dirname(json_path))
       File.write(json_path, JSON.pretty_generate(body))
 
       output, err, status = Open3.capture3(
@@ -139,8 +128,10 @@ module Prr
 
       if status.success?
         Progress.done("Review posted to GitHub!")
+        Progress.indent("Action: #{event}")
+        Progress.indent("Comments: #{comments.length}") if comments.any?
       else
-        Progress.error("Failed to post review: #{output}")
+        Progress.error("Failed to post review: #{err.empty? ? output : err}")
       end
     ensure
       FileUtils.rm_f(json_path) if json_path

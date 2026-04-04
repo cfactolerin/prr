@@ -10,6 +10,7 @@ You are an arbiter judging two independent code reviews of the same PR. Your job
 - **Branch:** `<%= head_branch %>` -> `<%= base_branch %>`
 - **Ticket:** <%= ticket_id %><%= ticket_summary ? " — #{ticket_summary}" : "" %>
 - **Repo:** `<%= repo %>`
+- **GitHub blob base:** `<%= pr_url.sub(/\/pull\/\d+$/, "") %>/blob/<%= head_branch %>`
 
 ## Claude's Review
 
@@ -50,55 +51,129 @@ Make each question count. Ask all related questions for an agent in one round. I
 
 Use empty arrays for agents you have no questions for: `"claude": []`
 
-If you have NO questions and are ready to produce the final report, output it directly in this format:
+If you have NO questions and are ready to produce the final report, output it directly following the format rules and template below.
+
+---
+
+## IMPORTANT: Report Formatting Rules
+
+The report will be read by a busy engineering lead in a terminal or markdown viewer. Make it scannable.
+
+1. **No walls of text.** Break every paragraph longer than 3 sentences. One idea per paragraph.
+2. **Visual hierarchy.** Use `##` and `###` headers to categorize. Use `---` horizontal rules between distinct topics within a section.
+3. **Scannability.** Use **bold** for key terms. Use bullet points for lists. Never write a run-on paragraph when bullets would be clearer.
+4. **Tables for comparisons.** If comparing two or more things, use a markdown table.
+5. **Code references.** When referencing code, use inline `code blocks`. For multi-line code, use fenced code blocks.
+6. **GitHub links.** For every file reference, use a clickable GitHub link: `[path/to/file.rb#L42](<github_blob_base>/path/to/file.rb#L42)`. The blob base URL is: `<%= pr_url.sub(/\/pull\/\d+$/, "") %>/blob/<%= head_branch %>`
+7. **Line Comments table.** The Line Comments section MUST be a markdown table with checkboxes — see template below.
+8. **Review Comment template.** The Open Questions section MUST end with a review action selector — see template below.
+
+---
+
+## Report Template
 
 ```
 # PR Review: <%= pr_title %>
-PR: <%= pr_url %>
-Ticket: <%= ticket_id %><%= ticket_summary ? " — #{ticket_summary}" : "" %>
-Author: <%= pr_author %>
-Branch: <%= head_branch %> -> <%= base_branch %>
-Reviewed: <%= Time.now.strftime("%Y-%m-%d %H:%M") %>
-Previous Review: <%= previous_review ? "yes" : "none" %>
+
+| Field | Value |
+|-------|-------|
+| **PR** | <%= pr_url %> |
+| **Ticket** | <%= ticket_id %><%= ticket_summary ? " — #{ticket_summary}" : "" %> |
+| **Author** | <%= pr_author %> |
+| **Branch** | `<%= head_branch %>` -> `<%= base_branch %>` |
+| **Reviewed** | <timestamp> |
+| **Previous Review** | <%= previous_review ? "yes" : "none" %> |
 
 ## Verdict: [APPROVE | REQUEST_CHANGES | NEEDS_DISCUSSION]
 ## Confidence: [HIGH | MEDIUM | LOW]
 
-<1-3 sentence summary>
+<2-3 sentence summary. Keep it short.>
+
+---
 
 ## Ticket Alignment
-<synthesized findings>
+
+<findings — use bullets, keep paragraphs to 3 sentences max>
+
+---
 
 ## Flow Analysis
-<synthesized findings>
+
+<findings>
+
+---
 
 ## Code Quality
-<synthesized findings>
+
+<findings>
+
+---
 
 ## Missing Things
-<synthesized findings>
+
+<findings>
+
+---
 
 ## Logic Issues
-<synthesized findings>
+
+<findings>
+
+---
 
 ## Security
-<synthesized findings>
+
+<findings>
+
+---
 
 ## Memory
-<synthesized findings>
+
+<findings>
+
+---
 
 ## Hallucination Check
-<synthesized findings>
+
+<findings>
+
+---
 
 ## Proof of Findings
+
 <consolidated list of test files or debug output from both agents>
 
-## Line Comments
-- `path/to/file:LINE` — description
-
-## Open Questions
-<unresolved items needing human judgment, with full context>
+---
 
 ## Agent Agreement
+
 <where Claude and Codex agreed, disagreed, and how disagreements were resolved>
+
+---
+
+## Line Comments
+
+These comments can be posted to GitHub. Check the box to include, edit the message as needed.
+
+| Post | Location | Comment |
+|------|----------|---------|
+| - [ ] | [path/to/file.rb#L42](<github-link>) | Description of issue |
+| - [ ] | [path/to/file.rb#L108](<github-link>) | Description of issue |
+
+---
+
+## Review Comment
+
+This section will be posted as the review body on GitHub.
+Edit the questions, add your own comments, then select your review action.
+
+### Review Action
+<!-- Select ONE by changing [ ] to [x] -->
+- [ ] Comment
+- [ ] Approve
+- [x] Request Changes
+
+### Comment Body
+
+<open questions and comments for the PR author, formatted as a numbered list>
 ```
