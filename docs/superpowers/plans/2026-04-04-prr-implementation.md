@@ -1621,3 +1621,45 @@ Verify `tmp/` and `config/prr.yml` are in `.gitignore`.
 git add .gitignore
 git commit -m "chore: ensure gitignore covers tmp and config"
 ```
+
+---
+
+### Task 16: Codex agent review pass
+
+**Files:**
+- May modify: `lib/prr/agent_runner.rb` (Codex invocation flags)
+- May modify: `config/prompts/review.md.erb` (prompt optimization for Codex)
+- May modify: `config/prompts/arbiter_question.md.erb` (follow-up prompt for Codex)
+- Must NOT modify: `lib/prr/arbiter.rb`, `lib/prr/report.rb`, `config/prompts/arbiter.md.erb`
+
+- [ ] **Step 1: Review Codex CLI flags in agent_runner.rb**
+
+Verify the `codex exec` invocation uses optimal flags:
+- `-a never` (no approval loop)
+- `-s workspace-write` for review, `-s read-only` for arbiter Q&A
+- `--ephemeral` (skip session persistence)
+- `--output-last-message <path>` (clean output capture)
+- `-C <repo_path>` (working directory)
+
+- [ ] **Step 2: Review prompt compatibility with Codex**
+
+The review prompt in `config/prompts/review.md.erb` was written for both agents but may need Codex-specific optimization:
+- "Budget your exploration" section — Codex benefits from explicit shell command budgets
+- "Inference allowed" pattern — prevents Codex from endless codebase exploration
+- Output format — must remain identical to what arbiter expects
+
+- [ ] **Step 3: Verify output format contract**
+
+The arbiter (`lib/prr/arbiter.rb`) expects:
+- Review output matching the structured markdown in the Output Format section
+- `## Verdict:`, `## Confidence:`, `## Line Comments` sections parseable by `lib/prr/report.rb`
+- Line comments in format: `- \`path/to/file:LINE\` — description`
+
+Any prompt changes must preserve this contract.
+
+- [ ] **Step 4: Commit any Codex-specific improvements**
+
+```bash
+git add lib/prr/agent_runner.rb config/prompts/
+git commit -m "refine: optimize Codex agent invocation and prompt patterns"
+```

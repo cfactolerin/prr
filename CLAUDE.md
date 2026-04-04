@@ -1,0 +1,49 @@
+# PRR — AI-Powered PR Review Tool
+
+## Project Overview
+
+Ruby CLI tool that runs Claude and Codex as parallel PR reviewers with a Claude-powered arbiter. Located at `~/fuga/git/tools`.
+
+## Architecture
+
+- **Entry point:** `bin/prr` — routes to setup, review, or comments
+- **Orchestrator:** `lib/prr/review_runner.rb` — ties all phases together
+- **Agents:** Claude CLI (`claude -p`) and Codex CLI (`codex exec`) run in parallel
+- **Arbiter:** Claude synthesizes both reviews via multi-round Q&A
+- **Templates:** ERB prompts in `config/prompts/`
+
+## Key Design Decisions
+
+- **Ruby stdlib only** — no gems, no Bundler
+- **Shell-out to CLIs** — agents invoked via `Open3.popen3`, not API calls
+- **Sandbox isolation** — repos copied to `tmp/reviews/` so agents can modify freely
+- **Timestamped results** — each review gets `results/YYYY-MM-DD-HHMMSS/` for re-review context
+- **Config precedence:** CLI flags > env vars (`PRR_*`) > `config/prr.yml` > defaults
+
+## Agent Invocation
+
+**Claude:** `claude -p --dangerously-skip-permissions --output-format text` (prompt via stdin, output from stdout)
+
+**Codex (review):** `codex exec -C <repo> -a never -s workspace-write --ephemeral --output-last-message <path>` (prompt via stdin)
+
+**Codex (arbiter Q&A):** Same but `-s read-only`
+
+## File Layout
+
+```
+bin/prr                     # executable entry point
+lib/prr/                    # all Ruby modules
+config/prompts/*.md.erb     # prompt templates
+config/prr.yml              # user config (gitignored)
+tmp/reviews/                # sandbox + results (gitignored)
+docs/superpowers/specs/     # design spec
+docs/superpowers/plans/     # implementation plan
+```
+
+## Conventions
+
+- Frozen string literals in all Ruby files
+- `Prr::Progress` for all console output (timestamped)
+- Both agents get the same prompt structure; output format must match for arbiter parsing
+- Arbiter expects JSON questions (`{"claude": [...], "codex": [...]}`) or final report markdown
+- Line comments format: `- \`path/to/file:LINE\` — description`
