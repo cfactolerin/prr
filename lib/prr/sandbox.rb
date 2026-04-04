@@ -56,18 +56,22 @@ module Prr
     end
 
     def diff(base_branch)
-      output, _, status = Open3.capture3("git", "-C", @repo_path, "diff", "#{base_branch}..pr-review", "--")
-      unless status.success?
-        # Fallback: diff against merge-base if branch ref has issues
-        merge_base, = Open3.capture2("git", "-C", @repo_path, "merge-base", base_branch, "pr-review")
-        if merge_base && !merge_base.strip.empty?
-          output, = Open3.capture2("git", "-C", @repo_path, "diff", "#{merge_base.strip}..pr-review", "--")
-        else
-          Progress.error("Could not compute diff against #{base_branch}. Agents will review without diff.")
-          return ""
+      # Try base branch directly, then origin/<base>, then merge-base
+      candidates = [base_branch, "origin/#{base_branch}"]
+      candidates.each do |ref|
+        output, _, status = Open3.capture3("git", "-C", @repo_path, "diff", "#{ref}..pr-review", "--")
+        return output if status.success? && !output.empty?
+
+        # Try merge-base approach
+        mb, = Open3.capture2("git", "-C", @repo_path, "merge-base", ref, "pr-review")
+        if mb && !mb.strip.empty?
+          output, = Open3.capture2("git", "-C", @repo_path, "diff", "#{mb.strip}..pr-review", "--")
+          return output if output && !output.empty?
         end
       end
-      output
+
+      Progress.error("Could not compute diff against #{base_branch}. Agents will review without diff.")
+      ""
     end
 
     def read_repo_file(relative_path)
