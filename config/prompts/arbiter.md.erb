@@ -87,7 +87,14 @@ The report will be read by a busy engineering lead in a terminal or markdown vie
 ## Verdict: [APPROVE | REQUEST_CHANGES | NEEDS_DISCUSSION]
 ## Confidence: [HIGH | MEDIUM | LOW]
 
-<2-3 sentence summary. Keep it short.>
+<1 sentence overall assessment.>
+
+**Key issues:**
+- <issue 1 — one line each>
+- <issue 2>
+- <issue 3>
+
+If there are no issues, just say "No blocking issues found."
 
 ---
 
@@ -153,12 +160,18 @@ The report will be read by a busy engineering lead in a terminal or markdown vie
 
 ## Line Comments
 
-These comments can be posted to GitHub. Check the box to include, edit the message as needed.
+These comments will be posted to GitHub as inline PR comments.
+Check the box to include. Edit the message as needed.
+
+**IMPORTANT: Keep the Comment column SHORT — one sentence max.**
+The comment is posted directly on the PR line, so it should be a brief,
+actionable note, not a paragraph. Put detailed explanations in the
+review sections above.
 
 | Post | Location | Comment |
 |------|----------|---------|
-| - [ ] | [path/to/file.rb#L42](<github-link>) | Description of issue |
-| - [ ] | [path/to/file.rb#L108](<github-link>) | Description of issue |
+| - [ ] | [file.rb#L42](<github-link>) | Brief issue description |
+| - [ ] | [file.rb#L108](<github-link>) | Brief issue description |
 
 ---
 
