@@ -9,6 +9,7 @@ module Prr
     GH_ENV = { "NO_COLOR" => "1" }.freeze
     PR_URL_PATTERN = %r{github\.com/([^/]+)/([^/]+)/pull/(\d+)}
     TICKET_PATTERN = /([A-Z][A-Z0-9]+-\d+)/
+    ANSI_PATTERN = /\e\[[0-9;]*m/
 
     attr_reader :owner, :repo, :pr_number, :pr_data, :ticket_id
 
@@ -67,7 +68,7 @@ module Prr
       )
       Progress.abort("Failed to fetch PRs: #{err.empty? ? output : err}") unless status.success?
 
-      prs = JSON.parse(output)
+      prs = JSON.parse(output.gsub(ANSI_PATTERN, ""))
       if prs.empty?
         puts "No PRs pending your review."
         exit 0
@@ -100,7 +101,7 @@ module Prr
       )
       Progress.abort("Failed to fetch PR metadata: #{err.empty? ? output : err}") unless status.success?
 
-      @pr_data = JSON.parse(output)
+      @pr_data = JSON.parse(output.gsub(ANSI_PATTERN, ""))
       Progress.log("PR: #{@pr_data["title"]}")
     end
 

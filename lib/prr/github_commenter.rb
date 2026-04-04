@@ -101,6 +101,7 @@ module Prr
     end
 
     GH_ENV = { "NO_COLOR" => "1" }.freeze
+    ANSI_PATTERN = /\e\[[0-9;]*m/
 
     def post_review!(comments)
       Progress.log("Posting review to GitHub...")
@@ -113,7 +114,7 @@ module Prr
         "--jq", ".headRefOid"
       )
       Progress.abort("Failed to get PR head SHA: #{err}") unless status.success?
-      sha = sha.strip
+      sha = sha.gsub(ANSI_PATTERN, "").strip
 
       review_event = REVIEW_STATUS_MAP[@report.verdict] || "COMMENT"
 
