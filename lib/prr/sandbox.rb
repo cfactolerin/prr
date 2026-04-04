@@ -56,7 +56,17 @@ module Prr
     end
 
     def diff(base_branch)
-      output, = Open3.capture2("git", "-C", @repo_path, "diff", "#{base_branch}..pr-review")
+      output, _, status = Open3.capture3("git", "-C", @repo_path, "diff", "#{base_branch}..pr-review", "--")
+      unless status.success?
+        # Fallback: diff against merge-base if branch ref has issues
+        merge_base, = Open3.capture2("git", "-C", @repo_path, "merge-base", base_branch, "pr-review")
+        if merge_base && !merge_base.strip.empty?
+          output, = Open3.capture2("git", "-C", @repo_path, "diff", "#{merge_base.strip}..pr-review", "--")
+        else
+          Progress.error("Could not compute diff against #{base_branch}. Agents will review without diff.")
+          return ""
+        end
+      end
       output
     end
 

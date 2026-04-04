@@ -7,7 +7,7 @@ module Prr
     attr_reader :content, :verdict, :confidence, :line_comments
 
     def initialize(content)
-      @content = content
+      @content = strip_code_fence(content)
       parse!
     end
 
@@ -18,6 +18,12 @@ module Prr
     end
 
     private
+
+    def strip_code_fence(text)
+      # Arbiter sometimes wraps the report in ```...``` — strip it
+      stripped = text.gsub(/\A\s*```\w*\n/, "").gsub(/\n```\s*\z/, "")
+      stripped
+    end
 
     def parse!
       @verdict = extract_field("Verdict") || "UNKNOWN"
