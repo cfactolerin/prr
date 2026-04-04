@@ -48,7 +48,15 @@ You are reviewing PR #<%= pr_number %> for `<%= repo %>`. Your goal is to help a
 
 You have full access to the repository. Read any file you need to trace the flow. You can also modify files in this sandbox to prove findings (write tests, add debug output).
 
-**Budget your exploration.** Spend at most 15 shell commands on exploration. Start with the changed files, trace one level of callers/callees, then write your review. If evidence is incomplete, make the best-supported inference and label it clearly. A thorough partial review is better than running out of time with nothing written.
+**Budget your exploration.** Spend at most 12 shell commands on exploration before drafting. Start with the changed files and diff, then trace only the most relevant callers, callees, tests, and docs. Prefer targeted `rg`, `sed`, and file reads over broad repo scans. Do not wander through unrelated directories or run full-repo searches unless the diff strongly suggests a cross-cutting issue. If evidence is incomplete, make the best-supported inference and label it clearly. A thorough partial review is better than running out of time with nothing written.
+
+**Codex-specific review guidance.**
+
+- Optimize for high-signal review comments, not exhaustive codebase mapping.
+- Treat the diff as the primary artifact. Escalate into surrounding code only when it changes behavior, invariants, or integration boundaries.
+- Only create a proof artifact when it materially strengthens a non-obvious finding. Avoid speculative test edits.
+- If you do not have enough evidence for a claim, put it in `## Open Questions` instead of overstating it.
+- In `## Line Comments`, every item must be exactly `- `path/to/file:LINE` — description` with the path and line inside backticks.
 
 Review checklist:
 

@@ -58,12 +58,13 @@ module Prr
       start = Time.now
       sandbox_mode = writable ? "workspace-write" : "read-only"
       cmd = [
-        "codex", "exec",
+        "codex", "-a", "never", "exec",
         "-C", @sandbox.repo_path,
-        "-a", "never",
         "-s", sandbox_mode,
         "--ephemeral",
-        "--output-last-message", output_path
+        "--color", "never",
+        "--output-last-message", output_path,
+        "-"
       ]
 
       run_with_timeout(cmd, prompt_text, output_path, timeout_secs, "Codex", start)
@@ -72,9 +73,13 @@ module Prr
 
     def run_with_timeout(cmd, prompt_text, output_path, timeout_secs, label, start)
       pid = nil
+      stdout_data = +""
+      stderr_data = +""
       begin
         stdin, stdout, stderr, wait_thread = Open3.popen3(*cmd, chdir: @sandbox.repo_path)
         pid = wait_thread.pid
+        stdout_reader = Thread.new { stdout.read }
+        stderr_reader = Thread.new { stderr.read }
 
         stdin.write(prompt_text)
         stdin.close
@@ -82,17 +87,25 @@ module Prr
         unless wait_thread.join(timeout_secs)
           Process.kill("TERM", pid)
           wait_thread.join(5) || Process.kill("KILL", pid)
+          stdout_data = stdout_reader.value.to_s
+          stderr_data = stderr_reader.value.to_s
           elapsed = format_duration((Time.now - start).to_i)
           Progress.indent("#{label}: TIMEOUT after #{elapsed}")
-          partial = begin; stdout.read; rescue; ""; end
+          partial = [stdout_data, stderr_data].reject(&:empty?).join("\n")
           File.write(output_path, "# PARTIAL REVIEW (timeout after #{elapsed})\n\n#{partial}") unless File.exist?(output_path)
           return
         end
 
-        stdout_data = stdout.read
+        stdout_data = stdout_reader.value.to_s
+        stderr_data = stderr_reader.value.to_s
 
         # For Claude, output comes from stdout. For Codex, it's written via --output-last-message.
         yield(stdout_data) if block_given?
+
+        if label == "Codex" && !wait_thread.value.success? && !File.exist?(output_path)
+          error_output = stderr_data.empty? ? stdout_data : stderr_data
+          File.write(output_path, "# REVIEW FAILED\n\nError: Codex exited with status #{wait_thread.value.exitstatus}\n\n#{error_output}")
+        end
 
         elapsed = format_duration((Time.now - start).to_i)
         Progress.indent("#{label}: completed (#{elapsed})")
