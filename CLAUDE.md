@@ -25,7 +25,7 @@ Ruby CLI tool that runs Claude and Codex as parallel PR reviewers with a Claude-
 
 **Claude:** `claude -p --dangerously-skip-permissions --output-format text` (prompt via stdin, output from stdout)
 
-**Codex (review):** `codex exec -C <repo> -a never -s workspace-write --ephemeral --output-last-message <path>` (prompt via stdin)
+**Codex (review):** `codex -a never exec -C <repo> -s workspace-write --add-dir <results> --ephemeral --color never --output-last-message <path> -` (prompt via stdin)
 
 **Codex (arbiter Q&A):** Same but `-s read-only`
 

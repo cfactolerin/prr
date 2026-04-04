@@ -13,7 +13,7 @@
 <% if ticket_context -%>
 <%= ticket_context %>
 
-Note: Attachments and Confluence pages referenced above are available in the `ticket/` directory relative to the results path. Read them if they are relevant to understanding the requirements.
+Note: Attachments and Confluence pages referenced above are available under `<%= ticket_dir_hint %>/`. Read them only if they are relevant to understanding the requirements.
 <% else -%>
 No ticket details available.
 <% end -%>

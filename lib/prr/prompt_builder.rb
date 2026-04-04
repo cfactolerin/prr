@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "erb"
+require "pathname"
 
 module Prr
   class PromptBuilder
@@ -50,9 +51,11 @@ module Prr
       previous_review = prev_path ? File.read(prev_path) : nil
 
       ticket_context = nil
+      ticket_dir_hint = nil
       ticket_summary = nil
       if @ticket_context_path && File.exist?(@ticket_context_path)
         ticket_context = File.read(@ticket_context_path)
+        ticket_dir_hint = Pathname.new(File.dirname(@ticket_context_path)).relative_path_from(Pathname.new(@sandbox.repo_path)).to_s
         # Extract summary from first line: "# TICKET-ID: Summary"
         first_line = ticket_context.lines.first&.strip
         ticket_summary = first_line&.sub(/^#\s*\S+:\s*/, "")
@@ -70,6 +73,7 @@ module Prr
         ticket_id: @preflight.ticket_id || "None",
         ticket_summary: ticket_summary,
         ticket_context: ticket_context,
+        ticket_dir_hint: ticket_dir_hint,
         repo_docs: repo_docs.empty? ? nil : repo_docs,
         changed_files: changed_files,
         diff: @sandbox.diff(base_branch),

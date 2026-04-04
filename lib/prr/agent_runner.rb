@@ -61,6 +61,7 @@ module Prr
         "codex", "-a", "never", "exec",
         "-C", @sandbox.repo_path,
         "-s", sandbox_mode,
+        "--add-dir", @results_path,
         "--ephemeral",
         "--color", "never",
         "--output-last-message", output_path,
