@@ -100,12 +100,19 @@ module Prr
       end
     end
 
+    GH_ENV = { "NO_COLOR" => "1" }.freeze
+
     def post_review!(comments)
       Progress.log("Posting review to GitHub...")
 
-      cmd = "gh pr view #{@pr_number} --repo #{@owner}/#{@repo} --json headRefOid --jq .headRefOid"
-      sha, status = Open3.capture2(cmd)
-      Progress.abort("Failed to get PR head SHA") unless status.success?
+      sha, err, status = Open3.capture3(
+        GH_ENV,
+        "gh", "pr", "view", @pr_number.to_s,
+        "--repo", "#{@owner}/#{@repo}",
+        "--json", "headRefOid",
+        "--jq", ".headRefOid"
+      )
+      Progress.abort("Failed to get PR head SHA: #{err}") unless status.success?
       sha = sha.strip
 
       review_event = REVIEW_STATUS_MAP[@report.verdict] || "COMMENT"
@@ -122,8 +129,12 @@ module Prr
       json_path = File.join(@config.tmp_path, "review-payload.json")
       File.write(json_path, JSON.pretty_generate(body))
 
-      post_cmd = "gh api repos/#{@owner}/#{@repo}/pulls/#{@pr_number}/reviews --input #{json_path}"
-      output, status = Open3.capture2(post_cmd)
+      output, err, status = Open3.capture3(
+        GH_ENV,
+        "gh", "api",
+        "repos/#{@owner}/#{@repo}/pulls/#{@pr_number}/reviews",
+        "--input", json_path
+      )
 
       if status.success?
         Progress.done("Review posted to GitHub!")

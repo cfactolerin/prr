@@ -6,6 +6,7 @@ require "prr/progress"
 
 module Prr
   class Preflight
+    GH_ENV = { "NO_COLOR" => "1" }.freeze
     PR_URL_PATTERN = %r{github\.com/([^/]+)/([^/]+)/pull/(\d+)}
     TICKET_PATTERN = /([A-Z][A-Z0-9]+-\d+)/
 
@@ -57,6 +58,7 @@ module Prr
       Progress.abort("GitHub user not configured. Run 'prr setup' first.") if user.empty?
 
       output, err, status = Open3.capture3(
+        GH_ENV,
         "gh", "search", "prs",
         "--review-requested=#{user}",
         "--state=open",
@@ -91,6 +93,7 @@ module Prr
       Progress.log("Fetching PR ##{@pr_number} metadata...")
       fields = "number,title,body,headRefName,baseRefName,author,files,url,commits"
       output, err, status = Open3.capture3(
+        GH_ENV,
         "gh", "pr", "view", @pr_number.to_s,
         "--repo", "#{@owner}/#{@repo}",
         "--json", fields
