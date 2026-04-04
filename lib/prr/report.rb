@@ -38,7 +38,7 @@ module Prr
 
     def parse!
       @verdict = extract_field("Verdict") || "UNKNOWN"
-      @confidence = extract_field("Confidence") || "UNKNOWN"
+      @confidence = extract_field("Verdict Confidence") || extract_field("Confidence") || "UNKNOWN"
       @line_comments = extract_table_comments
       @review_action = extract_review_action
       @review_body = extract_review_body

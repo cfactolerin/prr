@@ -85,7 +85,12 @@ The report will be read by a busy engineering lead in a terminal or markdown vie
 | **Previous Review** | <%= previous_review ? "yes" : "none" %> |
 
 ## Verdict: [APPROVE | REQUEST_CHANGES | NEEDS_DISCUSSION]
-## Confidence: [HIGH | MEDIUM | LOW]
+## Verdict Confidence: [HIGH | MEDIUM | LOW]
+
+Confidence = how sure you are the verdict is correct.
+- **HIGH:** Evidence is clear, both reviewers largely agree, no ambiguity.
+- **MEDIUM:** Verdict is likely correct but open questions could change it.
+- **LOW:** Significant uncertainty — the reviewer should verify before acting.
 
 <1 sentence overall assessment.>
 
