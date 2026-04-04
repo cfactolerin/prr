@@ -56,17 +56,18 @@ module Prr
     end
 
     def diff(base_branch)
-      # Try base branch directly, then origin/<base>, then merge-base
+      # Try base branch directly, then origin/<base>
+      # Use git_silent to suppress "fatal:" noise on failed candidates
       candidates = [base_branch, "origin/#{base_branch}"]
       candidates.each do |ref|
-        output, _, status = Open3.capture3("git", "-C", @repo_path, "diff", "#{ref}..pr-review", "--")
-        return output if status.success? && !output.empty?
+        output = git_silent("diff", "#{ref}..pr-review", "--")
+        return output if output
 
         # Try merge-base approach
-        mb, = Open3.capture2("git", "-C", @repo_path, "merge-base", ref, "pr-review")
-        if mb && !mb.strip.empty?
-          output, = Open3.capture2("git", "-C", @repo_path, "diff", "#{mb.strip}..pr-review", "--")
-          return output if output && !output.empty?
+        mb = git_silent("merge-base", ref, "pr-review")
+        if mb
+          output = git_silent("diff", "#{mb.strip}..pr-review", "--")
+          return output if output
         end
       end
 
@@ -86,6 +87,12 @@ module Prr
       output, status = Open3.capture2(cmd)
       Progress.abort("Git failed: #{cmd}\n#{output}") unless status.success?
       output
+    end
+
+    # Run git command silently — returns output on success, nil on failure
+    def git_silent(*args)
+      output, _, status = Open3.capture3("git", "-C", @repo_path, *args)
+      status.success? && !output.strip.empty? ? output : nil
     end
   end
 end
