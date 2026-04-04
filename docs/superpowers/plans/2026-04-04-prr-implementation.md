@@ -20,9 +20,10 @@ lib/prr/cli.rb                     — Argument parsing (OptionParser), --help, 
 lib/prr/config.rb                  — Loads config: defaults -> YAML file -> env vars -> CLI flags
 lib/prr/setup.rb                   — Interactive config wizard, writes config/prr.yml
 lib/prr/progress.rb                — Timestamped log output to $stdout
-lib/prr/preflight.rb               — Disk check, PR resolution (gh), Jira ticket inference + fetch
+lib/prr/preflight.rb               — Disk check, PR resolution (gh), Jira ticket ID inference
+lib/prr/ticket_fetcher.rb          — Downloads Jira ticket, Confluence pages, attachments into results/ticket/
 lib/prr/sandbox.rb                 — cp -r repo, git fetch/checkout PR branch, cleanup
-lib/prr/prompt_builder.rb          — Reads repo docs, diff, ticket; renders ERB prompt templates
+lib/prr/prompt_builder.rb          — Reads repo docs, diff, ticket context file; renders ERB prompt templates
 lib/prr/agent_runner.rb            — Spawns claude/codex with timeout, captures output
 lib/prr/arbiter.rb                 — Arbiter round loop: build questions, dispatch, log
 lib/prr/report.rb                  — Parses final report, extracts line comments

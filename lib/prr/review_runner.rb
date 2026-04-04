@@ -3,6 +3,7 @@
 require "prr/config"
 require "prr/progress"
 require "prr/preflight"
+require "prr/ticket_fetcher"
 require "prr/sandbox"
 require "prr/prompt_builder"
 require "prr/agent_runner"
@@ -26,7 +27,15 @@ module Prr
 
       sandbox.setup!
 
-      prompt_builder = PromptBuilder.new(sandbox: sandbox, preflight: preflight)
+      # Fetch full ticket context (Jira + Confluence + attachments) into results dir
+      ticket_fetcher = TicketFetcher.new(
+        config: @config,
+        ticket_id: preflight.ticket_id,
+        results_path: sandbox.results_path
+      )
+      ticket_context_path = ticket_fetcher.fetch!
+
+      prompt_builder = PromptBuilder.new(sandbox: sandbox, preflight: preflight, ticket_context_path: ticket_context_path)
       agent_runner = AgentRunner.new(config: @config, sandbox: sandbox, results_path: sandbox.results_path)
 
       if @options[:arbiter_only]

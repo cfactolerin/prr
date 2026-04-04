@@ -6,9 +6,10 @@ module Prr
   class PromptBuilder
     PROMPTS_DIR = File.expand_path("../../config/prompts", __dir__)
 
-    def initialize(sandbox:, preflight:)
+    def initialize(sandbox:, preflight:, ticket_context_path: nil)
       @sandbox = sandbox
       @preflight = preflight
+      @ticket_context_path = ticket_context_path
     end
 
     def review_prompt
@@ -37,7 +38,6 @@ module Prr
 
     def review_context
       pr = @preflight.pr_data
-      ticket = @preflight.ticket_data
       base_branch = pr["baseRefName"]
 
       repo_docs = ["CLAUDE.md", "AGENTS.md", "README.md"]
@@ -49,6 +49,15 @@ module Prr
       prev_path = @sandbox.previous_review_path
       previous_review = prev_path ? File.read(prev_path) : nil
 
+      ticket_context = nil
+      ticket_summary = nil
+      if @ticket_context_path && File.exist?(@ticket_context_path)
+        ticket_context = File.read(@ticket_context_path)
+        # Extract summary from first line: "# TICKET-ID: Summary"
+        first_line = ticket_context.lines.first&.strip
+        ticket_summary = first_line&.sub(/^#\s*\S+:\s*/, "")
+      end
+
       {
         pr_number: pr["number"],
         pr_title: pr["title"],
@@ -59,8 +68,8 @@ module Prr
         base_branch: base_branch,
         repo: @preflight.repo,
         ticket_id: @preflight.ticket_id || "None",
-        ticket_summary: ticket&.dig("fields", "summary"),
-        ticket_description: ticket&.dig("fields", "description"),
+        ticket_summary: ticket_summary,
+        ticket_context: ticket_context,
         repo_docs: repo_docs.empty? ? nil : repo_docs,
         changed_files: changed_files,
         diff: @sandbox.diff(base_branch),

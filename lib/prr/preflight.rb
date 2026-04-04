@@ -2,9 +2,6 @@
 
 require "json"
 require "open3"
-require "net/http"
-require "uri"
-require "base64"
 require "prr/progress"
 
 module Prr
@@ -12,7 +9,7 @@ module Prr
     PR_URL_PATTERN = %r{github\.com/([^/]+)/([^/]+)/pull/(\d+)}
     TICKET_PATTERN = /([A-Z][A-Z0-9]+-\d+)/
 
-    attr_reader :owner, :repo, :pr_number, :pr_data, :ticket_id, :ticket_data
+    attr_reader :owner, :repo, :pr_number, :pr_data, :ticket_id
 
     def initialize(config, options)
       @config = config
@@ -24,7 +21,6 @@ module Prr
       resolve_pr!
       fetch_pr_metadata!
       resolve_ticket!
-      fetch_ticket_details!
       self
     end
 
@@ -114,38 +110,5 @@ module Prr
       end
     end
 
-    def fetch_ticket_details!
-      return unless @ticket_id
-
-      base_url = @config.jira_base_url
-      token = @config.jira_api_token
-      email = @config.jira_email
-
-      if [base_url, token, email].any? { |v| v.nil? || v.empty? }
-        Progress.log("Jira not configured — skipping ticket fetch.")
-        @ticket_data = nil
-        return
-      end
-
-      Progress.log("Fetching Jira ticket #{@ticket_id}...")
-      uri = URI("#{base_url}/rest/api/3/issue/#{@ticket_id}")
-      req = Net::HTTP::Get.new(uri)
-      req["Authorization"] = "Basic #{Base64.strict_encode64("#{email}:#{token}")}"
-      req["Accept"] = "application/json"
-
-      resp = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == "https") { |h| h.request(req) }
-
-      if resp.code == "200"
-        @ticket_data = JSON.parse(resp.body)
-        summary = @ticket_data.dig("fields", "summary") || "No summary"
-        Progress.log("Jira ticket: #{@ticket_id} — \"#{summary}\"")
-      else
-        Progress.error("Jira API returned #{resp.code}. Continuing without ticket details.")
-        @ticket_data = nil
-      end
-    rescue StandardError => e
-      Progress.error("Jira fetch failed: #{e.message}. Continuing without ticket details.")
-      @ticket_data = nil
-    end
   end
 end
