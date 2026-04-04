@@ -28,7 +28,9 @@ module Prr
 
     def check_disk_space!
       Progress.log("Checking disk space...")
-      output, = Open3.capture2("df -g #{@config.tmp_path}")
+      # Use the tools repo root (parent of tmp_path) since tmp/reviews may not exist yet
+      check_path = File.exist?(@config.tmp_path) ? @config.tmp_path : Config.root_path
+      output, = Open3.capture2("df -g #{check_path}")
       lines = output.strip.split("\n")
       free_gb = lines.last.split[3].to_i
 
