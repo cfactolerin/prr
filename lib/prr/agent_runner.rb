@@ -20,7 +20,8 @@ module Prr
       claude_result_path = File.join(@results_path, "claude-review.md")
       codex_result_path = File.join(@results_path, "codex-review.md")
 
-      Progress.log("Starting parallel review...")
+      prompt_size = prompt.bytesize
+      Progress.log("Starting parallel review... (prompt: #{format_bytes(prompt_size)})")
       Progress.indent("Claude: running (timeout: #{format_duration(@config.claude_timeout)})")
       Progress.indent("Codex:  running (timeout: #{format_duration(@config.codex_timeout)})")
 
@@ -120,6 +121,16 @@ module Prr
 
     def format_duration(seconds)
       seconds >= 60 ? "#{seconds / 60}m#{seconds % 60}s" : "#{seconds}s"
+    end
+
+    def format_bytes(bytes)
+      if bytes < 1024
+        "#{bytes}B"
+      elsif bytes < 1_048_576
+        "#{(bytes / 1024.0).round(1)}KB"
+      else
+        "#{(bytes / 1_048_576.0).round(1)}MB"
+      end
     end
   end
 end
