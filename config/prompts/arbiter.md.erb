@@ -65,7 +65,7 @@ The report will be read by a busy engineering lead in a terminal or markdown vie
 4. **Tables for comparisons.** If comparing two or more things, use a markdown table.
 5. **Code references.** When referencing code, use inline `code blocks`. For multi-line code, use fenced code blocks.
 6. **GitHub links.** For every file reference, use a clickable GitHub link: `[path/to/file.rb#L42](<github_blob_base>/path/to/file.rb#L42)`. The blob base URL is: `<%= pr_url.sub(/\/pull\/\d+$/, "") %>/blob/<%= head_branch %>`
-7. **Line Comments table.** The Line Comments section MUST be a markdown table with checkboxes — see template below.
+7. **Line Comments table.** The Line Comments section MUST be a markdown table with `[ ]`/`[x]` post selectors — see template below.
 8. **Review Comment template.** The Open Questions section MUST end with a review action selector — see template below.
 
 ---
@@ -168,15 +168,18 @@ If there are no issues, just say "No blocking issues found."
 These comments will be posted to GitHub as inline PR comments.
 Check the box to include. Edit the message as needed.
 
-**IMPORTANT: Keep the Comment column SHORT — one sentence max.**
-The comment is posted directly on the PR line, so it should be a brief,
-actionable note, not a paragraph. Put detailed explanations in the
-review sections above.
+**IMPORTANT formatting rules:**
+- Keep the Comment column SHORT — one sentence max. The comment is posted
+  directly on the PR line, so it should be a brief, actionable note, not a
+  paragraph. Put detailed explanations in the review sections above.
+- The Location column MUST use `path/to/file.rb#L42` as the display text
+  (not backtick-wrapped, not `file:LINE` format). The parser extracts the
+  path and line number from `#L<number>` in the display text.
 
 | Post | Location | Comment |
 |------|----------|---------|
-| - [ ] | [file.rb#L42](<github-link>) | Brief issue description |
-| - [ ] | [file.rb#L108](<github-link>) | Brief issue description |
+| [ ] | [file.rb#L42](<github-link>) | Brief issue description |
+| [ ] | [file.rb#L108](<github-link>) | Brief issue description |
 
 ---
 

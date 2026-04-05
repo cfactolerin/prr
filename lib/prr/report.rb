@@ -2,9 +2,9 @@
 
 module Prr
   class Report
-    # Table row: | - [ ] | [path#L42](url) | message |
-    # or:        | - [x] | [path#L42](url) | message |
-    TABLE_COMMENT_PATTERN = /^\|\s*-\s*\[([xX ])\]\s*\|\s*\[([^\]]+)\]\(([^)]+)\)\s*\|\s*(.+?)\s*\|$/
+    # Table row: | [ ] | [path#L42](url) | message |
+    # or:        | [x] | [path#L42](url) | message |
+    TABLE_COMMENT_PATTERN = /^\|\s*\[([xX ])\]\s*\|\s*\[([^\]]+)\]\(([^)]+)\)\s*\|\s*(.+?)\s*\|$/
     REVIEW_ACTION_PATTERN = /^-\s*\[([xX])\]\s*(Comment|Approve|Request Changes)\s*$/i
 
     attr_reader :content, :verdict, :confidence, :line_comments, :review_action, :review_body
