@@ -110,9 +110,17 @@ module Prr
       body[:body] = review_body if review_body && !review_body.empty?
 
       if comments.any?
-        body[:comments] = comments.map do |c|
-          { path: c[:path], line: c[:line], body: c[:body] }
+        pr_files = fetch_pr_files
+        resolved_comments = []
+        comments.each do |c|
+          resolved = resolve_path(c[:path], pr_files)
+          if resolved.nil?
+            Progress.log("WARN: Skipping comment — file not in PR diff: #{c[:path]}")
+          else
+            resolved_comments << { path: resolved, line: c[:line], side: "RIGHT", body: c[:body] }
+          end
         end
+        body[:comments] = resolved_comments if resolved_comments.any?
       end
 
       json_path = File.join(File.dirname(__FILE__), "../../tmp/review-payload.json")
@@ -131,10 +139,50 @@ module Prr
         Progress.indent("Action: #{event}")
         Progress.indent("Comments: #{comments.length}") if comments.any?
       else
-        Progress.error("Failed to post review: #{err.empty? ? output : err}")
+        Progress.error("Failed to post review: #{err.strip}")
+        Progress.error("GitHub response: #{output.strip}") unless output.strip.empty?
       end
     ensure
       FileUtils.rm_f(json_path) if json_path
+    end
+
+    def fetch_pr_files
+      output, _, status = Open3.capture3(
+        GH_ENV,
+        "gh", "pr", "view", @pr_number.to_s,
+        "--repo", "#{@owner}/#{@repo}",
+        "--json", "files",
+        "--jq", ".files[].path"
+      )
+      return [] unless status.success?
+
+      output.gsub(ANSI_PATTERN, "").strip.split("\n")
+    end
+
+    def resolve_path(path, pr_files)
+      # Exact match — path is already correct
+      return path if pr_files.include?(path)
+
+      # Match by filename suffix (handles partial paths from display text or
+      # branch-name leaking into URL-extracted paths)
+      basename = File.basename(path)
+      candidates = pr_files.select { |f| f.end_with?("/#{basename}") || f == basename }
+      return candidates.first if candidates.length == 1
+
+      # Multiple matches — try longest suffix match
+      if candidates.length > 1
+        best = candidates.max_by { |f| common_suffix_length(f, path) }
+        return best
+      end
+
+      # No match found — return nil so the caller can skip this comment
+      nil
+    end
+
+    def common_suffix_length(a, b)
+      a_parts = a.split("/").reverse
+      b_parts = b.split("/").reverse
+      a_parts.zip(b_parts).take_while { |x, y| x == y }.length
     end
   end
 end

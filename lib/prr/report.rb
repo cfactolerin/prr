@@ -71,12 +71,13 @@ module Prr
           body = match[4].strip
 
           # Extract path and line from display text like "path/to/file.rb#L42"
+          # The commenter resolves partial paths against the PR's file list.
           if display.match?(/(.+)#L(\d+)/)
             file_match = display.match(/(.+)#L(\d+)/)
-            path = file_match[1]
+            path = file_match[1].delete("`")
             line_num = file_match[2].to_i
           else
-            path = display
+            path = display.delete("`")
             line_num = 0
           end
 
