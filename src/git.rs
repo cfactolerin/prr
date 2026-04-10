@@ -21,11 +21,12 @@ pub fn git_silent(repo: &Path, args: &[&str]) -> Option<String> {
     git(repo, args).ok().filter(|s| !s.trim().is_empty())
 }
 
-/// Clone a repo using gh CLI, then fetch the PR branch.
+/// Clone a repo using gh CLI, then fetch the PR branch and base branch.
 pub fn clone_and_checkout_pr(
     owner: &str,
     repo: &str,
     pr_number: u64,
+    base_branch: &str,
     dest: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let status = Command::new("gh")
@@ -37,6 +38,7 @@ pub fn clone_and_checkout_pr(
         return Err("gh repo clone failed".into());
     }
     git(dest, &["fetch", "origin", &format!("pull/{pr_number}/head:pr-review")])?;
+    git(dest, &["fetch", "origin", base_branch])?;
     git(dest, &["checkout", "pr-review"])?;
     Ok(())
 }

@@ -37,7 +37,7 @@ pub fn run(
     let repo_dir = round_dir.join("repo");
     // Remove the empty dir created by create_round_dirs so git clone can create it
     std::fs::remove_dir(&repo_dir)?;
-    git::clone_and_checkout_pr(&pr_ref.owner, &pr_ref.repo, pr_ref.number, &repo_dir)?;
+    git::clone_and_checkout_pr(&pr_ref.owner, &pr_ref.repo, pr_ref.number, base_branch, &repo_dir)?;
 
     // Detect or use ticket ID
     let ticket_id = ticket_override

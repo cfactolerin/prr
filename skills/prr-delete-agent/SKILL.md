@@ -2,7 +2,7 @@
 name: prr-delete-agent
 description: Remove a review agent from the active agent list.
 argument-hint: <agent-name>
-allowed-tools: [Bash]
+allowed-tools: ["Bash(${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal *)", Read]
 ---
 
 # Delete Agent

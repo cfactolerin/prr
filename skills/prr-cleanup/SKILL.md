@@ -2,7 +2,7 @@
 name: prr-cleanup
 description: Clean up workspace by removing review directories for merged or closed PRs. Safe operation — only removes confirmed merged/closed PRs.
 argument-hint: ""
-allowed-tools: [Bash, Read]
+allowed-tools: ["Bash(${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal *)", Read]
 ---
 
 # PRR Cleanup

@@ -2,7 +2,7 @@
 name: prr-start
 description: Start an AI-powered PR review with parallel multi-agent review and arbiter synthesis. Takes a PR URL or owner/repo#N as argument.
 argument-hint: <pr-url-or-ref>
-allowed-tools: [Bash, Read, Grep, Glob, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion]
+allowed-tools: ["Bash(${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal *)", "Bash(gh *)", Read, Grep, Glob, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion]
 ---
 
 # PRR Start — Full Review Workflow
@@ -347,14 +347,25 @@ This outputs JSON to stdout. Parse it. The structure is:
 
 Only present comments where `checked` is `true` (these are the ones the arbiter marked for posting).
 
-For each comment, present it to the user:
+For each comment, present it with full context:
+
+1. **Clickable link**: Use the `url` field from the parsed JSON. If `url` is present, display the file reference as a markdown link: `[path#L<line>](url)`. If `url` is null, display `path#L<line>` as plain text.
+
+2. **Inline diff context**: Read the diff file at `<ROUND_DIR>/results/diff.txt`. Find the section for this file and show ±5 lines around the comment's line number. Display it in a fenced code block. If you cannot find the exact line in the diff, read the file directly from `<ROUND_DIR>/repo/<path>` and show lines around the target.
+
+3. **Explanation**: Below the diff context, include a brief explanation of **why** this is a problem — what could go wrong, what the expected behavior should be, or what the risk is. This should come from the comment body and the review findings.
+
+Format each comment like this:
 
 ```
-Comment N of M:
-  File: <path>#L<line>
-  Body: "<body>"
+**Comment N/M**: [path#L<line>](url) — <one-line summary>
 
-  [A]ccept / [C]larify / [E]dit / [R]eject / [Add new] / [Done]?
+<diff context in fenced code block>
+
+**Why this matters:** <explanation of the problem and its impact>
+
+**Suggested comment:**
+> <body>
 ```
 
 Use AskUserQuestion and handle the response:
@@ -374,7 +385,7 @@ Use AskUserQuestion and handle the response:
 After reviewing all comments (or user says done), show the final list:
 ```
 Final comment list (N comments):
-  1. <path>#L<line>: <body preview>
+  1. [path#L<line>](url): <body preview>
   2. ...
 ```
 

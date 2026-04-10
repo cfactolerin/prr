@@ -2,7 +2,7 @@
 name: prr-add-agent
 description: Add a review agent to the active agent list. Supported agents are claude, codex, and gemini.
 argument-hint: <agent-name>
-allowed-tools: [Bash, AskUserQuestion]
+allowed-tools: ["Bash(${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal *)", "Bash(echo * | codex *)", "Bash(echo * | gemini *)", Read, AskUserQuestion]
 ---
 
 # Add Agent

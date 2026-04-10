@@ -2,7 +2,7 @@
 name: prr-setup
 description: First-time setup wizard for PRR. Configures workspace path, Jira credentials, and agent defaults.
 argument-hint: ""
-allowed-tools: [Bash, Read, Write, AskUserQuestion]
+allowed-tools: ["Bash(mkdir *)", Read, Write, AskUserQuestion]
 ---
 
 # PRR Setup
