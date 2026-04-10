@@ -38,6 +38,9 @@ pub fn clone_and_checkout_pr(
     if !status.success() {
         return Err("gh repo clone failed".into());
     }
+    // Shallow clone uses --single-branch, which limits the refspec to the default branch.
+    // Widen it so fetches of other branches create proper remote tracking refs.
+    git(dest, &["config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"])?;
     git(dest, &["fetch", "origin", &format!("pull/{pr_number}/head:pr-review")])?;
     git(dest, &["fetch", "origin", base_branch])?;
 
