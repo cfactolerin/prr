@@ -2,7 +2,7 @@
 name: prr-start
 description: Start an AI-powered PR review with parallel multi-agent review and arbiter synthesis. Takes a PR URL or owner/repo#N as argument.
 argument-hint: <pr-url-or-ref>
-allowed-tools: ["Bash(${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal *)", "Bash(gh *)", "Bash(cd *)", Read, Grep, Glob, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion]
+allowed-tools: ["Bash(${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal *)", "Bash(gh *)", "Bash(git *)", Read, Grep, Glob, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion]
 ---
 
 # PRR Start — Full Review Workflow
@@ -328,6 +328,7 @@ Use these emoji for the verdict:
 
 4. Enter an interactive loop using AskUserQuestion:
    - If the user asks a question: investigate using the repo at `<REPO_PATH>`. Read files, run git commands, grep for patterns, etc. Present findings and ask if they have more questions.
+     - **Important:** Always use `git -C <REPO_PATH> <command>` instead of `cd <REPO_PATH> && git <command>` to avoid security prompts.
    - If the user says "re-review": run `prr context "$ARGUMENTS" --workspace <workspace_path>` again (this creates rN+1), then re-run Phases 4-5 with the new round dir. Include any guidance the user provides.
    - If the user says "continue", "next", "comments", "done", or similar: exit the loop and proceed to Phase 7.
 

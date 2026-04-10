@@ -24,3 +24,4 @@ Write your complete review in the exact format specified in the review prompt. D
 - Cite file paths and line numbers for every finding
 - If you find a bug, write a test or debug output to prove it
 - Budget your exploration: max 12 shell commands before drafting
+- Always use `git -C <repo_path>` instead of `cd <repo_path> && git` for git commands
