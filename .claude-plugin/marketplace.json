@@ -1,0 +1,10 @@
+{
+  "plugins": [
+    {
+      "name": "prr",
+      "source": "cfactolerin/prr",
+      "description": "AI-powered PR review with parallel multi-agent review and arbiter synthesis",
+      "version": "0.1.0"
+    }
+  ]
+}
