@@ -1,5 +1,8 @@
-tmp/
-config/prr.yml
-.idea
+/target/
+# bin/prr-darwin-universal is committed (small enough to distribute)
+# Ignore other build artifacts in bin/
+/bin/*.dSYM
+*.swp
+*.swo
 .DS_Store
-docs/superpowers/
+tmp/

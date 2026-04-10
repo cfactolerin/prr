@@ -1,65 +1,111 @@
-# PRR — AI-Powered PR Review Tool
+# PRR Plugin — Developer Reference
 
 ## Project Overview
 
-Ruby CLI tool that runs Claude and Codex as parallel PR reviewers with a Claude-powered arbiter. Located at `~/fuga/git/tools`.
+PRR is a Claude Code plugin that delivers AI-powered PR reviews. It consists of:
 
-## Architecture
+- **Rust binary** (`src/`) — heavy lifting: config management, PR resolution, repo cloning, Jira/Confluence fetching, prompt assembly, report parsing, and workspace cleanup.
+- **Claude Code skills** (`skills/`) — orchestration layer: each skill is a markdown file that instructs Claude Code how to drive the binary and dispatch sub-agents.
+- **Agent definitions** (`agents/`) — markdown persona files for each reviewer role (claude-reviewer, codex-reviewer, gemini-reviewer, arbiter).
 
-- **Entry point:** `bin/prr` — routes to setup, review, or comments
-- **Orchestrator:** `lib/prr/review_runner.rb` — ties all phases together
-- **Ticket fetcher:** `lib/prr/ticket_fetcher.rb` — downloads Jira ticket, Confluence pages, and attachments into `results/<ts>/ticket/` so both agents read the same context
-- **Agents:** Claude CLI (`claude -p`) and Codex CLI (`codex exec`) run in parallel
-- **Arbiter:** Claude synthesizes both reviews via multi-round Q&A
-- **Templates:** ERB prompts in `config/prompts/`
-
-## Key Design Decisions
-
-- **Ruby stdlib only** — no gems, no Bundler
-- **Shell-out to CLIs** — agents invoked via `Open3.popen3`, not API calls
-- **Sandbox isolation** — repos copied to `tmp/reviews/` so agents can modify freely
-- **Timestamped results** — each review gets `results/YYYY-MM-DD-HHMMSS/` for re-review context
-- **Config precedence:** CLI flags > env vars (`PRR_*`) > `config/prr.yml` > defaults
-
-## Agent Invocation
-
-**Claude:** `claude -p --dangerously-skip-permissions --output-format text` (prompt via stdin, output from stdout)
-
-**Codex (review):** `codex -a never exec -C <repo> -s workspace-write --add-dir <results> --ephemeral --color never --output-last-message <path> -` (prompt via stdin)
-
-**Codex (arbiter Q&A):** Same but `-s read-only`
-
-## Execution Flow
-
-1. **Preflight:** disk check, PR resolution (gh), Jira ticket ID inference
-2. **Ticket fetch:** `TicketFetcher` downloads full Jira ticket, linked Confluence pages, and attachments to `results/<ts>/ticket/`. Produces `ticket-context.md` — a self-contained markdown file with local paths to attachments. Both agents read this same file.
-3. **Sandbox setup:** copy repo, checkout PR branch
-4. **Parallel review:** Claude + Codex run independently with the same prompt (includes ticket context)
-5. **Arbiter rounds:** Claude cross-examines both reviews, up to N rounds
-6. **Final report:** arbiter synthesizes findings
-7. **Comment posting:** interactive GitHub PR comment flow
-
-## File Layout
+## Repository Structure
 
 ```
-bin/prr                     # executable entry point
-lib/prr/                    # all Ruby modules
-  ticket_fetcher.rb         # Jira + Confluence + attachment downloader
-config/prompts/*.md.erb     # prompt templates
-config/prr.yml              # user config (gitignored)
-tmp/reviews/                # sandbox + results (gitignored)
-  <repo>-pr-<n>/results/<ts>/ticket/
-    ticket-context.md       # consolidated ticket markdown
-    attachments/            # downloaded Jira attachments
-    confluence/             # fetched Confluence pages as markdown
-docs/superpowers/specs/     # design spec
-docs/superpowers/plans/     # implementation plan
+prr/
+├── bin/
+│   └── prr-darwin-universal    # Pre-built universal macOS binary (committed)
+├── src/                        # Rust source
+│   ├── main.rs                 # CLI entry point and subcommand dispatch
+│   ├── config.rs               # Config struct, load/save, setup wizard, agent CRUD
+│   ├── context.rs              # Context gathering: PR fetch, clone, Jira, prompt setup
+│   ├── pr.rs                   # PR URL/ref parsing → owner, repo, number
+│   ├── workspace.rs            # Workspace directory layout and round management
+│   ├── git.rs                  # Git clone, fetch, checkout operations
+│   ├── jira.rs                 # Jira REST API client and Confluence fetcher
+│   ├── html.rs                 # HTML-to-markdown conversion (html2text wrapper)
+│   ├── prompt.rs               # Prompt assembly for review, arbiter, and Q&A
+│   ├── report.rs               # Final-report parser → structured JSON
+│   └── cleanup.rs              # Workspace cleanup (removes merged/closed PR dirs)
+├── skills/
+│   ├── prr-setup/SKILL.md      # /prr:setup — runs binary setup wizard
+│   ├── prr-start/SKILL.md      # /prr:start — full review orchestration
+│   ├── prr-add-agent/SKILL.md  # /prr:add-agent — enables an agent in config
+│   ├── prr-delete-agent/SKILL.md  # /prr:delete-agent — removes an agent from config
+│   └── prr-cleanup/SKILL.md    # /prr:cleanup — removes stale workspace entries
+├── agents/
+│   ├── claude-reviewer.md      # Claude sub-agent persona for PR review
+│   ├── codex-reviewer.md       # Codex sub-agent persona for PR review
+│   ├── gemini-reviewer.md      # Gemini sub-agent persona for PR review
+│   └── arbiter.md              # Arbiter persona for synthesis and Q&A
+├── scripts/
+│   └── build-universal.sh      # Builds universal macOS binary via lipo
+├── Cargo.toml
+├── Cargo.lock
+├── README.md
+└── CLAUDE.md                   # This file
 ```
+
+## Rust Binary Subcommands
+
+| Subcommand | Description |
+|---|---|
+| `setup` | Interactive config wizard — prompts for workspace, GitHub user, Jira credentials |
+| `context <pr> --workspace <path>` | Fetch PR metadata, clone repo, download Jira ticket, write context manifest |
+| `prompt --review <dir>` | Assemble review prompt from context dir; write to `results/review-prompt.md` |
+| `prompt --arbiter <dir>` | Assemble arbiter prompt (all reviews + Q&A log); write to `results/arbiter-prompt.md` |
+| `prompt --question <dir> --agent <name> --questions <json>` | Assemble per-agent question prompt for a Q&A round |
+| `parse-report <path>` | Parse `final-report.md` into structured JSON (verdict, comments, review body) |
+| `cleanup --workspace <path>` | Remove workspace subdirectories for PRs that are merged or closed |
+| `agents list` | Print configured agents from `~/.prr/config.yml` |
+| `agents add <name>` | Add an agent to config (validates against `KNOWN_AGENTS`) |
+| `agents delete <name>` | Remove an agent from config |
+
+The binary path in skills is `${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal`.
+
+## Build Instructions
+
+Build the universal macOS binary:
+
+```bash
+./scripts/build-universal.sh
+```
+
+Manual steps:
+
+```bash
+export MACOSX_DEPLOYMENT_TARGET=12.0
+cargo build --release --target x86_64-apple-darwin
+cargo build --release --target aarch64-apple-darwin
+lipo -create \
+  target/x86_64-apple-darwin/release/prr \
+  target/aarch64-apple-darwin/release/prr \
+  -output bin/prr-darwin-universal
+chmod +x bin/prr-darwin-universal
+```
+
+Rust targets must be installed:
+
+```bash
+rustup target add x86_64-apple-darwin aarch64-apple-darwin
+```
+
+The `bin/prr-darwin-universal` binary is committed to the repository so users do not need a Rust toolchain.
 
 ## Conventions
 
-- Frozen string literals in all Ruby files
-- `Prr::Progress` for all console output (timestamped)
-- Both agents get the same prompt structure; output format must match for arbiter parsing
-- Arbiter expects JSON questions (`{"claude": [...], "codex": [...]}`) or final report markdown
-- Line comments format: `- \`path/to/file:LINE\` — description`
+- **Rust edition:** 2021
+- **Error handling:** `Box<dyn Error>` throughout — no custom error types unless the complexity warrants it
+- **No `unwrap()` in production paths** — use `?` or explicit error messages
+- **Config precedence:** CLI flags > `~/.prr/config.yml` > compiled defaults
+- **Workspace layout:** `<workspace_path>/<owner>-<repo>-pr-<N>/r<round>/` — each re-review creates a new round directory; context and results live under it
+- **Skills reference the binary** via `${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal` — never hardcode paths
+- **Agent timeout fallback:** unknown agent names fall back to `claude_timeout`
+
+## Adding a New Agent
+
+1. **Add the agent name** to `KNOWN_AGENTS` in `src/config.rs`.
+2. **Add a timeout field** to the `Config` struct (e.g., `my_agent_timeout: u64`) with a `default_*` helper and include it in `agent_timeout()` match arm and `Default` impl.
+3. **Create an agent definition** at `agents/my-agent-reviewer.md` — describe the agent's persona, how to invoke the CLI, and expected output format.
+4. **Update `skills/prr-start/SKILL.md`** — add a dispatch block in Phase 4c for the new agent, including the exact CLI invocation and output path.
+5. **Document** the new agent in `README.md` under Prerequisites and Agent Management.
+6. **Rebuild** the binary and commit the updated `bin/prr-darwin-universal`.
