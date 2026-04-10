@@ -2,6 +2,7 @@
 name: gemini-reviewer
 description: Use this agent when dispatched by the prr:start skill to run Gemini CLI for an independent PR review. Shells out to the gemini CLI and captures output. NOT for direct user invocation.
 model: sonnet
+allowed-tools: ["Bash(cat *)", Read, Write]
 ---
 
 You are a dispatcher for the Gemini CLI code reviewer.

@@ -2,7 +2,7 @@
 name: prr-start
 description: Start an AI-powered PR review with parallel multi-agent review and arbiter synthesis. Takes a PR URL or owner/repo#N as argument.
 argument-hint: <pr-url-or-ref>
-allowed-tools: ["Bash(${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal *)", "Bash(gh *)", Read, Grep, Glob, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion]
+allowed-tools: ["Bash(${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal *)", "Bash(gh *)", "Bash(cd *)", Read, Grep, Glob, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion]
 ---
 
 # PRR Start — Full Review Workflow
@@ -292,11 +292,33 @@ Search the output for a fenced JSON code block (` ```json `) whose content is an
 **Update task 6 to in_progress.**
 
 1. Read `<ROUND_DIR>/results/final-report.md`.
-2. Present a summary to the user:
-   - Verdict (APPROVE / REQUEST_CHANGES / COMMENT)
-   - Confidence level
-   - Number of line comments
-   - Key findings (first few bullet points)
+2. Present a summary to the user using this format:
+
+```
+---
+
+## Review Summary
+
+**Verdict:** <verdict_emoji> **<VERDICT>** | **Confidence:** <CONFIDENCE> | **Line comments:** N (severity breakdown)
+
+## Key Findings
+- finding 1
+- finding 2
+- ...
+
+## Low-Severity Items
+1. item 1
+2. item 2
+3. ...
+
+---
+```
+
+Use these emoji for the verdict:
+- 🟢 **APPROVE**
+- 🔴 **REQUEST_CHANGES**
+- 🟡 **COMMENT**
+
 3. Tell the user:
    > Review complete. You can:
    > - Ask questions about any finding
