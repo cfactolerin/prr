@@ -22,6 +22,7 @@ pub fn git_silent(repo: &Path, args: &[&str]) -> Option<String> {
 }
 
 /// Clone a repo using gh CLI, then fetch the PR branch and base branch.
+/// Ensures enough history exists to compute a merge-base for diff.
 pub fn clone_and_checkout_pr(
     owner: &str,
     repo: &str,
@@ -39,6 +40,21 @@ pub fn clone_and_checkout_pr(
     }
     git(dest, &["fetch", "origin", &format!("pull/{pr_number}/head:pr-review")])?;
     git(dest, &["fetch", "origin", base_branch])?;
+
+    // Ensure sufficient shared history to compute merge-base.
+    // Shallow clones often lack enough history when the base is a feature branch.
+    let base_ref = format!("origin/{base_branch}");
+    if git_silent(dest, &["merge-base", &base_ref, "pr-review"]).is_none() {
+        eprintln!("Shallow history insufficient for diff — deepening...");
+        let _ = git_silent(dest, &["fetch", "--deepen=200", "origin", base_branch]);
+        let _ = git_silent(dest, &["fetch", "--deepen=200", "origin", &format!("pull/{pr_number}/head:pr-review")]);
+
+        if git_silent(dest, &["merge-base", &base_ref, "pr-review"]).is_none() {
+            eprintln!("Still insufficient — fetching full history...");
+            let _ = git_silent(dest, &["fetch", "--unshallow", "origin"]);
+        }
+    }
+
     git(dest, &["checkout", "pr-review"])?;
     Ok(())
 }
