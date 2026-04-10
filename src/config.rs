@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write as IoWrite};
 use std::path::{Path, PathBuf};
 
 pub const KNOWN_AGENTS: &[&str] = &["claude", "codex", "gemini"];
@@ -71,9 +70,6 @@ pub struct Config {
 
     #[serde(default = "default_empty")]
     pub jira_api_token: String,
-
-    #[serde(default = "default_empty")]
-    pub github_user: String,
 }
 
 impl Default for Config {
@@ -89,7 +85,6 @@ impl Default for Config {
             jira_base_url: default_empty(),
             jira_email: default_empty(),
             jira_api_token: default_empty(),
-            github_user: default_empty(),
         }
     }
 }
@@ -176,47 +171,6 @@ impl Config {
 }
 
 // ── public dispatch functions used by main.rs ──────────────────────────────
-
-pub fn run_setup() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cfg = Config::load()?;
-
-    println!("PRR setup wizard — press Enter to keep current value\n");
-
-    cfg.jira_base_url = prompt("Jira base URL", &cfg.jira_base_url.clone())?;
-    cfg.jira_email = prompt("Jira email", &cfg.jira_email.clone())?;
-    cfg.jira_api_token = prompt("Jira API token", &cfg.jira_api_token.clone())?;
-    cfg.github_user = prompt("GitHub user", &cfg.github_user.clone())?;
-    cfg.workspace_path = prompt("Workspace path", &cfg.workspace_path.clone())?;
-
-    let agents_str = prompt("Agents (comma-separated)", &cfg.agents.join(","))?;
-    cfg.agents = agents_str
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    cfg.save()?;
-    println!("\nConfig saved to {}", Config::config_path().display());
-    Ok(())
-}
-
-fn prompt(label: &str, current: &str) -> Result<String, Box<dyn std::error::Error>> {
-    if current.is_empty() {
-        print!("{label}: ");
-    } else {
-        print!("{label} [{current}]: ");
-    }
-    io::stdout().flush()?;
-
-    let mut line = String::new();
-    io::stdin().read_line(&mut line)?;
-    let trimmed = line.trim().to_string();
-    if trimmed.is_empty() {
-        Ok(current.to_string())
-    } else {
-        Ok(trimmed)
-    }
-}
 
 pub fn agents_list() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = Config::load()?;

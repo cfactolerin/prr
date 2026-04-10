@@ -83,7 +83,6 @@ Config lives at `~/.prr/config.yml`. All keys are optional — defaults are show
 | `jira_base_url` | _(empty)_ | Your Jira instance URL (e.g. `https://yourorg.atlassian.net`) |
 | `jira_email` | _(empty)_ | Jira account email for Basic auth |
 | `jira_api_token` | _(empty)_ | Jira API token |
-| `github_user` | _(empty)_ | Your GitHub username |
 
 ## Data Storage
 
@@ -95,6 +94,20 @@ PRR stores all configuration and review data locally:
 | Cloned repos, diffs, reviews | `~/.prr/workspace/` (configurable) |
 
 **Note:** `~/.prr/config.yml` contains your Jira API token in plaintext. Do not commit this file to any repository. It is created per-user by `/prr:setup` and should stay in your home directory.
+
+## Uninstalling
+
+Inside a Claude Code session:
+
+```
+/plugin uninstall prr@cfactolerin-prr
+```
+
+To also remove configuration and cached review data:
+
+```bash
+rm -rf ~/.prr
+```
 
 ## Building from Source
 

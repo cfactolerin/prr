@@ -16,7 +16,7 @@ prr/
 │   └── prr-darwin-universal    # Pre-built universal macOS binary (committed)
 ├── src/                        # Rust source
 │   ├── main.rs                 # CLI entry point and subcommand dispatch
-│   ├── config.rs               # Config struct, load/save, setup wizard, agent CRUD
+│   ├── config.rs               # Config struct, load/save, agent CRUD
 │   ├── context.rs              # Context gathering: PR fetch, clone, Jira, prompt setup
 │   ├── pr.rs                   # PR URL/ref parsing → owner, repo, number
 │   ├── workspace.rs            # Workspace directory layout and round management
@@ -27,7 +27,7 @@ prr/
 │   ├── report.rs               # Final-report parser → structured JSON
 │   └── cleanup.rs              # Workspace cleanup (removes merged/closed PR dirs)
 ├── skills/
-│   ├── prr-setup/SKILL.md      # /prr:setup — runs binary setup wizard
+│   ├── prr-setup/SKILL.md      # /prr:setup — interactive setup via AskUserQuestion
 │   ├── prr-start/SKILL.md      # /prr:start — full review orchestration
 │   ├── prr-add-agent/SKILL.md  # /prr:add-agent — enables an agent in config
 │   ├── prr-delete-agent/SKILL.md  # /prr:delete-agent — removes an agent from config
@@ -49,7 +49,6 @@ prr/
 
 | Subcommand | Description |
 |---|---|
-| `setup` | Interactive config wizard — prompts for workspace, GitHub user, Jira credentials |
 | `context <pr> --workspace <path>` | Fetch PR metadata, clone repo, download Jira ticket, write context manifest |
 | `prompt --review <dir>` | Assemble review prompt from context dir; write to `results/review-prompt.md` |
 | `prompt --arbiter <dir>` | Assemble arbiter prompt (all reviews + Q&A log); write to `results/arbiter-prompt.md` |

@@ -20,8 +20,6 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Interactive configuration wizard
-    Setup,
     /// Gather context for a PR review
     Context {
         /// PR URL or owner/repo#N
@@ -85,7 +83,6 @@ enum AgentAction {
 fn main() {
     let cli = Cli::parse();
     let result = match cli.command {
-        Commands::Setup => config::run_setup(),
         Commands::Context { pr, workspace, ticket } => {
             context::run(&pr, &workspace, ticket.as_deref())
         }
