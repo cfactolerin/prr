@@ -369,33 +369,58 @@ This outputs JSON to stdout. Parse it. The structure is:
 
 Only present comments where `checked` is `true` (these are the ones the arbiter marked for posting).
 
-For each comment, present it with full context:
+For each comment, gather the full context and present it **entirely inside a single AskUserQuestion call**. Do NOT output the comment details as regular text before the question — everything goes in the question prompt.
+
+#### Gathering context for each comment
 
 1. **Clickable link**: Use the `url` field from the parsed JSON. If `url` is present, display the file reference as a markdown link: `[path#L<line>](url)`. If `url` is null, display `path#L<line>` as plain text.
 
-2. **Inline diff context**: Read the diff file at `<ROUND_DIR>/results/diff.txt`. Find the section for this file and show ±5 lines around the comment's line number. Display it in a fenced code block. If you cannot find the exact line in the diff, read the file directly from `<ROUND_DIR>/repo/<path>` and show lines around the target.
+2. **Code context with line numbers**: Read the file directly from `<ROUND_DIR>/repo/<path>`. Show ~5 lines before and after the target line. **Include line numbers** so the user can identify the commented line. Mark the target line with `>` to highlight it. Example:
+   ```
+    27 |   def resolve_ddex(key)
+    28 |     kgotla_override(key, :ddex) ||
+   >29 |       @overrides.dig(:connection, @connection_id, key, :ddex) ||
+    30 |       @overrides.dig(:aggregate, @aggregate_feed_connection_id, key, :ddex) ||
+    31 |       self.class.default_entries[key]&.default_ddex ||
+   ```
+   If the diff at `<ROUND_DIR>/results/diff.txt` provides better context (shows +/- lines), prefer it but still add line numbers and mark the target line.
 
-3. **Explanation**: Below the diff context, include a brief explanation of **why** this is a problem — what could go wrong, what the expected behavior should be, or what the risk is. This should come from the comment body and the review findings.
+3. **Explanation**: A brief explanation of **why** this is a problem — what could go wrong, what the expected behavior should be, or what the risk is. This should come from the comment body and the review findings.
 
-Format each comment like this:
+#### AskUserQuestion format
+
+Put everything in a single AskUserQuestion. Use this format for the question text:
 
 ```
-**Comment N/M**: [path#L<line>](url) — <one-line summary>
+---
 
-<diff context in fenced code block>
+## Comment N/M — <one-line summary>
 
-**Why this matters:** <explanation of the problem and its impact>
+📄 [path#L<line>](url)
+
+<code context with line numbers in fenced code block>
+
+**Why this matters:** <explanation>
 
 **Suggested comment:**
 > <body>
+
+---
 ```
 
-Use AskUserQuestion and handle the response:
+Provide these options in the AskUserQuestion:
+- **Accept** — Keep this comment as-is
+- **Reject** — Skip this comment, don't post it
+- **Edit** — Provide replacement text for this comment
 
-- **Accept** (a, accept, y, yes, ok): Keep the comment as-is. Move to the next comment.
-- **Clarify** (c, clarify): Ask the user what additional context to add. Rewrite the comment body incorporating their input. Show the rewritten comment and confirm.
-- **Edit** (e, edit): The user provides the replacement text. Use it verbatim as the new body.
-- **Reject** (r, reject, no, skip): Remove this comment from the list. Move to the next.
+And allow free-text input for edits, clarifications, or discussion.
+
+#### Handling responses
+
+- **Accept** (a, accept, y, yes, ok, option 1): Keep the comment as-is. Move to the next comment.
+- **Reject** (r, reject, no, skip, option 2): Remove this comment from the list. Move to the next.
+- **Edit** (e, edit, option 3): Ask the user for the replacement text. Use it verbatim as the new body.
+- **Free text**: If the user types something else, treat it as a clarification or edit. Rewrite the comment body incorporating their input, show it for confirmation, then move on.
 - **Add new** (add, new, +): The user describes an issue. You draft a new comment:
   - Ask for the file path and line number (or help them find it by searching the diff)
   - Draft the comment body
@@ -404,11 +429,19 @@ Use AskUserQuestion and handle the response:
   - Then continue reviewing remaining comments
 - **Done** (done, d, stop, enough): Stop reviewing individual comments. All remaining unreviewed comments are kept as-is. Proceed to Phase 8.
 
+#### After all comments reviewed
+
 After reviewing all comments (or user says done), show the final list:
 ```
-Final comment list (N comments):
-  1. [path#L<line>](url): <body preview>
-  2. ...
+---
+
+## Final Comments (N total)
+
+1. 📄 [path#L<line>](url) — <body preview>
+2. 📄 [path#L<line>](url) — <body preview>
+...
+
+---
 ```
 
 Confirm with the user: "Ready to post these comments? [yes/edit more]"
