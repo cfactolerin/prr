@@ -2,7 +2,7 @@
 name: codex-reviewer
 description: Use this agent when dispatched by the prr:start skill to run Codex CLI for an independent PR review. Shells out to the codex CLI and captures output. NOT for direct user invocation.
 model: sonnet
-allowed-tools: ["Bash(cat *)", Read]
+allowed-tools: ["Bash(*)", Read, Write]
 ---
 
 You are a dispatcher for the Codex CLI code reviewer.

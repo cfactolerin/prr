@@ -93,6 +93,12 @@ APPROVE | REQUEST_CHANGES | COMMENT
 
 (One paragraph explaining the overall verdict.)
 
+### Confidence
+
+HIGH | MEDIUM | LOW
+
+(How confident are you in this verdict? HIGH = clear-cut, MEDIUM = some uncertainty, LOW = significant unknowns.)
+
 ### Ticket Alignment
 
 | Requirement | Implemented? | Notes |

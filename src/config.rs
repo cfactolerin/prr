@@ -33,6 +33,14 @@ fn default_arbiter_rounds() -> u64 {
     3
 }
 
+fn default_google_cloud_project() -> String {
+    "fuga-prod".into()
+}
+
+fn default_google_cloud_location() -> String {
+    "europe-west4".into()
+}
+
 fn default_empty() -> String {
     String::new()
 }
@@ -62,6 +70,12 @@ pub struct Config {
     #[serde(default = "default_arbiter_rounds")]
     pub arbiter_rounds: u64,
 
+    #[serde(default = "default_google_cloud_project")]
+    pub google_cloud_project: String,
+
+    #[serde(default = "default_google_cloud_location")]
+    pub google_cloud_location: String,
+
     #[serde(default = "default_empty")]
     pub jira_base_url: String,
 
@@ -82,6 +96,8 @@ impl Default for Config {
             gemini_timeout: default_gemini_timeout(),
             gemini_model: default_gemini_model(),
             arbiter_rounds: default_arbiter_rounds(),
+            google_cloud_project: default_google_cloud_project(),
+            google_cloud_location: default_google_cloud_location(),
             jira_base_url: default_empty(),
             jira_email: default_empty(),
             jira_api_token: default_empty(),

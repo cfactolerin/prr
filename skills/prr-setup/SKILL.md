@@ -24,6 +24,8 @@ Read `~/.prr/config.yml` if it exists. Note the current values — they will be 
 | `gemini_timeout` | `300` |
 | `gemini_model` | `gemini-2.5-flash` |
 | `arbiter_rounds` | `3` |
+| `google_cloud_project` | `fuga-prod` |
+| `google_cloud_location` | `europe-west4` |
 | `jira_base_url` | _(empty)_ |
 | `jira_email` | _(empty)_ |
 | `jira_api_token` | _(empty)_ |
@@ -36,9 +38,11 @@ Ask in this order:
 
 1. **Workspace path** — "Where should PRR store cloned repos and review data?" (default: current `workspace_path`)
 2. **Agents** — "Which agents should run reviews? Options: claude, codex, gemini (comma-separated)" (default: current agents joined by comma)
-3. **Jira base URL** — "What is your Jira base URL? (e.g. https://yourorg.atlassian.net) Leave blank to skip Jira integration." (default: current `jira_base_url`)
-4. **Jira email** — Only ask if a Jira base URL was provided. "What email do you use for Jira?" (default: current `jira_email`)
-5. **Jira API token** — Only ask if a Jira base URL was provided. "What is your Jira API token?" (default: current `jira_api_token`)
+3. **Google Cloud Project** — Only ask if "gemini" is in the agents list. "What is your Google Cloud project ID for Vertex AI?" (default: current `google_cloud_project`)
+4. **Google Cloud Location** — Only ask if "gemini" is in the agents list. "What is your Google Cloud location for Vertex AI?" (default: current `google_cloud_location`)
+5. **Jira base URL** — "What is your Jira base URL? (e.g. https://yourorg.atlassian.net) Leave blank to skip Jira integration." (default: current `jira_base_url`)
+6. **Jira email** — Only ask if a Jira base URL was provided. "What email do you use for Jira?" (default: current `jira_email`)
+7. **Jira API token** — Only ask if a Jira base URL was provided. "What is your Jira API token?" (default: current `jira_api_token`)
 
 For each answer:
 - If the user responds with an empty string or says "keep" / "default", retain the current value.
@@ -58,6 +62,8 @@ codex_timeout: 900
 gemini_timeout: 300
 gemini_model: gemini-2.5-flash
 arbiter_rounds: 3
+google_cloud_project: <value>
+google_cloud_location: <value>
 jira_base_url: <value>
 jira_email: <value>
 jira_api_token: <value>

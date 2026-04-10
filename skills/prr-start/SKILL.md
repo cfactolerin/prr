@@ -111,7 +111,7 @@ Mark each task `in_progress` when you start it and `completed` when you finish i
 
 Read `~/.prr/config.yml` and extract the `agents` list. This determines which agents to dispatch. Common values: `["claude"]`, `["claude", "codex"]`, `["claude", "codex", "gemini"]`.
 
-Also read `gemini_model` (default: `gemini-2.5-flash`) and `arbiter_rounds` (default: 3) for later use.
+Also read `gemini_model` (default: `gemini-2.5-flash`), `google_cloud_project` (default: `fuga-prod`), `google_cloud_location` (default: `europe-west4`), and `arbiter_rounds` (default: 3) for later use.
 
 ### Step 4b: Build the review prompt
 
@@ -176,10 +176,12 @@ Run the Gemini CLI to review this PR. Here are your paths:
 - Review prompt: <PROMPT_PATH>
 - Cloned repo: <REPO_PATH>
 - Gemini model: <GEMINI_MODEL>
+- Google Cloud Project: <GOOGLE_CLOUD_PROJECT>
+- Google Cloud Location: <GOOGLE_CLOUD_LOCATION>
 - Write output to: <RESULTS_PATH>/gemini-review.md
 
 Run this exact command:
-cat "<PROMPT_PATH>" | gemini -p "" -m "<GEMINI_MODEL>" -o text --approval-mode yolo --include-directories "<REPO_PATH>" > "<RESULTS_PATH>/gemini-review.md"
+export GOOGLE_CLOUD_PROJECT="<GOOGLE_CLOUD_PROJECT>" GOOGLE_CLOUD_LOCATION="<GOOGLE_CLOUD_LOCATION>" && cat "<PROMPT_PATH>" | gemini -p "" -m "<GEMINI_MODEL>" -o text --approval-mode yolo --include-directories "<REPO_PATH>" > "<RESULTS_PATH>/gemini-review.md"
 ```
 
 ### Step 4d: Wait and verify
@@ -299,7 +301,7 @@ Search the output for a fenced JSON code block (` ```json `) whose content is an
 
 ## Review Summary
 
-**Verdict:** <verdict_emoji> **<VERDICT>** | **Confidence:** <CONFIDENCE> | **Line comments:** N (severity breakdown)
+**Verdict:** `[<VERDICT>]` | **Confidence:** <CONFIDENCE> | **Line comments:** N (severity breakdown)
 
 ## Key Findings
 - finding 1
@@ -314,10 +316,10 @@ Search the output for a fenced JSON code block (` ```json `) whose content is an
 ---
 ```
 
-Use these emoji for the verdict:
-- 🟢 **APPROVE**
-- 🔴 **REQUEST_CHANGES**
-- 🟡 **COMMENT**
+Use these exact strings for the verdict (no emojis — they don't render in the terminal):
+- APPROVE → `[APPROVE]`
+- REQUEST_CHANGES → `[REQUEST_CHANGES]`
+- COMMENT → `[COMMENT]`
 
 3. Tell the user:
    > Review complete. You can:
@@ -376,15 +378,15 @@ For each comment, gather the full context and present it **entirely inside a sin
 
 1. **Clickable link**: Use the `url` field from the parsed JSON. If `url` is present, display the file reference as a markdown link: `[path#L<line>](url)`. If `url` is null, display `path#L<line>` as plain text.
 
-2. **Code context with line numbers**: Read the file directly from `<ROUND_DIR>/repo/<path>`. Show ~5 lines before and after the target line. **Include line numbers** so the user can identify the commented line. Mark the target line with `>` to highlight it. Example:
+2. **Code context**: Read the file directly from `<ROUND_DIR>/repo/<path>`. Show ~5 lines before and after the target line. Use a **language-specific fenced code block** (e.g. ` ```ruby `, ` ```python `) for proper syntax highlighting. Do NOT add line number prefixes inside the code block — they break syntax highlighting. Instead, note the line range and target line in the **File:** line above the code block. Mark the target line with a trailing `# <--` comment. Example:
+   ```ruby
+   def resolve_ddex(key)
+     kgotla_override(key, :ddex) ||
+       @overrides.dig(:connection, @connection_id, key, :ddex) || # <--
+       @overrides.dig(:aggregate, @aggregate_feed_connection_id, key, :ddex) ||
+       self.class.default_entries[key]&.default_ddex ||
    ```
-    27 |   def resolve_ddex(key)
-    28 |     kgotla_override(key, :ddex) ||
-   >29 |       @overrides.dig(:connection, @connection_id, key, :ddex) ||
-    30 |       @overrides.dig(:aggregate, @aggregate_feed_connection_id, key, :ddex) ||
-    31 |       self.class.default_entries[key]&.default_ddex ||
-   ```
-   If the diff at `<ROUND_DIR>/results/diff.txt` provides better context (shows +/- lines), prefer it but still add line numbers and mark the target line.
+   If the diff at `<ROUND_DIR>/results/diff.txt` provides better context (shows +/- lines), prefer it but still use a language-hinted fenced block.
 
 3. **Explanation**: A brief explanation of **why** this is a problem — what could go wrong, what the expected behavior should be, or what the risk is. This should come from the comment body and the review findings.
 
@@ -397,9 +399,9 @@ Put everything in a single AskUserQuestion. Use this format for the question tex
 
 ## Comment N/M — <one-line summary>
 
-📄 [path#L<line>](url)
+**File:** [path#L<line>](url) (lines N–M)
 
-<code context with line numbers in fenced code block>
+<code context in language-specific fenced code block, target line marked with # <-->
 
 **Why this matters:** <explanation>
 
@@ -438,8 +440,8 @@ After reviewing all comments (or user says done), show the final list:
 
 ## Final Comments (N total)
 
-1. 📄 [path#L<line>](url) — <body preview>
-2. 📄 [path#L<line>](url) — <body preview>
+1. **File:** [path#L<line>](url) — <body preview>
+2. **File:** [path#L<line>](url) — <body preview>
 ...
 
 ---
