@@ -15,14 +15,11 @@ PRR is a Claude Code plugin that runs parallel AI code reviews using Claude, Cod
 
 ## Installation
 
-**Option A — Plugin registry:**
-```bash
-claude plugin add /path/to/prr
-```
+Inside a Claude Code session:
 
-**Option B — Clone to plugins directory:**
-```bash
-git clone https://github.com/your-org/prr ~/.claude/plugins/prr
+```
+/plugin marketplace add cfactolerin/prr
+/plugin install prr@cfactolerin-prr
 ```
 
 ## Quick Start
@@ -87,6 +84,17 @@ Config lives at `~/.prr/config.yml`. All keys are optional — defaults are show
 | `jira_email` | _(empty)_ | Jira account email for Basic auth |
 | `jira_api_token` | _(empty)_ | Jira API token |
 | `github_user` | _(empty)_ | Your GitHub username |
+
+## Data Storage
+
+PRR stores all configuration and review data locally:
+
+| What | Where |
+|------|-------|
+| Config (settings, Jira creds) | `~/.prr/config.yml` |
+| Cloned repos, diffs, reviews | `~/.prr/workspace/` (configurable) |
+
+**Note:** `~/.prr/config.yml` contains your Jira API token in plaintext. Do not commit this file to any repository. It is created per-user by `/prr:setup` and should stay in your home directory.
 
 ## Building from Source
 

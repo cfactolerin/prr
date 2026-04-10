@@ -15,6 +15,18 @@ Throughout this skill, use these shorthands:
 - **PRR** = `${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal`
 - **PR_REF** = the value of `$ARGUMENTS`
 
+## Preflight: Check Setup
+
+Before anything else, check if `~/.prr/config.yml` exists by reading it.
+
+- **If it exists:** proceed to Phase 0.
+- **If it does not exist:** tell the user:
+  > "PRR has not been set up yet. Run `/prr:setup` first to configure your workspace, GitHub username, and Jira credentials. Config will be saved to `~/.prr/config.yml`."
+  
+  Then **stop** — do not proceed with the review.
+
+---
+
 ## Phase 0: Setup Tasks
 
 Create task tracking items so the user can see progress:

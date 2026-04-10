@@ -11,7 +11,8 @@ Sweep the workspace and remove review directories for merged or closed PRs.
 
 ## Instructions
 
-1. Read `~/.prr/config.yml` to get the workspace_path value
+1. Read `~/.prr/config.yml` to get the workspace_path value.
+   - If the file does not exist, tell the user: "PRR has not been set up yet. Run `/prr:setup` first." Then stop.
 2. Run cleanup:
 
 ```

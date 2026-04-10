@@ -13,6 +13,10 @@ Supported agents: `claude`, `codex`, `gemini`
 
 ## Instructions
 
+### Step 0: Check setup
+
+Read `~/.prr/config.yml`. If it does not exist, tell the user: "PRR has not been set up yet. Run `/prr:setup` first." Then stop.
+
 ### Step 1: Verify the agent CLI is installed
 
 Before adding the agent, run a quick smoke test to confirm the CLI tool is available and working.
