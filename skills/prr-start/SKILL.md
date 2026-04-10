@@ -456,26 +456,35 @@ Confirm with the user: "Ready to post these comments? [yes/edit more]"
 
 ### Step 8a: Determine review action
 
-The parsed report may include a `review_action` and `review_body`. Present them to the user:
+The parsed report may include a `review_action` and `review_body`. Present them inside a single AskUserQuestion:
 
 ```
-Suggested action: <review_action>
-Review body:
-<review_body>
+---
 
-Choose action: [C]omment / [A]pprove / [R]equest Changes?
-Or type replacement body text.
+## Post Review
+
+**Suggested action:** <review_action>
+
+**Review body:**
+> <review_body>
+
+---
 ```
 
-Use AskUserQuestion. If the user:
-- Picks an action letter: use that action
-- Types text: use it as the review body, then ask for the action
-- Says "ok" or "yes": use the suggested action and body
+Provide these options:
+- **Approve** (Recommended if verdict is APPROVE) — Post as APPROVE with suggested body
+- **Comment only** — Post as COMMENT (no approval)
+- **Request Changes** — Post as REQUEST_CHANGES
+- **Skip** — Don't post anything to GitHub
 
-Map the action to a GitHub event string:
-- Comment -> `COMMENT`
-- Approve -> `APPROVE`
-- Request Changes -> `REQUEST_CHANGES`
+And allow free-text input for replacement body text.
+
+Handle the response:
+- **Approve** (a, approve, ok, yes, option 1): use `APPROVE` with the suggested body
+- **Comment** (c, comment, option 2): use `COMMENT` with the suggested body
+- **Request Changes** (r, request, option 3): use `REQUEST_CHANGES` with the suggested body
+- **Skip** (skip, no, nothing, done, option 4): mark task 8 as completed and **stop** — do not post anything to GitHub
+- **Free text**: use it as the review body, then ask for the action
 
 ### Step 8b: Get PR metadata for posting
 
