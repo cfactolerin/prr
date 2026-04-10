@@ -1,5 +1,6 @@
-tmp/
-config/prr.yml
-.idea
+/target/
+/bin/prr-darwin-*
+*.swp
+*.swo
 .DS_Store
-docs/superpowers/
+tmp/
