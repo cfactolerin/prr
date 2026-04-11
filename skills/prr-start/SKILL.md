@@ -29,7 +29,7 @@ Before anything else, check if `~/.prr/config.yml` exists by reading it.
 
 ## Phase 0: Setup Tasks
 
-Create task tracking items so the user can see progress:
+Create task tracking items so the user can see progress through the review pipeline:
 
 1. "Cleanup stale reviews" (pending)
 2. "Gather context" (pending)
@@ -37,10 +37,10 @@ Create task tracking items so the user can see progress:
 4. "Run agent reviews" (pending)
 5. "Run arbiter synthesis" (pending)
 6. "Interactive investigation" (pending)
-7. "Review line comments" (pending)
-8. "Post to GitHub" (pending)
 
 Mark each task `in_progress` when you start it and `completed` when you finish it.
+
+Phases 7 and 8 (line comment review, posting to GitHub) are interactive flows that do not use task tracking.
 
 ---
 
@@ -340,8 +340,6 @@ Use these exact strings for the verdict (no emojis — they don't render in the 
 
 ## Phase 7: Line Comment Review
 
-**Update task 7 to in_progress.**
-
 ### Step 7a: Parse the report
 
 Run:
@@ -455,13 +453,9 @@ After reviewing all comments (or user says done), show the final list:
 
 Confirm with the user: "Ready to post these comments? [yes/edit more]"
 
-**Update task 7 to completed.**
-
 ---
 
 ## Phase 8: Post to GitHub
-
-**Update task 8 to in_progress.**
 
 ### Step 8a: Determine review action
 
@@ -563,8 +557,6 @@ If it fails, show the error and suggest the user check:
 - That they have write access to the repo
 - That the PR is still open
 - That the commit SHA is still the head of the PR
-
-**Update task 8 to completed.**
 
 ---
 
