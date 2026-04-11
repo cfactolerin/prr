@@ -81,7 +81,7 @@ Mark each task `in_progress` when you start it and `completed` when you finish i
 
 **Update task 3 to in_progress.**
 
-1. Present the full context manifest to the user. Format it clearly.
+1. Present the full context manifest to the user. Include **every row** from the manifest table exactly as generated (including the PRR version row). Format it clearly.
 2. Ask the user:
    > Context gathered. You can:
    > - Say **"go"** to start the review
