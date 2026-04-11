@@ -7,7 +7,7 @@
     {
       "name": "prr",
       "description": "AI-powered PR review with parallel multi-agent review and arbiter synthesis",
-      "version": "0.1.5",
+      "version": "0.1.6",
       "source": "./"
     }
   ]
