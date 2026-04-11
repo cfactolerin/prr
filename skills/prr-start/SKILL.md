@@ -372,7 +372,7 @@ This outputs JSON to stdout. Parse it. The structure is:
 
 Only present comments where `checked` is `true` (these are the ones the arbiter marked for posting).
 
-For each comment, gather the full context and present it **entirely inside a single AskUserQuestion call**. Do NOT output the comment details as regular text before the question — everything goes in the question prompt.
+For each comment, present it in **two parts**: rich context as regular text output, then a minimal AskUserQuestion for the user's decision. This split gives the comment details full markdown rendering (syntax-highlighted code, icons, formatting) while keeping the prompt clean.
 
 #### Gathering context for each comment
 
@@ -390,16 +390,14 @@ For each comment, gather the full context and present it **entirely inside a sin
 
 3. **Explanation**: A brief explanation of **why** this is a problem — what could go wrong, what the expected behavior should be, or what the risk is. This should come from the comment body and the review findings.
 
-#### AskUserQuestion format
+#### Part 1: Rich text output (before AskUserQuestion)
 
-Put everything in a single AskUserQuestion. Use this format for the question text:
+Output the full comment details as regular text. This renders with proper markdown formatting, syntax-highlighted code, and icons. Use this format:
 
 ```
----
-
 ## Comment N/M — <one-line summary>
 
-**File:** [path#L<line>](url) (lines N–M)
+📄 [path#L<line>](url) (lines N–M)
 
 <code context in language-specific fenced code block, target line marked with # <-->
 
@@ -407,8 +405,16 @@ Put everything in a single AskUserQuestion. Use this format for the question tex
 
 **Suggested comment:**
 > <body>
+```
 
----
+#### Part 2: Minimal AskUserQuestion
+
+Immediately after the rich text output, use AskUserQuestion with **only** the comment title and options. Keep it minimal — the user has already read the details above.
+
+Use this format for the question text:
+
+```
+Comment N/M — <one-line summary>
 ```
 
 Provide these options in the AskUserQuestion:
