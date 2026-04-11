@@ -457,25 +457,42 @@ Confirm with the user: "Ready to post these comments? [yes/edit more]"
 
 ## Phase 8: Post to GitHub
 
-### Step 8a: Determine review action
+### Step 8a: Generate review body from accepted comments
 
-The parsed report may include a `review_action` and `review_body`. Present them inside a single AskUserQuestion:
+Do NOT use the arbiter's original `review_body` directly. Instead, regenerate it based on the comments the user actually accepted in Phase 7:
+
+1. Take the list of **accepted** line comments from Phase 7 (rejected comments are excluded).
+2. Write a concise review body that summarizes only the accepted findings. Structure it as:
+   - One opening sentence with the overall assessment (e.g., "Well-structured PR that delivers the core requirements. N items to address:")
+   - A brief bullet for each accepted comment (file, line, one-line summary)
+   - A closing note if the verdict suggests approval with comments vs. requesting changes
+3. If no comments were accepted, use a short body appropriate to the action (e.g., "LGTM" for approve, or a brief summary for comment-only).
+
+Save the generated body as `REVIEW_BODY`.
+
+### Step 8b: Present review for confirmation
+
+Present the review body and action as rich text output, then use a minimal AskUserQuestion for the decision.
+
+**Rich text output:**
 
 ```
----
-
 ## Post Review
 
 **Suggested action:** <review_action>
 
 **Review body:**
-> <review_body>
+> <REVIEW_BODY>
+```
 
----
+**AskUserQuestion** (minimal):
+
+```
+Post review?
 ```
 
 Provide these options:
-- **Approve** (Recommended if verdict is APPROVE) — Post as APPROVE with suggested body
+- **Approve** (Recommended if verdict is APPROVE) — Post as APPROVE
 - **Comment only** — Post as COMMENT (no approval)
 - **Request Changes** — Post as REQUEST_CHANGES
 - **Skip** — Don't post anything to GitHub
@@ -483,13 +500,13 @@ Provide these options:
 And allow free-text input for replacement body text.
 
 Handle the response:
-- **Approve** (a, approve, ok, yes, option 1): use `APPROVE` with the suggested body
-- **Comment** (c, comment, option 2): use `COMMENT` with the suggested body
-- **Request Changes** (r, request, option 3): use `REQUEST_CHANGES` with the suggested body
-- **Skip** (skip, no, nothing, done, option 4): mark task 8 as completed and **stop** — do not post anything to GitHub
-- **Free text**: use it as the review body, then ask for the action
+- **Approve** (a, approve, ok, yes, option 1): use `APPROVE` with `REVIEW_BODY`
+- **Comment** (c, comment, option 2): use `COMMENT` with `REVIEW_BODY`
+- **Request Changes** (r, request, option 3): use `REQUEST_CHANGES` with `REVIEW_BODY`
+- **Skip** (skip, no, nothing, done, option 4): **stop** — do not post anything to GitHub
+- **Free text**: use the user's text as `REVIEW_BODY` (replacing the generated body entirely), then ask for the action
 
-### Step 8b: Get PR metadata for posting
+### Step 8c: Get PR metadata for posting
 
 Parse the PR reference from `$ARGUMENTS` to extract owner, repo, and number.
 
@@ -505,21 +522,21 @@ gh pr view <NUMBER> --repo <OWNER>/<REPO> --json files --jq '.files[].path'
 ```
 Save the result as the list of PR file paths.
 
-### Step 8c: Resolve comment paths
+### Step 8d: Resolve comment paths
 
 For each line comment, resolve its `path` against the PR file list:
 1. Try exact match first.
 2. If no exact match, try suffix match (the comment path might be relative while PR paths are from repo root, or vice versa). Use the longest suffix match.
 3. If still no match, warn the user and skip that comment.
 
-### Step 8d: Build and post the review
+### Step 8e: Build and post the review
 
 Build a JSON payload:
 ```json
 {
   "commit_id": "<COMMIT_SHA>",
   "event": "<EVENT>",
-  "body": "<review_body>",
+  "body": "<REVIEW_BODY>",
   "comments": [
     {
       "path": "<resolved_path>",
@@ -543,7 +560,7 @@ gh api repos/<OWNER>/<REPO>/pulls/<NUMBER>/reviews --input "$TMPFILE"
 rm "$TMPFILE"
 ```
 
-### Step 8e: Report result
+### Step 8f: Report result
 
 If the API call succeeds, report:
 ```
