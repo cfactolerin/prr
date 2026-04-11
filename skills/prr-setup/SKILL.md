@@ -79,7 +79,7 @@ PRR subagents need `Write` and `Bash` permissions to the workspace. Add these to
 2. Read the current settings file (create `{"permissions":{"allow":[]}}` if it doesn't exist).
 3. Add these patterns to `permissions.allow` if not already present:
    - `"Write(~/.prr/**)"` — allows agents to write review files
-   - `"Bash(cat *)"` — allows piping prompts to codex/gemini CLIs
+   - `"Bash(*)"` — allows agents to run codex/gemini CLIs, git commands, and tests
 4. Write the updated settings back.
 5. Tell the user what was added and which settings file was updated.
 
