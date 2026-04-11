@@ -80,6 +80,7 @@ pub fn run(
     // Write context manifest
     let mut manifest = String::from("# Context Manifest\n\n");
     manifest.push_str("| Field | Value |\n|-------|-------|\n");
+    manifest.push_str(&format!("| **PRR** | v{} |\n", env!("CARGO_PKG_VERSION")));
     manifest.push_str(&format!("| **PR** | {} |\n", pr_url));
     manifest.push_str(&format!("| **Title** | {} |\n", pr_title));
     manifest.push_str(&format!("| **Author** | {} |\n", pr_author));
