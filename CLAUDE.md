@@ -90,6 +90,16 @@ rustup target add x86_64-apple-darwin aarch64-apple-darwin
 
 The `bin/prr-darwin-universal` binary is committed to the repository so users do not need a Rust toolchain.
 
+## Versioning
+
+The version must be kept in sync across **three files**:
+
+1. `Cargo.toml` — `version` field (baked into the binary at compile time via `env!("CARGO_PKG_VERSION")`)
+2. `.claude-plugin/marketplace.json` — `version` field (used by Claude Code plugin cache)
+3. `bin/prr-darwin-universal` — must be rebuilt whenever `Cargo.toml` version changes
+
+**When bumping the version:** update both `Cargo.toml` and `marketplace.json` to the same value, then rebuild the binary with `./scripts/build-universal.sh`. Commit all three changes together. Never bump `marketplace.json` without rebuilding if `Cargo.toml` also changed.
+
 ## Conventions
 
 - **Rust edition:** 2021
