@@ -71,7 +71,19 @@ jira_api_token: <value>
 
 Omit jira fields if the user left them blank (do not write empty strings).
 
-### Step 4 — Confirm
+### Step 4 — Configure permissions
+
+PRR subagents need `Write` and `Bash` permissions to the workspace. Add these to the user's Claude Code settings so they're auto-approved during reviews.
+
+1. Determine the settings file path: use `$CLAUDE_CONFIG_DIR/settings.json` if `CLAUDE_CONFIG_DIR` is set, otherwise `~/.claude/settings.json`.
+2. Read the current settings file (create `{"permissions":{"allow":[]}}` if it doesn't exist).
+3. Add these patterns to `permissions.allow` if not already present:
+   - `"Write(~/.prr/**)"` — allows agents to write review files
+   - `"Bash(cat *)"` — allows piping prompts to codex/gemini CLIs
+4. Write the updated settings back.
+5. Tell the user what was added and which settings file was updated.
+
+### Step 5 — Confirm
 
 Read back `~/.prr/config.yml` and show the user a summary, then inform them:
 
