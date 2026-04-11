@@ -2,7 +2,7 @@
 name: prr-start
 description: Start an AI-powered PR review with parallel multi-agent review and arbiter synthesis. Takes a PR URL or owner/repo#N as argument.
 argument-hint: <pr-url-or-ref>
-allowed-tools: ["Bash(${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal *)", "Bash(gh *)", "Bash(git *)", "Bash(cat *)", Read, Write, Grep, Glob, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion]
+allowed-tools: ["Bash(*)", Read, Write, Grep, Glob, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion]
 ---
 
 # PRR Start — Full Review Workflow
