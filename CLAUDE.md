@@ -98,7 +98,14 @@ The version must be kept in sync across **three files**:
 2. `.claude-plugin/marketplace.json` — `version` field (used by Claude Code plugin cache)
 3. `bin/prr-darwin-universal` — must be rebuilt whenever `Cargo.toml` version changes
 
-**When bumping the version:** update both `Cargo.toml` and `marketplace.json` to the same value, then rebuild the binary with `./scripts/build-universal.sh`. Commit all three changes together. Never bump `marketplace.json` without rebuilding if `Cargo.toml` also changed.
+**Every change bumps the version.** No exceptions — even docs-only or skill-only changes get a bump.
+
+**Bump rules** (semver-ish, given current `0.x.y`):
+
+- **If the change touches the binary** (any file under `src/`, `Cargo.toml`/`Cargo.lock` dependencies, or anything that affects the compiled `prr` binary) → **bump the minor version, reset patch to 0** (e.g., `0.1.7` → `0.2.0`). Then rebuild the binary with `./scripts/build-universal.sh`.
+- **If the change does NOT touch the binary** (skills, agents, docs, CLAUDE.md, README, scripts that don't affect builds) → **bump the patch version** (e.g., `0.1.7` → `0.1.8`). No rebuild needed.
+
+**When bumping:** update both `Cargo.toml` and `marketplace.json` to the same value. If a binary rebuild is required, do it before committing. Commit all changed files together (Cargo.toml, marketplace.json, and the rebuilt binary if applicable). Never bump `marketplace.json` without bumping `Cargo.toml`, and never bump `Cargo.toml` without rebuilding the binary when the binary changed.
 
 ## Conventions
 
