@@ -472,7 +472,7 @@ Save the generated body as `REVIEW_BODY`.
 
 ### Step 8b: Present review for confirmation
 
-Present the review body and action as rich text output, then use a minimal AskUserQuestion for the decision.
+Present the review body and action as rich text output, then use a two-step AskUserQuestion flow: first pick the action, then optionally edit the body.
 
 **Rich text output:**
 
@@ -484,6 +484,8 @@ Present the review body and action as rich text output, then use a minimal AskUs
 **Review body:**
 > <REVIEW_BODY>
 ```
+
+#### Step 1 — Pick action
 
 **AskUserQuestion** (minimal):
 
@@ -497,14 +499,48 @@ Provide these options:
 - **Request Changes** — Post as REQUEST_CHANGES
 - **Skip** — Don't post anything to GitHub
 
-And allow free-text input for replacement body text.
+Handle the response:
+- **Approve** (a, approve, ok, yes, option 1): set `EVENT` to `APPROVE`, proceed to Step 2
+- **Comment** (c, comment, option 2): set `EVENT` to `COMMENT`, proceed to Step 2
+- **Request Changes** (r, request, option 3): set `EVENT` to `REQUEST_CHANGES`, proceed to Step 2
+- **Skip** (skip, no, nothing, done, option 4): **stop** — do not post anything to GitHub
+
+Do NOT accept free-text input here. If the user types something other than picking an option, re-ask the question. Body editing happens in Step 2, not here.
+
+#### Step 2 — Confirm or edit body
+
+Only run this step if the user picked Approve, Comment, or Request Changes in Step 1.
+
+**AskUserQuestion** (minimal):
+
+```
+Use this body, or edit it first?
+```
+
+Provide these options:
+- **Post as-is** — Use the generated body unchanged
+- **Edit body** — Provide replacement body text inline
 
 Handle the response:
-- **Approve** (a, approve, ok, yes, option 1): use `APPROVE` with `REVIEW_BODY`
-- **Comment** (c, comment, option 2): use `COMMENT` with `REVIEW_BODY`
-- **Request Changes** (r, request, option 3): use `REQUEST_CHANGES` with `REVIEW_BODY`
-- **Skip** (skip, no, nothing, done, option 4): **stop** — do not post anything to GitHub
-- **Free text**: use the user's text as `REVIEW_BODY` (replacing the generated body entirely), then ask for the action
+- **Post as-is** (a, as-is, keep, ok, option 1): keep `REVIEW_BODY` unchanged, proceed to Step 8c
+- **Edit body** (e, edit, option 2): prompt the user with:
+  > Paste or type the new review body. The original is shown above for reference.
+
+  Take the user's next message verbatim as the new `REVIEW_BODY`. Then show it once for confirmation as rich text:
+
+  ```
+  ## Updated Review Body
+
+  > <new REVIEW_BODY>
+
+  **Action:** <EVENT>
+
+  Posting now...
+  ```
+
+  Then proceed to Step 8c.
+
+Do not accept free-text input on the menu itself — the user must pick **Edit body** explicitly to enter edit mode.
 
 ### Step 8c: Get PR metadata for posting
 
