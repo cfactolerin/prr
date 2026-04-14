@@ -359,6 +359,14 @@ This outputs JSON to stdout. Parse it. The structure is:
       "line": 42,
       "url": "https://github.com/...",
       "body": "Fix null check"
+    },
+    {
+      "checked": true,
+      "path": "merge.rb",
+      "line": 601,
+      "start_line": 600,
+      "url": null,
+      "body": "Not serialized to XML"
     }
   ],
   "review_action": "Request Changes",
@@ -374,7 +382,7 @@ For each comment, present it in **two parts**: rich context as regular text outp
 
 #### Gathering context for each comment
 
-1. **Clickable link**: Use the `url` field from the parsed JSON. If `url` is present, display the file reference as a markdown link: `[path#L<line>](url)`. If `url` is null, display `path#L<line>` as plain text.
+1. **Clickable link**: Use the `url` field from the parsed JSON. If `start_line` is present, use `path#L<start_line>-L<line>` (range); otherwise use `path#L<line>`. If `url` is present, display as a markdown link: `[path#L<line>](url)`. If `url` is null, display as plain text.
 
 2. **Code context**: Read the file directly from `<ROUND_DIR>/repo/<path>`. Show ~5 lines before and after the target line. Use a **language-specific fenced code block** (e.g. ` ```ruby `, ` ```python `) for proper syntax highlighting. Do NOT add line number prefixes inside the code block — they break syntax highlighting. Instead, note the line range and target line in the **File:** line above the code block. Mark the target line with a trailing `# <--` comment. Example:
    ```ruby
@@ -577,11 +585,15 @@ Build a JSON payload:
     {
       "path": "<resolved_path>",
       "line": <line_number>,
+      "start_line": <start_line_or_omit>,
       "side": "RIGHT",
       "body": "<comment_body>"
     }
   ]
 }
+```
+
+For each comment: if `start_line` is present in the parsed JSON, include it in the payload (GitHub highlights the range). If `start_line` is absent, omit it (single-line comment).
 ```
 
 If there are no comments, omit the `comments` array (just post the review body with the event).

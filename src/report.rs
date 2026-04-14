@@ -15,6 +15,8 @@ pub struct LineComment {
     pub checked: bool,
     pub path: String,
     pub line: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_line: Option<u64>,
     pub url: Option<String>,
     pub body: String,
 }
@@ -104,10 +106,46 @@ fn extract_inline_field(content: &str, name: &str) -> Option<String> {
     Regex::new(&pattern).ok()?.captures(content).map(|c| c[1].trim().to_string())
 }
 
+/// Parse a line reference like "42", "600-601", or "610, 623" into (line, start_line).
+/// Returns (end_line, Some(start_line)) for ranges/multi, or (line, None) for single.
+/// Follows GitHub convention: `line` = end/last, `start_line` = beginning.
+fn parse_line_ref(s: &str) -> (u64, Option<u64>) {
+    let s = s.trim();
+
+    // Comma-separated: "610, 623"
+    if s.contains(',') {
+        let nums: Vec<u64> = s.split(',')
+            .filter_map(|p| p.trim().parse::<u64>().ok())
+            .collect();
+        if nums.len() >= 2 {
+            return (*nums.last().unwrap(), Some(nums[0]));
+        } else if nums.len() == 1 {
+            return (nums[0], None);
+        }
+    }
+
+    // Range: "600-601" or "600–601" (en-dash)
+    for sep in ['-', '\u{2013}'] {
+        if let Some((a, b)) = s.split_once(sep) {
+            if let (Ok(first), Ok(last)) = (a.trim().parse::<u64>(), b.trim().parse::<u64>()) {
+                return (last, Some(first));
+            }
+        }
+    }
+
+    // Single number
+    (s.parse::<u64>().unwrap_or(0), None)
+}
+
 fn extract_line_comments(content: &str) -> Vec<LineComment> {
+    // Line ref pattern: single (42), range (600-601), or comma-separated (610, 623)
+    let line_ref = r#"\d+(?:\s*[,\-–]\s*\d+)*"#;
+
     // New table format: | `path/to/file` | 42 | Description | MED |
+    //                   | `path/to/file` | 600-601 | Description | MED |
+    //                   | `path/to/file` | 610, 623 | Description | MED |
     let new_table_re = Regex::new(
-        r#"^\|\s*`([^`]+)`\s*\|\s*(\d+)\s*\|\s*(.+?)\s*\|\s*(\w+)\s*\|$"#
+        &format!(r#"^\|\s*`([^`]+)`\s*\|\s*({})\s*\|\s*(.+?)\s*\|\s*(\w+)\s*\|$"#, line_ref)
     ).unwrap();
 
     // Old table format: | [x] | [path#L42](url) | body |
@@ -115,8 +153,10 @@ fn extract_line_comments(content: &str) -> Vec<LineComment> {
         r#"^\|\s*\[([xX ])\]\s*\|\s*\[([^\]]+)\]\(([^)]+)\)\s*\|\s*(.+?)\s*\|$"#
     ).unwrap();
 
-    // Bullet format: - `path:42` — body
-    let bullet_re = Regex::new(r#"^-\s*`([^`]+?):(\d+)`\s*[—–\-]\s*(.+)$"#).unwrap();
+    // Bullet format: - `path:42` — body  or  - `path:600-601` — body
+    let bullet_re = Regex::new(
+        &format!(r#"^-\s*`([^`]+?):({})`\s*[—–\-]\s*(.+)$"#, line_ref)
+    ).unwrap();
 
     let path_line_re = Regex::new(r"(.+)#L(\d+)").unwrap();
 
@@ -137,10 +177,12 @@ fn extract_line_comments(content: &str) -> Vec<LineComment> {
 
         // Try new table format first
         if let Some(caps) = new_table_re.captures(line) {
+            let (line_num, start_line) = parse_line_ref(&caps[2]);
             comments.push(LineComment {
                 checked: true,
                 path: caps[1].to_string(),
-                line: caps[2].parse::<u64>().unwrap_or(0),
+                line: line_num,
+                start_line,
                 url: None,
                 body: caps[3].trim().to_string(),
             });
@@ -160,16 +202,19 @@ fn extract_line_comments(content: &str) -> Vec<LineComment> {
                 checked,
                 path,
                 line: line_num,
+                start_line: None,
                 url: Some(url),
                 body,
             });
         }
         // Try bullet format
         else if let Some(caps) = bullet_re.captures(line) {
+            let (line_num, start_line) = parse_line_ref(&caps[2]);
             comments.push(LineComment {
                 checked: true,
                 path: caps[1].to_string(),
-                line: caps[2].parse().unwrap_or(0),
+                line: line_num,
+                start_line,
                 url: None,
                 body: caps[3].trim().to_string(),
             });
@@ -292,6 +337,114 @@ mod tests {
         assert_eq!(report.line_comments[0].path, "delivery/lib/registries/base_registry.rb");
         assert_eq!(report.line_comments[0].line, 29);
         assert!(report.line_comments[0].body.contains("raise(KeyError)"));
+    }
+
+    // ── Multi-line reference tests ─────────────────────────────────────────
+
+    #[test]
+    fn test_parse_line_ref_single() {
+        assert_eq!(parse_line_ref("42"), (42, None));
+    }
+
+    #[test]
+    fn test_parse_line_ref_range() {
+        assert_eq!(parse_line_ref("600-601"), (601, Some(600)));
+        assert_eq!(parse_line_ref("14-16"), (16, Some(14)));
+        assert_eq!(parse_line_ref("604-628"), (628, Some(604)));
+    }
+
+    #[test]
+    fn test_parse_line_ref_comma_separated() {
+        assert_eq!(parse_line_ref("610, 623"), (623, Some(610)));
+        assert_eq!(parse_line_ref("607, 620"), (620, Some(607)));
+    }
+
+    #[test]
+    fn test_new_format_table_with_ranges() {
+        let content = r#"### Line Comments
+
+| File | Line | Issue | Severity |
+|------|------|-------|----------|
+| `merge.rb` | 610, 623 | role.name may return enum keys | HIGH |
+| `merge.rb` | 600-601 | product_contributors not serialized | MED |
+| `product_contributors_interface.rb` | 14-16 | Only NOT_FOUND rescued | MED |
+| `merge.rb` | 595 | release.id vs release.original_product_id | MED |
+| `transformation_utils.rb` | 144-145 | ipn/ipi added — verify XSD | MED |
+| `merge.rb` | 604-628 | No test coverage for expansion methods | MED |
+| `merge.rb` | 607, 620 | Defensive Entity.new guard | LOW |
+
+### Review Action
+"#;
+        let report = parse_report(content);
+        assert_eq!(report.line_comments.len(), 7);
+
+        // Comma-separated: 610, 623
+        assert_eq!(report.line_comments[0].path, "merge.rb");
+        assert_eq!(report.line_comments[0].line, 623);
+        assert_eq!(report.line_comments[0].start_line, Some(610));
+
+        // Range: 600-601
+        assert_eq!(report.line_comments[1].line, 601);
+        assert_eq!(report.line_comments[1].start_line, Some(600));
+
+        // Range: 14-16
+        assert_eq!(report.line_comments[2].line, 16);
+        assert_eq!(report.line_comments[2].start_line, Some(14));
+
+        // Single: 595
+        assert_eq!(report.line_comments[3].line, 595);
+        assert_eq!(report.line_comments[3].start_line, None);
+
+        // Range: 144-145
+        assert_eq!(report.line_comments[4].line, 145);
+        assert_eq!(report.line_comments[4].start_line, Some(144));
+
+        // Range: 604-628
+        assert_eq!(report.line_comments[5].line, 628);
+        assert_eq!(report.line_comments[5].start_line, Some(604));
+
+        // Comma-separated: 607, 620
+        assert_eq!(report.line_comments[6].line, 620);
+        assert_eq!(report.line_comments[6].start_line, Some(607));
+    }
+
+    #[test]
+    fn test_bullet_format_with_range() {
+        let content = "## Line Comments\n\n- `src/main.rs:600-601` — Fix serialization\n- `lib/foo.rb:42` — Single line\n";
+        let report = parse_report(content);
+        assert_eq!(report.line_comments.len(), 2);
+        assert_eq!(report.line_comments[0].path, "src/main.rs");
+        assert_eq!(report.line_comments[0].line, 601);
+        assert_eq!(report.line_comments[0].start_line, Some(600));
+        assert_eq!(report.line_comments[1].line, 42);
+        assert_eq!(report.line_comments[1].start_line, None);
+    }
+
+    #[test]
+    fn test_start_line_omitted_in_json_when_none() {
+        let content = r#"### Line Comments
+
+| File | Line | Issue | Severity |
+|------|------|-------|----------|
+| `src/main.rs` | 42 | Fix null check | HIGH |
+"#;
+        let report = parse_report(content);
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(!json.contains("start_line"), "start_line should be omitted when None");
+    }
+
+    #[test]
+    fn test_start_line_present_in_json_when_some() {
+        let content = r#"### Line Comments
+
+| File | Line | Issue | Severity |
+|------|------|-------|----------|
+| `merge.rb` | 600-601 | Fix serialization | MED |
+"#;
+        let report = parse_report(content);
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(json.contains("\"start_line\":600"), "start_line should be in JSON for ranges");
+        assert!(json.contains("\"line\":601"), "line should be the end of range");
     }
 
     // ── Old format backward compatibility ─────────────────────────────────

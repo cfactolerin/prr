@@ -1,6 +1,6 @@
 [package]
 name = "prr"
-version = "0.1.8"
+version = "0.2.0"
 edition = "2021"
 description = "AI-powered PR review — Rust binary for the PRR Claude Code plugin"
 
