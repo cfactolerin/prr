@@ -108,6 +108,33 @@ The version must be kept in sync across **four files**:
 
 **When bumping:** update `Cargo.toml`, `plugin.json`, and `marketplace.json` to the same value. If a binary rebuild is required, do it before committing. Commit all changed files together (Cargo.toml, plugin.json, marketplace.json, and the rebuilt binary if applicable). Never bump one version file without bumping all of them, and never bump `Cargo.toml` without rebuilding the binary when the binary changed.
 
+### Binary rebuild rule
+
+**The binary version is baked in at compile time.** `Cargo.toml` version changes have NO effect until the binary is rebuilt — the committed `bin/prr-darwin-universal` will keep reporting its old version forever if you forget. This has caused real bugs.
+
+**Before every commit, check:** did any file that affects the binary change in this commit? The list:
+
+- `src/**` — any Rust source file
+- `Cargo.toml` — version field OR dependency changes
+- `Cargo.lock` — transitive dependency updates
+
+If **any** of those changed → you **must** run `./scripts/build-universal.sh` and include the rebuilt `bin/prr-darwin-universal` in the same commit. No exceptions — do not commit source changes without the rebuilt binary.
+
+**Never do this:**
+```
+# WRONG: bumps version in metadata but ships a stale binary
+git add Cargo.toml .claude-plugin/plugin.json .claude-plugin/marketplace.json
+git commit -m "bump version"  # binary still reports old version!
+```
+
+**Always do this:**
+```
+# RIGHT: rebuild first, then commit everything together
+./scripts/build-universal.sh
+git add Cargo.toml .claude-plugin/plugin.json .claude-plugin/marketplace.json bin/prr-darwin-universal
+git commit -m "bump version and rebuild binary"
+```
+
 ## Conventions
 
 - **Rust edition:** 2021
