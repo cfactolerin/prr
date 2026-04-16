@@ -92,48 +92,36 @@ The `bin/prr-darwin-universal` binary is committed to the repository so users do
 
 ## Versioning
 
-The version must be kept in sync across **four files**:
+**Every commit bumps the version, rebuilds the binary, and syncs all version files.** No exceptions — even docs-only or skill-only changes. The binary bakes in its version at compile time, so bumping `Cargo.toml` without rebuilding produces a stale binary. This has caused real bugs — don't skip the rebuild.
 
-1. `Cargo.toml` — `version` field (baked into the binary at compile time via `env!("CARGO_PKG_VERSION")`)
-2. `.claude-plugin/plugin.json` — `version` field (used by Claude Code for installed plugin version)
-3. `.claude-plugin/marketplace.json` — `version` field (used by Claude Code plugin marketplace listing)
-4. `bin/prr-darwin-universal` — must be rebuilt whenever `Cargo.toml` version changes
+### Version files (all four must match)
 
-**Every change bumps the version.** No exceptions — even docs-only or skill-only changes get a bump.
+1. `Cargo.toml` — `version` field
+2. `.claude-plugin/plugin.json` — `version` field
+3. `.claude-plugin/marketplace.json` — `version` field
+4. `bin/prr-darwin-universal` — rebuilt from `Cargo.toml` version
 
-**Bump rules** (semver-ish, given current `0.x.y`):
+### Bump rules (semver-ish, given current `0.x.y`)
 
-- **If the change touches the binary** (any file under `src/`, `Cargo.toml`/`Cargo.lock` dependencies, or anything that affects the compiled `prr` binary) → **bump the minor version, reset patch to 0** (e.g., `0.1.7` → `0.2.0`). Then rebuild the binary with `./scripts/build-universal.sh`.
-- **If the change does NOT touch the binary** (skills, agents, docs, CLAUDE.md, README, scripts that don't affect builds) → **bump the patch version** (e.g., `0.1.7` → `0.1.8`). No rebuild needed.
+- **Binary-affecting changes** (files under `src/`, `Cargo.toml`/`Cargo.lock` deps) → bump **minor**, reset patch (e.g., `0.3.4` → `0.4.0`)
+- **Non-binary changes** (skills, agents, docs, CLAUDE.md, README) → bump **patch** (e.g., `0.3.4` → `0.3.5`)
 
-**When bumping:** update `Cargo.toml`, `plugin.json`, and `marketplace.json` to the same value. If a binary rebuild is required, do it before committing. Commit all changed files together (Cargo.toml, plugin.json, marketplace.json, and the rebuilt binary if applicable). Never bump one version file without bumping all of them, and never bump `Cargo.toml` without rebuilding the binary when the binary changed.
+### Commit procedure (every commit)
 
-### Binary rebuild rule
+```bash
+# 1. Bump version in all three metadata files
+#    Cargo.toml, .claude-plugin/plugin.json, .claude-plugin/marketplace.json
 
-**The binary version is baked in at compile time.** `Cargo.toml` version changes have NO effect until the binary is rebuilt — the committed `bin/prr-darwin-universal` will keep reporting its old version forever if you forget. This has caused real bugs.
-
-**Before every commit, check:** did any file that affects the binary change in this commit? The list:
-
-- `src/**` — any Rust source file
-- `Cargo.toml` — version field OR dependency changes
-- `Cargo.lock` — transitive dependency updates
-
-If **any** of those changed → you **must** run `./scripts/build-universal.sh` and include the rebuilt `bin/prr-darwin-universal` in the same commit. No exceptions — do not commit source changes without the rebuilt binary.
-
-**Never do this:**
-```
-# WRONG: bumps version in metadata but ships a stale binary
-git add Cargo.toml .claude-plugin/plugin.json .claude-plugin/marketplace.json
-git commit -m "bump version"  # binary still reports old version!
-```
-
-**Always do this:**
-```
-# RIGHT: rebuild first, then commit everything together
+# 2. ALWAYS rebuild the binary (even for docs-only changes)
 ./scripts/build-universal.sh
+
+# 3. Commit everything together
 git add Cargo.toml .claude-plugin/plugin.json .claude-plugin/marketplace.json bin/prr-darwin-universal
-git commit -m "bump version and rebuild binary"
+# ... plus whatever other files changed
+git commit -m "your message"
 ```
+
+**The rebuild is mandatory on every version bump.** There is no such thing as a "no rebuild needed" change — if you bump the version, you rebuild.
 
 ## Conventions
 
