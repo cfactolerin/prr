@@ -101,11 +101,17 @@ pub fn adf_children_text(node: &Value) -> String {
 // ── Confluence URL helpers ────────────────────────────────────────────────────
 
 /// Extract all Confluence page URLs from arbitrary text.
+/// Matches both standard URLs (`/wiki/spaces/…/pages/…`) and short links (`/wiki/x/…`).
 pub fn extract_confluence_urls(text: &str) -> Vec<String> {
-    let re = Regex::new(r"https?://[^/]*atlassian\.net/wiki/spaces/[^\s)\]]+").unwrap();
+    let re = Regex::new(r"https?://[^/]*atlassian\.net/wiki/(?:spaces/[^\s)\]]+|x/[^\s)\]]+)").unwrap();
     re.find_iter(text)
         .map(|m| m.as_str().to_string())
         .collect()
+}
+
+/// Returns true if the URL is a Confluence short link (`/wiki/x/…`).
+pub fn is_confluence_short_link(url: &str) -> bool {
+    url.contains("/wiki/x/")
 }
 
 /// Extract the numeric page ID from a Confluence URL.
@@ -356,10 +362,22 @@ impl JiraClient {
 
         let mut lines = String::new();
 
-        for url in urls {
-            let page_id = match extract_confluence_page_id(&url) {
-                Some(id) => id,
-                None => continue,
+        for url in &urls {
+            // Try to extract page ID directly; fall back to resolving short links
+            let page_id = if let Some(id) = extract_confluence_page_id(url) {
+                id
+            } else if is_confluence_short_link(url) {
+                match self.resolve_confluence_short_link(url) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        lines.push_str(&format!(
+                            "- {url} (failed to resolve short link: {e})\n"
+                        ));
+                        continue;
+                    }
+                }
+            } else {
+                continue;
             };
 
             match self.fetch_confluence_page(&page_id, &conf_dir) {
@@ -375,6 +393,27 @@ impl JiraClient {
         }
 
         Ok(lines)
+    }
+
+    /// Resolve a Confluence short link (`/wiki/x/…`) by following the redirect
+    /// and extracting the page ID from the final URL.
+    fn resolve_confluence_short_link(
+        &self,
+        short_url: &str,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        // Build a non-redirect-following client to capture the Location header,
+        // or just follow redirects and inspect the final URL.
+        let resp = self
+            .http
+            .get(short_url)
+            .header("Authorization", &self.auth_header)
+            .send()?;
+
+        let final_url = resp.url().to_string();
+
+        extract_confluence_page_id(&final_url).ok_or_else(|| {
+            format!("Could not extract page ID from resolved URL: {final_url}").into()
+        })
     }
 
     fn fetch_confluence_page(
@@ -603,5 +642,30 @@ mod tests {
     #[test]
     fn test_max_attachment_size() {
         assert_eq!(MAX_ATTACHMENT_SIZE, 10_000_000);
+    }
+
+    #[test]
+    fn test_detect_confluence_short_links() {
+        let text = "Full refinement: https://myco.atlassian.net/wiki/x/BQAWUgE";
+        let urls = extract_confluence_urls(text);
+        assert_eq!(urls.len(), 1);
+        assert!(urls[0].contains("/wiki/x/BQAWUgE"));
+    }
+
+    #[test]
+    fn test_detect_mixed_confluence_urls() {
+        let text = "See https://co.atlassian.net/wiki/spaces/ENG/pages/12345 and https://co.atlassian.net/wiki/x/AbCdEf for more";
+        let urls = extract_confluence_urls(text);
+        assert_eq!(urls.len(), 2);
+    }
+
+    #[test]
+    fn test_is_confluence_short_link() {
+        assert!(is_confluence_short_link(
+            "https://myco.atlassian.net/wiki/x/BQAWUgE"
+        ));
+        assert!(!is_confluence_short_link(
+            "https://myco.atlassian.net/wiki/spaces/ENG/pages/12345"
+        ));
     }
 }
