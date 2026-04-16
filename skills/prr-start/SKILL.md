@@ -113,7 +113,39 @@ Read `~/.prr/config.yml` and extract the `agents` list. This determines which ag
 
 Also read `gemini_model` (default: `gemini-2.5-flash`), `google_cloud_project` (default: `fuga-prod`), `google_cloud_location` (default: `europe-west4`), and `arbiter_rounds` (default: 3) for later use.
 
-### Step 4b: Build the review prompt
+### Step 4b: Preflight agent health check
+
+Before building the prompt or dispatching agents, verify that each external CLI agent is actually working. Run a quick smoke test for each non-claude agent in the list. **Run all checks in parallel** (single message, multiple Bash calls).
+
+#### Codex check (if "codex" is in the agents list)
+```bash
+echo "Say hello" | timeout 30 codex -a never exec -s read-only --ephemeral --color never -p "Reply with exactly: HELLO" 2>&1 | head -5
+```
+- **Pass:** output contains recognizable text (not an error/auth failure)
+- **Fail:** command errors, times out, or returns an auth/config error
+
+#### Gemini check (if "gemini" is in the agents list)
+```bash
+export GOOGLE_CLOUD_PROJECT="<GOOGLE_CLOUD_PROJECT>" GOOGLE_CLOUD_LOCATION="<GOOGLE_CLOUD_LOCATION>" && echo "Reply with exactly: HELLO" | timeout 30 gemini -p "" -m "<GEMINI_MODEL>" -o text --approval-mode yolo 2>&1 | head -5
+```
+- **Pass:** output contains recognizable text (not an error/auth failure)
+- **Fail:** command errors, times out, or returns an auth/config error
+
+**Claude does not need a health check** — it runs as a native Claude Code sub-agent and is always available.
+
+After all checks complete:
+1. Remove any failing agents from the active agents list for this run.
+2. Report the results to the user, e.g.:
+   > Agent health check:
+   > - claude: ok (native)
+   > - gemini: FAILED — `<first line of error>`
+   > - codex: ok
+   >
+   > Skipping gemini for this review.
+3. If **all** agents failed (and claude is not in the list), stop and tell the user no agents are available.
+4. Proceed with only the healthy agents.
+
+### Step 4c: Build the review prompt
 
 Run:
 ```
@@ -127,7 +159,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal prompt --review <ROUND_DIR> --tas
 
 The command writes the prompt to `<ROUND_DIR>/results/review-prompt.md` and prints its path to stdout.
 
-### Step 4c: Dispatch agents in parallel
+### Step 4d: Dispatch agents in parallel
 
 Set these path variables:
 - `PROMPT_PATH` = `<ROUND_DIR>/results/review-prompt.md`
@@ -184,7 +216,7 @@ Run this exact command:
 export GOOGLE_CLOUD_PROJECT="<GOOGLE_CLOUD_PROJECT>" GOOGLE_CLOUD_LOCATION="<GOOGLE_CLOUD_LOCATION>" && cat "<PROMPT_PATH>" | gemini -p "" -m "<GEMINI_MODEL>" -o text --approval-mode yolo --include-directories "<REPO_PATH>" > "<RESULTS_PATH>/gemini-review.md"
 ```
 
-### Step 4d: Wait and verify
+### Step 4e: Wait and verify
 
 After all agents complete, verify each expected output file exists and is non-empty:
 - `<RESULTS_PATH>/claude-review.md` (if claude was dispatched)
