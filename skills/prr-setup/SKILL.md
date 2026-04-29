@@ -22,6 +22,7 @@ Read `~/.prr/config.yml` if it exists. Note the current values — they will be 
 | `claude_timeout` | `600` |
 | `codex_timeout` | `900` |
 | `gemini_timeout` | `300` |
+| `opencode_timeout` | `900` |
 | `gemini_model` | `gemini-2.5-flash` |
 | `arbiter_rounds` | `3` |
 | `google_cloud_project` | `fuga-prod` |
@@ -37,7 +38,7 @@ Use the `AskUserQuestion` tool to ask for each of the following, **one at a time
 Ask in this order:
 
 1. **Workspace path** — "Where should PRR store cloned repos and review data?" (default: current `workspace_path`)
-2. **Agents** — "Which agents should run reviews? Options: claude, codex, gemini (comma-separated)" (default: current agents joined by comma)
+2. **Agents** — "Which agents should run reviews? Options: claude, codex, gemini, opencode (comma-separated)" (default: current agents joined by comma)
 3. **Google Cloud Project** — Only ask if "gemini" is in the agents list. "What is your Google Cloud project ID for Vertex AI?" (default: current `google_cloud_project`)
 4. **Google Cloud Location** — Only ask if "gemini" is in the agents list. "What is your Google Cloud location for Vertex AI?" (default: current `google_cloud_location`)
 5. **Jira base URL** — "What is your Jira base URL? (e.g. https://yourorg.atlassian.net) Leave blank to skip Jira integration." (default: current `jira_base_url`)
@@ -60,6 +61,7 @@ agents:
 claude_timeout: 600
 codex_timeout: 900
 gemini_timeout: 300
+opencode_timeout: 900
 gemini_model: gemini-2.5-flash
 arbiter_rounds: 3
 google_cloud_project: <value>
@@ -79,7 +81,7 @@ PRR subagents need `Write` and `Bash` permissions to the workspace. Add these to
 2. Read the current settings file (create `{"permissions":{"allow":[]}}` if it doesn't exist).
 3. Add these patterns to `permissions.allow` if not already present:
    - `"Write(~/.prr/**)"` — allows agents to write review files
-   - `"Bash(*)"` — allows agents to run codex/gemini CLIs, git commands, and tests
+   - `"Bash(*)"` — allows agents to run codex/gemini/opencode CLIs, git commands, and tests
 4. Write the updated settings back.
 5. Tell the user what was added and which settings file was updated.
 
@@ -90,3 +92,15 @@ Read back `~/.prr/config.yml` and show the user a summary, then inform them:
 > Config saved to `~/.prr/config.yml`. This file contains your workspace path, agent list, timeouts, and Jira credentials (including your API token in plaintext). Keep this file private — do not commit it to any repository.
 >
 > Review data (cloned repos, diffs, agent reviews, reports) is stored under your workspace path.
+
+### Step 6 — Agent CLI requirements (informational)
+
+If `opencode` is in the agents list, tell the user:
+
+> The `opencode` agent reads `OPENAI_API_KEY` from your shell environment — PRR does not store it. Make sure you have one of the following:
+> - `export OPENAI_API_KEY=sk-...` in your shell rc (e.g., `~/.zshrc`), or
+> - You have logged in with `opencode auth`.
+>
+> Without auth, the opencode reviewer will fail its health check and be skipped automatically.
+
+If `gemini` is in the agents list, the existing GOOGLE_CLOUD_PROJECT/LOCATION values in the config will be passed to the gemini CLI — no extra shell setup is required.

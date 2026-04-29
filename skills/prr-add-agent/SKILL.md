@@ -1,15 +1,15 @@
 ---
 name: prr-add-agent
-description: Add a review agent to the active agent list. Supported agents are claude, codex, and gemini.
+description: Add a review agent to the active agent list. Supported agents are claude, codex, gemini, and opencode.
 argument-hint: <agent-name>
-allowed-tools: ["Bash(${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal *)", "Bash(echo * | codex *)", "Bash(echo * | gemini *)", Read, AskUserQuestion]
+allowed-tools: ["Bash(${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal *)", "Bash(echo * | codex *)", "Bash(echo * | gemini *)", "Bash(printf * | opencode *)", Read, AskUserQuestion]
 ---
 
 # Add Agent
 
 Agent name: $ARGUMENTS
 
-Supported agents: `claude`, `codex`, `gemini`
+Supported agents: `claude`, `codex`, `gemini`, `opencode`
 
 ## Instructions
 
@@ -36,6 +36,14 @@ Read `~/.prr/config.yml` to get `gemini_model` (default: `gemini-2.5-flash`), th
 echo "Say hello" | gemini -p "" -m <model> -o text --approval-mode yolo
 ```
 
+**If agent is `opencode`:**
+Run:
+```bash
+printf 'Reply with exactly: HELLO\n' | timeout 30 opencode run --model openai/gpt-5.5 --format json | jq -r 'select(.type == "text") | .part.text'
+```
+
+opencode reads `OPENAI_API_KEY` from the environment. If the smoke test fails with an auth error, remind the user to either `export OPENAI_API_KEY=sk-...` in their shell rc or run `opencode auth`.
+
 ### Step 2: Handle smoke test result
 
 **If the smoke test succeeded** (exit code 0 and produced output):
@@ -46,6 +54,7 @@ Tell the user the agent CLI is not installed or not working. Provide install ins
 
 - **codex**: "Codex CLI is not installed. Install it with: `npm install -g @openai/codex`. Then try running `codex --version` to verify."
 - **gemini**: "Gemini CLI is not installed. Install it with: `npm install -g @anthropic-ai/gemini-cli`. Then try running `gemini --version` to verify."
+- **opencode**: "opencode CLI is not installed. Install it from https://opencode.ai or run `npm install -g opencode-ai`. Then try `opencode --version` to verify, and make sure `OPENAI_API_KEY` is exported in your shell."
 
 Ask the user if they want to proceed with adding the agent anyway (they may plan to install it later), or cancel.
 

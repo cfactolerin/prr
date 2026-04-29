@@ -26,11 +26,12 @@ When you have questions, output ONLY a JSON code block:
 {
   "claude": ["question 1"],
   "codex": [],
-  "gemini": ["question 1"]
+  "gemini": ["question 1"],
+  "opencode": []
 }
 ```
 
-Use empty arrays for agents with no questions.
+Only include keys for agents that actually produced a review. Use empty arrays for agents with no questions.
 
 **Only produce the final report** (in the exact format from the prompt) when:
 - All agents agree, OR

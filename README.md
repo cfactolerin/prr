@@ -1,6 +1,6 @@
 # PRR — AI-Powered PR Review Plugin
 
-PRR is a Claude Code plugin that runs parallel AI code reviews using Claude, Codex, and Gemini as independent reviewers, then synthesizes their findings through a Claude-powered arbiter that cross-examines each reviewer with follow-up questions before producing a final verdict, confidence score, and inline line comments ready to post to GitHub.
+PRR is a Claude Code plugin that runs parallel AI code reviews using Claude, Codex, Gemini, and opencode as independent reviewers, then synthesizes their findings through a Claude-powered arbiter that cross-examines each reviewer with follow-up questions before producing a final verdict, confidence score, and inline line comments ready to post to GitHub.
 
 ## Prerequisites
 
@@ -12,6 +12,7 @@ PRR is a Claude Code plugin that runs parallel AI code reviews using Claude, Cod
 **Optional (enable additional reviewers):**
 - [Codex CLI](https://github.com/openai/codex) — for the `codex` agent
 - [Gemini CLI](https://github.com/google-gemini/gemini-cli) — for the `gemini` agent
+- [opencode](https://opencode.ai) — for the `opencode` agent. Requires `OPENAI_API_KEY` exported in your shell (e.g., in `~/.zshrc`) or `opencode auth` to be configured. PRR does not store this key.
 
 ## Installation
 
@@ -40,14 +41,14 @@ Start a full review. PRR gathers context, runs all configured agents in parallel
 |---|---|
 | `/prr:setup` | First-time setup wizard — configures workspace, GitHub user, and Jira credentials |
 | `/prr:start <pr>` | Full review workflow: context, parallel agents, arbiter synthesis, comment posting |
-| `/prr:add-agent <name>` | Enable an agent (`claude`, `codex`, `gemini`) in your config |
+| `/prr:add-agent <name>` | Enable an agent (`claude`, `codex`, `gemini`, `opencode`) in your config |
 | `/prr:delete-agent <name>` | Remove an agent from your config |
 | `/prr:cleanup` | Remove workspace entries for merged or closed PRs |
 
 ## How It Works
 
 1. **Context gathering** — PRR clones the repo, checks out the PR branch, fetches the diff, and downloads any linked Jira ticket and Confluence pages into a local context directory.
-2. **Parallel review** — All configured agents (Claude, Codex, Gemini) receive the same review prompt and run simultaneously, each writing an independent `*-review.md` to the results directory.
+2. **Parallel review** — All configured agents (Claude, Codex, Gemini, opencode) receive the same review prompt and run simultaneously, each writing an independent `*-review.md` to the results directory.
 3. **Arbiter synthesis** — A Claude arbiter reads all reviews, asks targeted follow-up questions of individual agents (up to N configurable rounds), then produces a final report with a verdict, confidence level, and checked line comments.
 4. **Interactive investigation** — You can ask questions about findings, read code, run git blame, or trigger a re-review with additional guidance before proceeding.
 5. **Comment posting** — PRR presents each proposed line comment for your review (accept, edit, clarify, or reject), then posts the approved set as a GitHub PR review via `gh api`.
@@ -58,6 +59,7 @@ Add an agent:
 ```
 /prr:add-agent codex
 /prr:add-agent gemini
+/prr:add-agent opencode
 ```
 
 Remove an agent:
@@ -78,6 +80,7 @@ Config lives at `~/.prr/config.yml`. All keys are optional — defaults are show
 | `claude_timeout` | `600` | Seconds before Claude reviewer times out |
 | `codex_timeout` | `900` | Seconds before Codex reviewer times out |
 | `gemini_timeout` | `300` | Seconds before Gemini reviewer times out |
+| `opencode_timeout` | `900` | Seconds before opencode reviewer times out |
 | `gemini_model` | `gemini-2.5-flash` | Gemini model name passed to the CLI |
 | `arbiter_rounds` | `3` | Maximum Q&A rounds before the arbiter is forced to finalize |
 | `jira_base_url` | _(empty)_ | Your Jira instance URL (e.g. `https://yourorg.atlassian.net`) |

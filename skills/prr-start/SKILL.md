@@ -109,7 +109,7 @@ Phases 7 and 8 (line comment review, posting to GitHub) are interactive flows th
 
 ### Step 4a: Read config for active agents
 
-Read `~/.prr/config.yml` and extract the `agents` list. This determines which agents to dispatch. Common values: `["claude"]`, `["claude", "codex"]`, `["claude", "codex", "gemini"]`.
+Read `~/.prr/config.yml` and extract the `agents` list. This determines which agents to dispatch. Possible values: `claude`, `codex`, `gemini`, `opencode` — in any combination.
 
 Also read `gemini_model` (default: `gemini-2.5-flash`), `google_cloud_project` (default: `fuga-prod`), `google_cloud_location` (default: `europe-west4`), and `arbiter_rounds` (default: 3) for later use.
 
@@ -131,6 +131,16 @@ export GOOGLE_CLOUD_PROJECT="<GOOGLE_CLOUD_PROJECT>" GOOGLE_CLOUD_LOCATION="<GOO
 - **Pass:** output contains recognizable text (not an error/auth failure)
 - **Fail:** command errors, times out, or returns an auth/config error
 
+#### Opencode check (if "opencode" is in the agents list)
+```bash
+printf 'Reply with exactly: HELLO\n' | timeout 30 opencode run --model openai/gpt-5.5 --format json 2>&1 | jq -r 'select(.type == "text") | .part.text' | head -5
+```
+- **Pass:** output contains recognizable text (not an error/auth failure)
+- **Fail:** command errors, times out, or returns an auth error
+
+If opencode fails, also check whether `OPENAI_API_KEY` is set in the environment. If it is missing, tell the user:
+> opencode requires `OPENAI_API_KEY` to be exported in your shell (e.g., add `export OPENAI_API_KEY=sk-...` to `~/.zshrc`), or run `opencode auth` to authenticate. Skipping opencode for this review.
+
 **Claude does not need a health check** — it runs as a native Claude Code sub-agent and is always available.
 
 After all checks complete:
@@ -140,6 +150,7 @@ After all checks complete:
    > - claude: ok (native)
    > - gemini: FAILED — `<first line of error>`
    > - codex: ok
+   > - opencode: ok
    >
    > Skipping gemini for this review.
 3. If **all** agents failed (and claude is not in the list), stop and tell the user no agents are available.
@@ -216,12 +227,29 @@ Run this exact command:
 export GOOGLE_CLOUD_PROJECT="<GOOGLE_CLOUD_PROJECT>" GOOGLE_CLOUD_LOCATION="<GOOGLE_CLOUD_LOCATION>" && cat "<PROMPT_PATH>" | gemini -p "" -m "<GEMINI_MODEL>" -o text --approval-mode yolo --include-directories "<REPO_PATH>" > "<RESULTS_PATH>/gemini-review.md"
 ```
 
+#### Opencode agent (if "opencode" is in the agents list)
+
+Dispatch with agent definition: `opencode-reviewer`
+
+Instructions to pass:
+```
+Run the opencode CLI to review this PR. Here are your paths:
+- Review prompt: <PROMPT_PATH>
+- Cloned repo: <REPO_PATH>
+- Results directory: <RESULTS_PATH>
+- Write output to: <RESULTS_PATH>/opencode-review.md
+
+Run this exact command:
+cat "<PROMPT_PATH>" | opencode run --model openai/gpt-5.5 --dir "<REPO_PATH>" --format json --dangerously-skip-permissions | jq -r 'select(.type == "text") | .part.text' > "<RESULTS_PATH>/opencode-review.md"
+```
+
 ### Step 4e: Wait and verify
 
 After all agents complete, verify each expected output file exists and is non-empty:
 - `<RESULTS_PATH>/claude-review.md` (if claude was dispatched)
 - `<RESULTS_PATH>/codex-review.md` (if codex was dispatched)
 - `<RESULTS_PATH>/gemini-review.md` (if gemini was dispatched)
+- `<RESULTS_PATH>/opencode-review.md` (if opencode was dispatched)
 
 If any agent failed (empty or missing output), report the failure to the user but continue with whatever reviews succeeded. At least one review must succeed to proceed.
 
@@ -265,7 +293,7 @@ After the arbiter completes, read `<ROUND_DIR>/results/arbiter-output.md`.
 
 **Determine if it contains questions or a final report:**
 
-Search the output for a fenced JSON code block (` ```json `) whose content is an object with agent name keys (e.g., `"claude"`, `"codex"`, `"gemini"`). Each key maps to an array of question strings.
+Search the output for a fenced JSON code block (` ```json `) whose content is an object with agent name keys (e.g., `"claude"`, `"codex"`, `"gemini"`, `"opencode"`). Each key maps to an array of question strings.
 
 **If questions are found:**
 
@@ -274,7 +302,8 @@ Search the output for a fenced JSON code block (` ```json `) whose content is an
    {
      "claude": ["What about the race condition on line 42?"],
      "codex": [],
-     "gemini": ["Did you verify the SQL injection fix?"]
+     "gemini": ["Did you verify the SQL injection fix?"],
+     "opencode": []
    }
    ```
 
@@ -294,6 +323,10 @@ Search the output for a fenced JSON code block (` ```json `) whose content is an
      ```
      Note: use `-s read-only` for Q&A (not `workspace-write`).
    - For **gemini**: dispatch `gemini-reviewer` with the question prompt piped to gemini, output to the answer path.
+   - For **opencode**: dispatch `opencode-reviewer` with instructions to run:
+     ```
+     cat "<question_prompt_path>" | opencode run --model openai/gpt-5.5 --dir "<REPO_PATH>" --format json --dangerously-skip-permissions | jq -r 'select(.type == "text") | .part.text' > "<answer_path>"
+     ```
 
    Dispatch all agent answers in parallel.
 

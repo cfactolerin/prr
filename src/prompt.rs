@@ -264,7 +264,7 @@ fn parse_tasks(tasks_json: Option<&str>) -> String {
 ///
 /// Looks for `*-review.md` files and builds a concatenated section.
 fn collect_reviews(results: &Path) -> String {
-    let known_agents = ["claude", "codex", "gemini"];
+    let known_agents = ["claude", "codex", "gemini", "opencode"];
     let mut out = String::new();
     for agent in &known_agents {
         let path = results.join(format!("{agent}-review.md"));
@@ -315,7 +315,7 @@ fn collect_round_history(results: &Path) -> String {
     let mut round = 1u32;
     loop {
         let mut found_any = false;
-        for agent in &["claude", "codex", "gemini"] {
+        for agent in &["claude", "codex", "gemini", "opencode"] {
             let q_path = results.join(format!("round-{round}-{agent}-question.md"));
             let a_path = results.join(format!("round-{round}-{agent}-answer.md"));
             if q_path.exists() || a_path.exists() {

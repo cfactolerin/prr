@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-pub const KNOWN_AGENTS: &[&str] = &["claude", "codex", "gemini"];
+pub const KNOWN_AGENTS: &[&str] = &["claude", "codex", "gemini", "opencode"];
 
 // ── default helpers for serde ──────────────────────────────────────────────
 
@@ -23,6 +23,10 @@ fn default_codex_timeout() -> u64 {
 
 fn default_gemini_timeout() -> u64 {
     300
+}
+
+fn default_opencode_timeout() -> u64 {
+    900
 }
 
 fn default_gemini_model() -> String {
@@ -64,6 +68,9 @@ pub struct Config {
     #[serde(default = "default_gemini_timeout")]
     pub gemini_timeout: u64,
 
+    #[serde(default = "default_opencode_timeout")]
+    pub opencode_timeout: u64,
+
     #[serde(default = "default_gemini_model")]
     pub gemini_model: String,
 
@@ -94,6 +101,7 @@ impl Default for Config {
             claude_timeout: default_claude_timeout(),
             codex_timeout: default_codex_timeout(),
             gemini_timeout: default_gemini_timeout(),
+            opencode_timeout: default_opencode_timeout(),
             gemini_model: default_gemini_model(),
             arbiter_rounds: default_arbiter_rounds(),
             google_cloud_project: default_google_cloud_project(),
@@ -157,6 +165,7 @@ impl Config {
             "claude" => self.claude_timeout,
             "codex" => self.codex_timeout,
             "gemini" => self.gemini_timeout,
+            "opencode" => self.opencode_timeout,
             _ => self.claude_timeout, // default fallback
         }
     }
@@ -231,6 +240,7 @@ mod tests {
         assert_eq!(cfg.claude_timeout, 600);
         assert_eq!(cfg.codex_timeout, 900);
         assert_eq!(cfg.gemini_timeout, 300);
+        assert_eq!(cfg.opencode_timeout, 900);
         assert_eq!(cfg.gemini_model, "gemini-2.5-flash");
         assert_eq!(cfg.arbiter_rounds, 3);
     }
@@ -251,7 +261,15 @@ mod tests {
         assert_eq!(cfg.agent_timeout("claude"), 600);
         assert_eq!(cfg.agent_timeout("codex"), 900);
         assert_eq!(cfg.agent_timeout("gemini"), 300);
+        assert_eq!(cfg.agent_timeout("opencode"), 900);
         assert_eq!(cfg.agent_timeout("unknown"), 600);
+    }
+
+    #[test]
+    fn test_add_opencode_agent() {
+        let mut cfg = Config::default();
+        assert!(cfg.add_agent("opencode").is_ok());
+        assert_eq!(cfg.agents, vec!["claude", "opencode"]);
     }
 
     #[test]
