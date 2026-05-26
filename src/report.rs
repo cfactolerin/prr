@@ -83,14 +83,44 @@ pub fn parse_report(content: &str) -> ParsedReport {
     let review_body = extract_review_body(content)
         .or_else(|| extract_verdict_body(content));
 
+    let findings = parse_findings_section(content);
+    let line_comments = if findings.is_empty() {
+        // Legacy fallback: no Findings section, use the old Line Comments
+        // table. Synthesis of Findings from legacy comments lands in Task 7.
+        extract_line_comments(content)
+    } else {
+        derive_line_comments(&findings)
+    };
+
     ParsedReport {
         verdict,
         confidence,
-        findings: Vec::new(),
-        line_comments: extract_line_comments(content),
+        findings,
+        line_comments,
         review_action,
         review_body,
     }
+}
+
+/// Build a LineComment for each diff-anchored Finding.
+/// Findings with anchor == Reference or None are excluded — they
+/// can't be posted as inline GitHub comments.
+fn derive_line_comments(findings: &[Finding]) -> Vec<LineComment> {
+    findings.iter()
+        .filter(|f| f.anchor == Anchor::Diff)
+        .filter_map(|f| {
+            let path = f.path.clone()?;
+            let line = f.line?;
+            Some(LineComment {
+                checked: true,
+                path,
+                line,
+                start_line: f.start_line,
+                url: None,
+                body: f.suggested_comment.clone(),
+            })
+        })
+        .collect()
 }
 
 /// Extract the first non-empty, non-heading line after a `## Heading` or `### Heading`.
@@ -1075,5 +1105,45 @@ REQUEST_CHANGES
 "#;
         let findings = parse_findings_section(content);
         assert_eq!(findings.len(), 0);
+    }
+
+    #[test]
+    fn test_line_comments_derived_from_diff_anchored_only() {
+        let content = r#"## Findings
+
+### Trigger: Code Change
+
+#### F-01 — Inline-able
+
+- **Severity:** HIGH
+- **Anchor:** diff
+- **Location:** `src/main.rs:42`
+- **Why this matters:** w1
+- **Suggested comment:** Body 1
+- **Suggested fix:** f1
+
+#### F-02 — Reference-anchored
+
+- **Severity:** MED
+- **Anchor:** reference
+- **Location:** `lib/foo.rb:10`
+- **Why this matters:** w2
+- **Suggested comment:** Body 2
+- **Suggested fix:** f2
+
+#### F-03 — Cross-cutting
+
+- **Severity:** LOW
+- **Anchor:** none
+- **Why this matters:** w3
+- **Suggested comment:** Body 3
+- **Suggested fix:** f3
+"#;
+        let report = parse_report(content);
+        assert_eq!(report.findings.len(), 3);
+        assert_eq!(report.line_comments.len(), 1);
+        assert_eq!(report.line_comments[0].path, "src/main.rs");
+        assert_eq!(report.line_comments[0].line, 42);
+        assert_eq!(report.line_comments[0].body, "Body 1");
     }
 }
