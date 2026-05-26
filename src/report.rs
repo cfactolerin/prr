@@ -702,6 +702,50 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_finding_headings_h3_findings() {
+        // Final-report variant: heading levels shift by one
+        // (### Findings → #### Trigger → ##### F-NN).
+        let content = r#"## Final Report
+
+### Verdict
+
+REQUEST_CHANGES
+
+### Findings
+
+#### Trigger: Acceptance Criteria
+
+##### F-01 — AC violation
+
+- **Severity:** HIGH
+- **Anchor:** reference
+- **Location:** `lib/foo.rb:10`
+- **Why this matters:** w
+- **Suggested comment:** c
+- **Suggested fix:** f
+
+#### Trigger: Code Change
+
+##### F-02 — Suspicious diff
+
+- **Severity:** MED
+- **Anchor:** diff
+- **Location:** `src/main.rs:5`
+- **Why this matters:** w
+- **Suggested comment:** c
+- **Suggested fix:** f
+
+### Review Action
+"#;
+        let findings = parse_findings_section(content);
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0].id, "F-01");
+        assert_eq!(findings[0].trigger, "Acceptance Criteria");
+        assert_eq!(findings[1].id, "F-02");
+        assert_eq!(findings[1].trigger, "Code Change");
+    }
+
+    #[test]
     fn test_finding_serializes_anchor_lowercase() {
         let finding = Finding {
             id: "F-01".into(),
