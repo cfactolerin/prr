@@ -207,9 +207,6 @@ side effects on other services/repos.
 Convention violations, linting issues, AI slop detected (unnecessary abstractions,
 over-engineering, dead code, suspiciously generic patterns).
 
-## Missing Things
-Error handling, tests, logging, migrations, documentation gaps.
-
 ## Logic Issues
 Wrong conditions, edge cases, off-by-one, race conditions.
 
@@ -222,12 +219,23 @@ Leaks, unbounded growth, unclosed resources.
 ## Hallucination Check
 APIs, methods, gems, or library calls that don't exist in the project or dependencies.
 
-## Proof of Findings
-Test files or debug output created by agents, with paths and explanation.
+## Findings
 
-## Line Comments
-- `path/to/file.rb:42` — Description of issue
-- `path/to/file.rb:108` — Description of issue
+All reviewer output and the final report use a single **Findings** section grouped by **Trigger** (Acceptance Criteria / Code Change / Code Quality / Logic Bug / Security / Performance / Missing Test / Missing Doc / Error Handling).
+
+Each finding carries:
+
+- `Trigger` — classification (one of the 8 above)
+- `Severity` — HIGH | MED | LOW
+- `Anchor` — `diff` (postable inline), `reference` (anchored on unchanged code, report-only), or `none` (cross-cutting)
+- `Location` — `path:line` or `path:start-end` (required unless Anchor is `none`)
+- `Why this matters`
+- `Suggested comment`
+- `Suggested fix`
+
+The parser at `src/report.rs` derives the GitHub-postable `line_comments` array from findings whose `Anchor` is `diff` only. Findings with `Anchor: reference` or `Anchor: none` are summarized in the regenerated review body but never posted as inline comments.
+
+See `references/report-format.md` for the full output format and `docs/superpowers/specs/2026-05-21-trigger-based-findings-design.md` for the design.
 
 ## Open Questions
 Things that need human judgment. Each question includes enough context
