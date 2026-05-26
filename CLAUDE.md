@@ -133,6 +133,37 @@ git commit -m "your message"
 - **Skills reference the binary** via `${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal` — never hardcode paths
 - **Agent timeout fallback:** unknown agent names fall back to `claude_timeout`
 
+## Findings Format
+
+PRR reviews produce structured findings classified by `Trigger`. Every finding carries six fields (Severity, Anchor, Location, Why this matters, Suggested comment, Suggested fix) and is grouped under one of 8 Triggers:
+
+`Acceptance Criteria` · `Code Change` · `Code Quality` · `Logic Bug` · `Security` · `Performance` · `Missing Test` · `Missing Doc / Error Handling`
+
+**Trigger mapping (the closed list):**
+
+| Symptom | Trigger |
+|---------|---------|
+| Diff violates ticket AC (or unchanged code that AC requires violates it) | `Acceptance Criteria` |
+| Off-by-one, race condition, wrong assumption, wrong transformation | `Logic Bug` |
+| Injection / auth bypass / secret leak / unsafe deserialization | `Security` |
+| Memory leak, unbounded growth, missing cleanup, slow query, expensive loop | `Performance` |
+| Naming / duplication / readability / structural | `Code Quality` |
+| New behaviour without test | `Missing Test` |
+| New behaviour without docs / error handling | `Missing Doc / Error Handling` |
+| Suspicious but fits none of the above (catch-all of last resort) | `Code Change` |
+
+**Required bullets per finding:** `Severity`, `Anchor`, `Why this matters`, `Suggested comment`, `Suggested fix`. `Location` is required when `Anchor` is `diff` or `reference`; omitted when `none`.
+
+**Postability classification (the `Anchor` field):**
+
+- `diff` — Location is on a line in the unified diff. Posted as an inline GitHub PR comment.
+- `reference` — Location is on an unchanged line (the AC requires it, or the diff relies on it). Summarized in the review body; not posted inline.
+- `none` — Cross-cutting finding with no anchor line. Summarized in the review body; not posted inline.
+
+**Scope rule:** a finding may appear in a report only if it is caused/exposed by the diff or required by the ticket AC. Drop anything else.
+
+Authoritative shape: `references/report-format.md`. Design: `docs/superpowers/specs/2026-05-21-trigger-based-findings-design.md`.
+
 ## Adding a New Agent
 
 1. **Add the agent name** to `KNOWN_AGENTS` in `src/config.rs`.
