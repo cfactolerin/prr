@@ -571,18 +571,32 @@ Confirm: "Ready to post? [yes / edit more]"
 
 ## Phase 8: Post to GitHub
 
-### Step 8a: Generate review body from accepted comments
+### Step 8a: Generate review body from accepted findings
 
-Do NOT use the arbiter's original `review_body` directly. Instead, regenerate it based on the comments the user actually accepted in Phase 7:
+Do NOT use the arbiter's original `review_body` directly. Regenerate based on the CommentState list from Phase 7.
 
-1. Take the list of **accepted** line comments from Phase 7 (rejected comments are excluded).
-2. Write a concise review body that summarizes only the accepted findings. Structure it as:
-   - One opening sentence with the overall assessment (e.g., "Well-structured PR that delivers the core requirements. N items to address:")
-   - A brief bullet for each accepted comment (file, line, one-line summary)
-   - A closing note if the verdict suggests approval with comments vs. requesting changes
-3. If no comments were accepted, use a short body appropriate to the action (e.g., "LGTM" for approve, or a brief summary for comment-only).
+1. Partition Accepted + Edited entries into two groups:
+   - `inline = findings with anchor == "diff"`
+   - `other  = findings with anchor == "reference" or "none"`
+2. Build the body:
 
-Save the generated body as `REVIEW_BODY`.
+   ```
+   <one opening sentence with overall assessment>
+
+   **Inline comments (P):**
+   - `path:line` — <Trigger> — <one-line summary from suggested_comment or overridden_body>
+   - ...
+
+   **Other findings (Q):**
+   - `path:line` (or "(no anchor)") — <Trigger> — <one-line summary>
+   - ...
+   ```
+
+3. Omit either section if its list is empty. If both lists are empty, use a short body appropriate to the action (e.g., "LGTM" for APPROVE, "No actionable findings." for COMMENT).
+
+Save as `REVIEW_BODY`.
+
+The GitHub payload (Step 8e) builds `comments[]` from the `inline` group only — the `other` group is captured in the review body and never sent as inline comments.
 
 ### Step 8b: Present review for confirmation
 
