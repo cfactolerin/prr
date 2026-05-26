@@ -315,11 +315,74 @@ fn find_findings_section(content: &str) -> Option<(usize, u32)> {
 /// Top-level: parse the Findings section and return its findings.
 /// Returns an empty Vec if no Findings section is present.
 pub fn parse_findings_section(content: &str) -> Vec<Finding> {
-    let Some((_start, _level)) = find_findings_section(content) else {
+    let Some((start, level)) = find_findings_section(content) else {
         return Vec::new();
     };
-    // Population happens in Task 3+.
-    Vec::new()
+    let body = &content[start..];
+
+    let trigger_level = level + 1;
+    let finding_level = level + 2;
+
+    let trigger_re = Regex::new(&format!(
+        r"(?m)^{}\s+Trigger:\s*(.+?)\s*$",
+        "#".repeat(trigger_level as usize)
+    )).unwrap();
+    let finding_re = Regex::new(&format!(
+        r"(?m)^{}\s+(F-\d+)\s+[—\-]\s+(.+?)\s*$",
+        "#".repeat(finding_level as usize)
+    )).unwrap();
+    // Stop at any heading at the Findings level or shallower.
+    let stop_re = Regex::new(&format!(
+        r"(?m)^#{{1,{}}}\s+",
+        level
+    )).unwrap();
+
+    let search_end = stop_re.find(body).map(|m| m.start()).unwrap_or(body.len());
+    let scope = &body[..search_end];
+
+    // Collect Trigger and Finding heading positions, interleaved.
+    let mut events: Vec<(usize, &str)> = Vec::new();
+    for m in trigger_re.captures_iter(scope) {
+        events.push((m.get(0).unwrap().start(), "T"));
+    }
+    for m in finding_re.captures_iter(scope) {
+        events.push((m.get(0).unwrap().start(), "F"));
+    }
+    events.sort_by_key(|&(p, _)| p);
+
+    let mut findings = Vec::new();
+    let mut current_trigger: Option<String> = None;
+    for (start_idx, kind) in events {
+        let line_end = scope[start_idx..].find('\n')
+            .map(|i| start_idx + i)
+            .unwrap_or(scope.len());
+        let line = &scope[start_idx..line_end];
+        if kind == "T" {
+            let caps = trigger_re.captures(line).unwrap();
+            current_trigger = Some(caps[1].to_string());
+        } else {
+            let caps = finding_re.captures(line).unwrap();
+            let Some(trigger) = current_trigger.clone() else {
+                continue; // orphan finding heading — skip
+            };
+            findings.push(Finding {
+                id: caps[1].to_string(),
+                title: caps[2].to_string(),
+                trigger,
+                severity: String::new(),
+                anchor: Anchor::None,
+                location: None,
+                path: None,
+                line: None,
+                start_line: None,
+                why_it_matters: String::new(),
+                suggested_comment: String::new(),
+                suggested_fix: String::new(),
+                from_legacy: false,
+            });
+        }
+    }
+    findings
 }
 
 pub fn parse_and_print(report_path: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -602,6 +665,40 @@ mod tests {
         let content = "## Verdict\n\nAPPROVE\n";
         let findings = parse_findings_section(content);
         assert_eq!(findings.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_finding_headings() {
+        let content = r#"## Findings
+
+### Trigger: Code Change
+
+#### F-01 — First finding
+
+- **Severity:** HIGH
+- **Anchor:** diff
+- **Location:** `src/main.rs:42`
+- **Why this matters:** It matters.
+- **Suggested comment:** Comment text.
+- **Suggested fix:** Fix it.
+
+### Trigger: Security
+
+#### F-02 — Second finding
+
+- **Severity:** MED
+- **Anchor:** none
+- **Why this matters:** Also matters.
+- **Suggested comment:** Other comment.
+- **Suggested fix:** Other fix.
+"#;
+        let findings = parse_findings_section(content);
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0].id, "F-01");
+        assert_eq!(findings[0].title, "First finding");
+        assert_eq!(findings[0].trigger, "Code Change");
+        assert_eq!(findings[1].id, "F-02");
+        assert_eq!(findings[1].trigger, "Security");
     }
 
     #[test]
