@@ -301,6 +301,27 @@ fn extract_review_body(content: &str) -> Option<String> {
     }
 }
 
+/// Find the Findings section heading and its level.
+/// Returns (start_byte_after_heading, heading_level) where heading_level
+/// is 2 or 3. `None` if no Findings section.
+fn find_findings_section(content: &str) -> Option<(usize, u32)> {
+    let re = Regex::new(r"(?m)^(##|###)\s+Findings\s*$").ok()?;
+    let m = re.captures(content)?;
+    let level = m.get(1).unwrap().as_str().len() as u32;
+    let end = m.get(0).unwrap().end();
+    Some((end, level))
+}
+
+/// Top-level: parse the Findings section and return its findings.
+/// Returns an empty Vec if no Findings section is present.
+pub fn parse_findings_section(content: &str) -> Vec<Finding> {
+    let Some((_start, _level)) = find_findings_section(content) else {
+        return Vec::new();
+    };
+    // Population happens in Task 3+.
+    Vec::new()
+}
+
 pub fn parse_and_print(report_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let content = std::fs::read_to_string(report_path)?;
     let report = parse_report(&content);
@@ -558,6 +579,29 @@ mod tests {
         let json = serde_json::to_string(&report).unwrap();
         assert!(json.contains("APPROVE"));
         assert!(json.contains("HIGH"));
+    }
+
+    // ── Findings section tests ────────────────────────────────────────
+
+    #[test]
+    fn test_locate_findings_section_h3() {
+        let content = "## Final Report\n\n### Verdict\n\nAPPROVE\n\n### Findings\n\n#### Trigger: Code Change\n";
+        let findings = parse_findings_section(content);
+        assert_eq!(findings.len(), 0); // section located but no finding bodies yet
+    }
+
+    #[test]
+    fn test_locate_findings_section_h2() {
+        let content = "## Verdict\n\nAPPROVE\n\n## Findings\n\n### Trigger: Code Change\n";
+        let findings = parse_findings_section(content);
+        assert_eq!(findings.len(), 0);
+    }
+
+    #[test]
+    fn test_no_findings_section_returns_empty() {
+        let content = "## Verdict\n\nAPPROVE\n";
+        let findings = parse_findings_section(content);
+        assert_eq!(findings.len(), 0);
     }
 
     #[test]
