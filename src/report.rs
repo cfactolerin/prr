@@ -372,6 +372,48 @@ fn parse_location(loc: &str) -> Option<(String, u64, Option<u64>)> {
     Some((path.to_string(), end, start))
 }
 
+const KNOWN_TRIGGERS: &[&str] = &[
+    "Acceptance Criteria",
+    "Code Change",
+    "Code Quality",
+    "Logic Bug",
+    "Security",
+    "Performance",
+    "Missing Test",
+    "Missing Doc / Error Handling",
+];
+
+fn validate_finding(f: &Finding) -> Result<(), String> {
+    if !KNOWN_TRIGGERS.iter().any(|t| t.eq_ignore_ascii_case(&f.trigger)) {
+        return Err(format!("unknown Trigger '{}'", f.trigger));
+    }
+    if f.severity.is_empty() {
+        return Err("missing Severity".into());
+    }
+    if f.why_it_matters.is_empty() {
+        return Err("missing 'Why this matters'".into());
+    }
+    if f.suggested_comment.is_empty() {
+        return Err("missing 'Suggested comment'".into());
+    }
+    if f.suggested_fix.is_empty() {
+        return Err("missing 'Suggested fix'".into());
+    }
+    match f.anchor {
+        Anchor::Diff | Anchor::Reference => {
+            if f.location.is_none() {
+                return Err(format!("Anchor: {:?} requires a Location", f.anchor));
+            }
+        }
+        Anchor::None => {
+            if f.location.is_some() {
+                return Err("Anchor: none must not have a Location".into());
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Top-level: parse the Findings section and return its findings.
 /// Returns an empty Vec if no Findings section is present.
 pub fn parse_findings_section(content: &str) -> Vec<Finding> {
@@ -436,7 +478,16 @@ pub fn parse_findings_section(content: &str) -> Vec<Finding> {
 
             let severity = bullets.get("severity").cloned().unwrap_or_default();
             let anchor_str = bullets.get("anchor").cloned().unwrap_or_default();
-            let anchor = parse_anchor(&anchor_str).unwrap_or(Anchor::None);
+            let anchor = match parse_anchor(&anchor_str) {
+                Some(a) => a,
+                None => {
+                    eprintln!(
+                        "warning: skipping finding {} — unknown Anchor '{}'",
+                        &caps[1], anchor_str
+                    );
+                    continue;
+                }
+            };
             let location = bullets.get("location")
                 .map(|s| s.trim().trim_matches('`').to_string());
             let why = bullets.get("why this matters").cloned().unwrap_or_default();
@@ -448,7 +499,7 @@ pub fn parse_findings_section(content: &str) -> Vec<Finding> {
                 .map(|(p, l, s)| (Some(p), Some(l), s))
                 .unwrap_or((None, None, None));
 
-            findings.push(Finding {
+            let finding = Finding {
                 id: caps[1].to_string(),
                 title: caps[2].to_string(),
                 trigger,
@@ -462,7 +513,15 @@ pub fn parse_findings_section(content: &str) -> Vec<Finding> {
                 suggested_comment: sc,
                 suggested_fix: sf,
                 from_legacy: false,
-            });
+            };
+
+            match validate_finding(&finding) {
+                Ok(()) => findings.push(finding),
+                Err(msg) => eprintln!(
+                    "warning: skipping finding {} ({}): {}",
+                    finding.id, finding.title, msg
+                ),
+            }
         }
     }
     findings
@@ -901,5 +960,120 @@ REQUEST_CHANGES
         let json = serde_json::to_string(&finding).unwrap();
         assert!(json.contains("\"anchor\":\"diff\""), "json was: {json}");
         assert!(!json.contains("from_legacy"), "from_legacy must not be in JSON");
+    }
+
+    // ── Validation tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_validation_missing_required_bullet_skipped() {
+        let content = r#"## Findings
+
+### Trigger: Code Change
+
+#### F-01 — Missing why
+
+- **Severity:** HIGH
+- **Anchor:** diff
+- **Location:** `src/main.rs:42`
+- **Suggested comment:** Comment.
+- **Suggested fix:** Fix.
+"#;
+        let findings = parse_findings_section(content);
+        assert_eq!(findings.len(), 0, "finding missing 'Why this matters' must be skipped");
+    }
+
+    #[test]
+    fn test_validation_anchor_none_with_location_skipped() {
+        let content = r#"## Findings
+
+### Trigger: Code Change
+
+#### F-01 — Anchor none with location
+
+- **Severity:** HIGH
+- **Anchor:** none
+- **Location:** `src/main.rs:42`
+- **Why this matters:** w
+- **Suggested comment:** c
+- **Suggested fix:** f
+"#;
+        let findings = parse_findings_section(content);
+        assert_eq!(findings.len(), 0);
+    }
+
+    #[test]
+    fn test_validation_anchor_diff_without_location_skipped() {
+        let content = r#"## Findings
+
+### Trigger: Code Change
+
+#### F-01 — Anchor diff missing location
+
+- **Severity:** HIGH
+- **Anchor:** diff
+- **Why this matters:** w
+- **Suggested comment:** c
+- **Suggested fix:** f
+"#;
+        let findings = parse_findings_section(content);
+        assert_eq!(findings.len(), 0);
+    }
+
+    #[test]
+    fn test_validation_unknown_trigger_skipped() {
+        let content = r#"## Findings
+
+### Trigger: Banana
+
+#### F-01 — Bad trigger
+
+- **Severity:** HIGH
+- **Anchor:** none
+- **Why this matters:** w
+- **Suggested comment:** c
+- **Suggested fix:** f
+"#;
+        let findings = parse_findings_section(content);
+        assert_eq!(findings.len(), 0);
+    }
+
+    #[test]
+    fn test_validation_anchor_none_no_location_passes() {
+        let content = r#"## Findings
+
+### Trigger: Missing Test
+
+#### F-01 — Cross-cutting
+
+- **Severity:** MED
+- **Anchor:** none
+- **Why this matters:** w
+- **Suggested comment:** c
+- **Suggested fix:** f
+"#;
+        let findings = parse_findings_section(content);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].anchor, Anchor::None);
+        assert!(findings[0].location.is_none());
+    }
+
+    #[test]
+    fn test_validation_unknown_anchor_skipped() {
+        // Unknown anchor value (not diff/reference/none).
+        let content = r#"## Findings
+
+### Trigger: Code Change
+
+#### F-01 — Bad anchor
+
+- **Severity:** HIGH
+- **Anchor:** sideways
+- **Location:** `src/main.rs:42`
+- **Why this matters:** w
+- **Suggested comment:** c
+- **Suggested fix:** f
+"#;
+        let findings = parse_findings_section(content);
+        assert_eq!(findings.len(), 0);
     }
 }
