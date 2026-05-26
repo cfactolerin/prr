@@ -97,7 +97,7 @@ APPROVE | REQUEST_CHANGES | COMMENT
 
 HIGH | MEDIUM | LOW
 
-(How confident are you in this verdict? HIGH = clear-cut, MEDIUM = some uncertainty, LOW = significant unknowns.)
+(How confident are you in this verdict?)
 
 ### Ticket Alignment
 
@@ -113,31 +113,39 @@ HIGH | MEDIUM | LOW
 
 (Points of disagreement and how you resolved them.)
 
-### Ticket Alignment Findings
+### Findings
 
-(Detailed ticket alignment analysis.)
+Every finding carries a `Trigger` (pick exactly one from the closed list: Acceptance Criteria, Code Change, Code Quality, Logic Bug, Security, Performance, Missing Test, Missing Doc / Error Handling), an `Anchor` (`diff` if on a diff line, `reference` if on unchanged code, `none` for cross-cutting), and the five required fields below.
 
-### Code Quality Findings
+The scope rule: a finding may appear only if it is caused/exposed by the diff or required by the ticket AC. Drop everything else.
 
-(Detailed code quality findings.)
+#### Trigger: Acceptance Criteria
 
-### Logic & Bug Findings
+##### F-01 — <short title>
 
-(Detailed logic and bug findings.)
+- **Severity:** HIGH | MED | LOW
+- **Anchor:** diff | reference | none
+- **Location:** `path/to/file:line` (omit only when Anchor is `none`)
+- **Why this matters:** 2-4 sentences.
+- **Suggested comment:** Text the author would post on the PR, as-is.
+- **Suggested fix:** Concrete remediation.
 
-### Security Findings
+##### F-02 — <short title>
 
-(Detailed security findings, or "None identified.")
+- **Severity:** ...
+- **Anchor:** ...
+- **Location:** ...
+- **Why this matters:** ...
+- **Suggested comment:** ...
+- **Suggested fix:** ...
 
-### Missing Things
+#### Trigger: Code Change
 
-(Tests, docs, error handling, edge cases — or "None identified.")
+##### F-03 — <short title>
 
-### Line Comments
+...
 
-| File | Line | Issue | Severity |
-|------|------|-------|----------|
-| `path/to/file` | 42 | Description | HIGH / MED / LOW |
+(Omit empty Trigger groups. If zero findings, write `### Findings\n\nNone identified.`)
 
 ### Review Action
 
