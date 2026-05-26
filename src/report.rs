@@ -57,9 +57,12 @@ pub struct LineComment {
 }
 
 pub fn parse_report(content: &str) -> ParsedReport {
+    parse_report_inner(content, None)
+}
+
+pub fn parse_report_inner(content: &str, diff: Option<&str>) -> ParsedReport {
     let verdict = extract_section_value(content, "Verdict")
         .map(|v| {
-            // Take just the first word (APPROVE, REQUEST_CHANGES, COMMENT)
             v.split_whitespace().next().unwrap_or("UNKNOWN").to_string()
         })
         .or_else(|| extract_inline_field(content, "Verdict"))
@@ -72,7 +75,6 @@ pub fn parse_report(content: &str) -> ParsedReport {
         .unwrap_or_else(|| "UNKNOWN".into());
 
     let review_action = extract_review_action(content).or_else(|| {
-        // Derive from verdict if no explicit action section
         match verdict.as_str() {
             "APPROVE" => Some("Approve".into()),
             "REQUEST_CHANGES" => Some("Request Changes".into()),
@@ -84,10 +86,16 @@ pub fn parse_report(content: &str) -> ParsedReport {
     let review_body = extract_review_body(content)
         .or_else(|| extract_verdict_body(content));
 
-    let new_findings = parse_findings_section(content);
-    let (findings, line_comments) = if !new_findings.is_empty() {
-        let lc = derive_line_comments(&new_findings);
-        (new_findings, lc)
+    let mut findings = parse_findings_section(content);
+
+    if let Some(diff_text) = diff {
+        let added = parse_diff_added_lines(diff_text);
+        verify_anchors(&mut findings, &added);
+    }
+
+    let (findings, line_comments) = if !findings.is_empty() {
+        let lc = derive_line_comments(&findings);
+        (findings, lc)
     } else {
         let legacy_lc = extract_line_comments(content);
         let synthesized = synthesize_findings_from_legacy(&legacy_lc);
@@ -101,6 +109,34 @@ pub fn parse_report(content: &str) -> ParsedReport {
         line_comments,
         review_action,
         review_body,
+    }
+}
+
+fn verify_anchors(
+    findings: &mut [Finding],
+    added: &HashMap<String, HashSet<u64>>,
+) {
+    for f in findings.iter_mut() {
+        if f.from_legacy { continue; }
+        let Some(path) = f.path.as_deref() else { continue; };
+        let Some(line) = f.line else { continue; };
+        let start = f.start_line.unwrap_or(line);
+        let in_diff = (start..=line).all(|l| {
+            added.get(path).map(|set| set.contains(&l)).unwrap_or(false)
+        });
+        match (f.anchor, in_diff) {
+            (Anchor::Diff, false) => {
+                eprintln!(
+                    "warning: finding {} ({}) labeled Anchor:diff but {} not in diff; downgrading to reference",
+                    f.id, f.title, f.location.as_deref().unwrap_or("")
+                );
+                f.anchor = Anchor::Reference;
+            }
+            (Anchor::Reference, true) => {
+                f.anchor = Anchor::Diff;
+            }
+            _ => {}
+        }
     }
 }
 
@@ -645,9 +681,19 @@ pub fn parse_findings_section(content: &str) -> Vec<Finding> {
     findings
 }
 
-pub fn parse_and_print(report_path: &str, _diff_path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn parse_and_print(report_path: &str, diff_path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     let content = std::fs::read_to_string(report_path)?;
-    let report = parse_report(&content);
+    let diff = match diff_path {
+        Some(p) => match std::fs::read_to_string(p) {
+            Ok(text) => Some(text),
+            Err(e) => {
+                eprintln!("warning: diff unreadable at {p} ({e}) — verification skipped");
+                None
+            }
+        },
+        None => None,
+    };
+    let report = parse_report_inner(&content, diff.as_deref());
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
 }
@@ -1242,6 +1288,90 @@ REQUEST_CHANGES
         std::fs::write(&report_path, "### Verdict\n\nAPPROVE\n").unwrap();
         // None means: no diff verification.
         parse_and_print(report_path.to_str().unwrap(), None).unwrap();
+    }
+
+    #[test]
+    fn test_anchor_downgrade_when_location_not_in_diff() {
+        let content = r#"## Findings
+
+### Trigger: Code Change
+
+#### F-01 — Mislabeled
+
+- **Severity:** HIGH
+- **Anchor:** diff
+- **Location:** `src/foo.rs:99`
+- **Why this matters:** w
+- **Suggested comment:** c
+- **Suggested fix:** f
+"#;
+        let diff = "diff --git a/src/foo.rs b/src/foo.rs\n--- a/src/foo.rs\n+++ b/src/foo.rs\n@@ -10,1 +10,2 @@\n line\n+added\n";
+        let report = parse_report_inner(content, Some(diff));
+        assert_eq!(report.findings.len(), 1);
+        assert_eq!(report.findings[0].anchor, Anchor::Reference);
+        assert_eq!(report.line_comments.len(), 0);
+    }
+
+    #[test]
+    fn test_anchor_upgrade_when_location_in_diff() {
+        let content = r#"## Findings
+
+### Trigger: Code Change
+
+#### F-01 — Under-labeled
+
+- **Severity:** HIGH
+- **Anchor:** reference
+- **Location:** `src/foo.rs:11`
+- **Why this matters:** w
+- **Suggested comment:** c
+- **Suggested fix:** f
+"#;
+        let diff = "--- a/src/foo.rs\n+++ b/src/foo.rs\n@@ -10,1 +10,2 @@\n line\n+added\n";
+        let report = parse_report_inner(content, Some(diff));
+        assert_eq!(report.findings[0].anchor, Anchor::Diff);
+        assert_eq!(report.line_comments.len(), 1);
+    }
+
+    #[test]
+    fn test_anchor_range_partially_outside_diff_downgraded() {
+        let content = r#"## Findings
+
+### Trigger: Code Change
+
+#### F-01 — Range partially outside
+
+- **Severity:** HIGH
+- **Anchor:** diff
+- **Location:** `src/foo.rs:11-13`
+- **Why this matters:** w
+- **Suggested comment:** c
+- **Suggested fix:** f
+"#;
+        // Diff covers lines 11-12 but not 13.
+        let diff = "--- a/src/foo.rs\n+++ b/src/foo.rs\n@@ -10,1 +10,3 @@\n line\n+added1\n+added2\n";
+        let report = parse_report_inner(content, Some(diff));
+        assert_eq!(report.findings[0].anchor, Anchor::Reference);
+    }
+
+    #[test]
+    fn test_legacy_findings_bypass_verification() {
+        let content = r#"### Verdict
+
+REQUEST_CHANGES
+
+### Line Comments
+
+| File | Line | Issue | Severity |
+|------|------|-------|----------|
+| `src/foo.rs` | 99 | Issue here | HIGH |
+"#;
+        // Diff does NOT contain src/foo.rs:99
+        let diff = "--- a/other.rs\n+++ b/other.rs\n@@ -1,1 +1,2 @@\n a\n+b\n";
+        let report = parse_report_inner(content, Some(diff));
+        assert_eq!(report.findings.len(), 1);
+        assert_eq!(report.findings[0].anchor, Anchor::Diff);
+        assert_eq!(report.line_comments.len(), 1, "legacy line_comments invariant must hold");
     }
 
     #[test]
