@@ -83,13 +83,14 @@ pub fn parse_report(content: &str) -> ParsedReport {
     let review_body = extract_review_body(content)
         .or_else(|| extract_verdict_body(content));
 
-    let findings = parse_findings_section(content);
-    let line_comments = if findings.is_empty() {
-        // Legacy fallback: no Findings section, use the old Line Comments
-        // table. Synthesis of Findings from legacy comments lands in Task 7.
-        extract_line_comments(content)
+    let new_findings = parse_findings_section(content);
+    let (findings, line_comments) = if !new_findings.is_empty() {
+        let lc = derive_line_comments(&new_findings);
+        (new_findings, lc)
     } else {
-        derive_line_comments(&findings)
+        let legacy_lc = extract_line_comments(content);
+        let synthesized = synthesize_findings_from_legacy(&legacy_lc);
+        (synthesized, legacy_lc)
     };
 
     ParsedReport {
@@ -200,6 +201,33 @@ fn parse_line_ref(s: &str) -> (u64, Option<u64>) {
 
     // Single number
     (s.parse::<u64>().unwrap_or(0), None)
+}
+
+/// Synthesize Finding entries from a legacy Line Comments array
+/// (one Finding per LineComment) so the skill sees a uniform
+/// findings array regardless of report format.
+fn synthesize_findings_from_legacy(legacy: &[LineComment]) -> Vec<Finding> {
+    legacy.iter().enumerate().map(|(i, lc)| {
+        Finding {
+            id: format!("F-{:02}", i + 1),
+            title: first_n_words(&lc.body, 8),
+            trigger: "Code Change".into(),
+            severity: "MED".into(),
+            anchor: Anchor::Diff,
+            location: Some(format!("{}:{}", lc.path, lc.line)),
+            path: Some(lc.path.clone()),
+            line: Some(lc.line),
+            start_line: lc.start_line,
+            why_it_matters: "(legacy report — not classified)".into(),
+            suggested_comment: lc.body.clone(),
+            suggested_fix: "(legacy report — no fix suggested)".into(),
+            from_legacy: true,
+        }
+    }).collect()
+}
+
+fn first_n_words(s: &str, n: usize) -> String {
+    s.split_whitespace().take(n).collect::<Vec<_>>().join(" ")
 }
 
 fn extract_line_comments(content: &str) -> Vec<LineComment> {
@@ -1105,6 +1133,31 @@ REQUEST_CHANGES
 "#;
         let findings = parse_findings_section(content);
         assert_eq!(findings.len(), 0);
+    }
+
+    #[test]
+    fn test_legacy_line_comments_synthesized_to_findings() {
+        let content = r#"### Verdict
+
+REQUEST_CHANGES
+
+### Line Comments
+
+| File | Line | Issue | Severity |
+|------|------|-------|----------|
+| `src/main.rs` | 42 | Fix null check | HIGH |
+| `lib/foo.rb` | 10 | Consider logging | LOW |
+"#;
+        let report = parse_report(content);
+        assert_eq!(report.findings.len(), 2);
+        assert_eq!(report.findings[0].anchor, Anchor::Diff);
+        assert_eq!(report.findings[0].trigger, "Code Change");
+        assert_eq!(report.findings[0].severity, "MED");
+        assert_eq!(report.findings[0].suggested_comment, "Fix null check");
+        assert!(report.findings[0].from_legacy);
+        assert_eq!(report.findings[1].severity, "MED");
+        // line_comments still populated for legacy consumers
+        assert_eq!(report.line_comments.len(), 2);
     }
 
     #[test]
