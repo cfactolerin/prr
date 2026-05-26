@@ -312,6 +312,66 @@ fn find_findings_section(content: &str) -> Option<(usize, u32)> {
     Some((end, level))
 }
 
+/// Parse the bullet block belonging to a finding. Returns a
+/// key→value map with keys lowercased. Multiline values are space-
+/// joined; blank lines end a value.
+fn parse_finding_bullets(block: &str) -> std::collections::HashMap<String, String> {
+    let bullet_re = Regex::new(r"^-\s*\*\*([^:*]+):\*\*\s*(.*)$").unwrap();
+    let mut out: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut current_key: Option<String> = None;
+    let mut current_val: Vec<String> = Vec::new();
+
+    let flush = |key: &Option<String>, val: &mut Vec<String>, out: &mut std::collections::HashMap<String, String>| {
+        if let Some(k) = key {
+            out.insert(k.clone(), val.join(" ").trim().to_string());
+        }
+        val.clear();
+    };
+
+    for line in block.lines() {
+        let trimmed = line.trim_end();
+        if trimmed.is_empty() {
+            flush(&current_key, &mut current_val, &mut out);
+            current_key = None;
+            continue;
+        }
+        if let Some(caps) = bullet_re.captures(trimmed) {
+            flush(&current_key, &mut current_val, &mut out);
+            current_key = Some(caps[1].trim().to_lowercase());
+            let initial = caps[2].trim().to_string();
+            if !initial.is_empty() {
+                current_val.push(initial);
+            }
+        } else if current_key.is_some() {
+            current_val.push(trimmed.trim().to_string());
+        }
+        // Lines outside any bullet are ignored.
+    }
+    flush(&current_key, &mut current_val, &mut out);
+    out
+}
+
+fn parse_anchor(s: &str) -> Option<Anchor> {
+    match s.trim().to_lowercase().as_str() {
+        "diff" => Some(Anchor::Diff),
+        "reference" => Some(Anchor::Reference),
+        "none" => Some(Anchor::None),
+        _ => None,
+    }
+}
+
+/// Parse a Location string like "path/to/file:42" or "path:100-105"
+/// or "path:610, 623". Strips surrounding backticks. Returns
+/// (path, end_line, optional_start_line). Returns None if no ":N"
+/// suffix or N is unparseable.
+fn parse_location(loc: &str) -> Option<(String, u64, Option<u64>)> {
+    let trimmed = loc.trim().trim_matches('`');
+    let (path, rest) = trimmed.rsplit_once(':')?;
+    let (end, start) = parse_line_ref(rest);
+    if end == 0 { return None; }
+    Some((path.to_string(), end, start))
+}
+
 /// Top-level: parse the Findings section and return its findings.
 /// Returns an empty Vec if no Findings section is present.
 pub fn parse_findings_section(content: &str) -> Vec<Finding> {
@@ -349,35 +409,58 @@ pub fn parse_findings_section(content: &str) -> Vec<Finding> {
         events.push((m.get(0).unwrap().start(), "F"));
     }
     events.sort_by_key(|&(p, _)| p);
+    // Sentinel so we always have a next-position bound.
+    events.push((scope.len(), "END"));
 
     let mut findings = Vec::new();
     let mut current_trigger: Option<String> = None;
-    for (start_idx, kind) in events {
-        let line_end = scope[start_idx..].find('\n')
+    for window in events.windows(2) {
+        let (start_idx, kind) = window[0];
+        let (next_start, _) = window[1];
+        let line_end = scope[start_idx..]
+            .find('\n')
             .map(|i| start_idx + i)
             .unwrap_or(scope.len());
-        let line = &scope[start_idx..line_end];
+        let heading_line = &scope[start_idx..line_end];
+
         if kind == "T" {
-            let caps = trigger_re.captures(line).unwrap();
+            let caps = trigger_re.captures(heading_line).unwrap();
             current_trigger = Some(caps[1].to_string());
-        } else {
-            let caps = finding_re.captures(line).unwrap();
-            let Some(trigger) = current_trigger.clone() else {
-                continue; // orphan finding heading — skip
-            };
+            continue;
+        }
+        if kind == "F" {
+            let caps = finding_re.captures(heading_line).unwrap();
+            let Some(trigger) = current_trigger.clone() else { continue; };
+            let block = &scope[line_end..next_start];
+            let bullets = parse_finding_bullets(block);
+
+            let severity = bullets.get("severity").cloned().unwrap_or_default();
+            let anchor_str = bullets.get("anchor").cloned().unwrap_or_default();
+            let anchor = parse_anchor(&anchor_str).unwrap_or(Anchor::None);
+            let location = bullets.get("location")
+                .map(|s| s.trim().trim_matches('`').to_string());
+            let why = bullets.get("why this matters").cloned().unwrap_or_default();
+            let sc = bullets.get("suggested comment").cloned().unwrap_or_default();
+            let sf = bullets.get("suggested fix").cloned().unwrap_or_default();
+
+            let (path, line, start_line) = location.as_deref()
+                .and_then(parse_location)
+                .map(|(p, l, s)| (Some(p), Some(l), s))
+                .unwrap_or((None, None, None));
+
             findings.push(Finding {
                 id: caps[1].to_string(),
                 title: caps[2].to_string(),
                 trigger,
-                severity: String::new(),
-                anchor: Anchor::None,
-                location: None,
-                path: None,
-                line: None,
-                start_line: None,
-                why_it_matters: String::new(),
-                suggested_comment: String::new(),
-                suggested_fix: String::new(),
+                severity,
+                anchor,
+                location,
+                path,
+                line,
+                start_line,
+                why_it_matters: why,
+                suggested_comment: sc,
+                suggested_fix: sf,
                 from_legacy: false,
             });
         }
@@ -743,6 +826,59 @@ REQUEST_CHANGES
         assert_eq!(findings[0].trigger, "Acceptance Criteria");
         assert_eq!(findings[1].id, "F-02");
         assert_eq!(findings[1].trigger, "Code Change");
+    }
+
+    #[test]
+    fn test_parse_finding_bullets_full() {
+        let content = r#"## Findings
+
+### Trigger: Code Change
+
+#### F-01 — Title here
+
+- **Severity:** HIGH
+- **Anchor:** diff
+- **Location:** `src/main.rs:42`
+- **Why this matters:** Sentence one.
+  Sentence two continues on a second line.
+- **Suggested comment:** Body of the comment that the
+  author should post on the PR.
+- **Suggested fix:** Replace `x` with `y` at line 42.
+"#;
+        let findings = parse_findings_section(content);
+        assert_eq!(findings.len(), 1);
+        let f = &findings[0];
+        assert_eq!(f.severity, "HIGH");
+        assert_eq!(f.anchor, Anchor::Diff);
+        assert_eq!(f.location.as_deref(), Some("src/main.rs:42"));
+        assert_eq!(f.path.as_deref(), Some("src/main.rs"));
+        assert_eq!(f.line, Some(42));
+        assert!(f.why_it_matters.starts_with("Sentence one."));
+        assert!(f.why_it_matters.contains("Sentence two continues"));
+        assert!(f.suggested_comment.contains("author should post"));
+        assert!(f.suggested_fix.contains("Replace"));
+    }
+
+    #[test]
+    fn test_parse_finding_bullets_case_insensitive() {
+        let content = r#"## Findings
+
+### Trigger: Code Change
+
+#### F-01 — Title
+
+- **severity:** HIGH
+- **ANCHOR:** Diff
+- **Location:** `src/main.rs:42`
+- **why this matters:** Why.
+- **Suggested Comment:** Comment.
+- **suggested fix:** Fix.
+"#;
+        let findings = parse_findings_section(content);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, "HIGH");
+        assert_eq!(findings[0].anchor, Anchor::Diff);
+        assert_eq!(findings[0].why_it_matters, "Why.");
     }
 
     #[test]
