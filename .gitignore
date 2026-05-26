@@ -1,4 +1,5 @@
 /target/
+/.worktrees/
 # bin/prr-darwin-universal is committed (small enough to distribute)
 # Ignore other build artifacts in bin/
 /bin/*.dSYM
