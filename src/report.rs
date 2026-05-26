@@ -1,5 +1,6 @@
 use regex::Regex;
 use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Serialize, PartialEq, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
@@ -428,6 +429,65 @@ fn parse_location(loc: &str) -> Option<(String, u64, Option<u64>)> {
     let (end, start) = parse_line_ref(rest);
     if end == 0 { return None; }
     Some((path.to_string(), end, start))
+}
+
+/// Walk a unified diff and return, per new-file path, the set of
+/// line numbers in the new file that were added (lines starting
+/// with `+`, excluding the `+++` file header).
+pub fn parse_diff_added_lines(diff: &str) -> HashMap<String, HashSet<u64>> {
+    let mut out: HashMap<String, HashSet<u64>> = HashMap::new();
+    let hunk_re = Regex::new(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@").unwrap();
+
+    let mut current_path: Option<String> = None;
+    let mut current_line: u64 = 0;
+
+    for line in diff.lines() {
+        // New-file header
+        if let Some(rest) = line.strip_prefix("+++ ") {
+            let path = rest.trim_start_matches("b/").trim();
+            if path == "/dev/null" {
+                current_path = None;
+            } else {
+                current_path = Some(path.to_string());
+            }
+            current_line = 0;
+            continue;
+        }
+        // Old-file header — ignore for new-file accounting
+        if line.starts_with("--- ") {
+            continue;
+        }
+
+        // Hunk header
+        if let Some(caps) = hunk_re.captures(line) {
+            current_line = caps[1].parse().unwrap_or(0);
+            continue;
+        }
+
+        if current_path.is_none() || current_line == 0 {
+            continue;
+        }
+        let path = current_path.as_ref().unwrap();
+
+        if let Some(c) = line.chars().next() {
+            match c {
+                '+' => {
+                    out.entry(path.clone()).or_default().insert(current_line);
+                    current_line += 1;
+                }
+                ' ' => {
+                    current_line += 1;
+                }
+                '-' => {
+                    // removed; new-file line unchanged
+                }
+                _ => {
+                    // "\ No newline at end of file" or other; ignore
+                }
+            }
+        }
+    }
+    out
 }
 
 const KNOWN_TRIGGERS: &[&str] = &[
@@ -1158,6 +1218,20 @@ REQUEST_CHANGES
         assert_eq!(report.findings[1].severity, "MED");
         // line_comments still populated for legacy consumers
         assert_eq!(report.line_comments.len(), 2);
+    }
+
+    #[test]
+    fn test_diff_added_lines_per_file() {
+        let diff = "diff --git a/src/foo.rs b/src/foo.rs\nindex abc..def 100644\n--- a/src/foo.rs\n+++ b/src/foo.rs\n@@ -10,3 +10,5 @@ fn x() {\n     let a = 1;\n+    let b = 2;\n+    let c = 3;\n     let d = 4;\ndiff --git a/lib/bar.rb b/lib/bar.rb\nnew file mode 100644\n--- /dev/null\n+++ b/lib/bar.rb\n@@ -0,0 +1,2 @@\n+puts \"hi\"\n+puts \"bye\"\n";
+        let map = parse_diff_added_lines(diff);
+        let foo = map.get("src/foo.rs").unwrap();
+        assert!(foo.contains(&11));
+        assert!(foo.contains(&12));
+        assert!(!foo.contains(&10));
+        assert!(!foo.contains(&13));
+        let bar = map.get("lib/bar.rb").unwrap();
+        assert!(bar.contains(&1));
+        assert!(bar.contains(&2));
     }
 
     #[test]
