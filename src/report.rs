@@ -585,7 +585,7 @@ pub fn parse_findings_section(content: &str) -> Vec<Finding> {
     findings
 }
 
-pub fn parse_and_print(report_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn parse_and_print(report_path: &str, _diff_path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     let content = std::fs::read_to_string(report_path)?;
     let report = parse_report(&content);
     println!("{}", serde_json::to_string_pretty(&report)?);
@@ -1158,6 +1158,16 @@ REQUEST_CHANGES
         assert_eq!(report.findings[1].severity, "MED");
         // line_comments still populated for legacy consumers
         assert_eq!(report.line_comments.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_and_print_accepts_optional_diff() {
+        // Public entry point should accept Option<&str> for diff path.
+        let dir = tempfile::tempdir().unwrap();
+        let report_path = dir.path().join("report.md");
+        std::fs::write(&report_path, "### Verdict\n\nAPPROVE\n").unwrap();
+        // None means: no diff verification.
+        parse_and_print(report_path.to_str().unwrap(), None).unwrap();
     }
 
     #[test]

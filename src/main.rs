@@ -56,6 +56,9 @@ enum Commands {
     ParseReport {
         /// Path to final-report.md
         report_path: String,
+        /// Optional path to the PR diff for anchor verification
+        #[arg(long)]
+        diff: Option<String>,
     },
     /// Clean up workspace (remove merged/closed PRs)
     Cleanup {
@@ -101,7 +104,7 @@ fn main() {
                 Err("Specify --review, --arbiter, or --question".into())
             }
         }
-        Commands::ParseReport { report_path } => report::parse_and_print(&report_path),
+        Commands::ParseReport { report_path, diff } => report::parse_and_print(&report_path, diff.as_deref()),
         Commands::Cleanup { workspace } => cleanup::run(&workspace),
         Commands::Agents { action } => match action {
             AgentAction::List => config::agents_list(),
