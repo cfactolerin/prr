@@ -1,10 +1,44 @@
 use regex::Regex;
 use serde::Serialize;
 
+#[derive(Debug, Serialize, PartialEq, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum Anchor {
+    Diff,
+    Reference,
+    None,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Finding {
+    pub id: String,
+    pub title: String,
+    pub trigger: String,
+    pub severity: String,
+    pub anchor: Anchor,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_line: Option<u64>,
+    pub why_it_matters: String,
+    pub suggested_comment: String,
+    pub suggested_fix: String,
+    /// Internal flag — true when synthesized from a legacy Line
+    /// Comments table. Not serialized; used by the diff verifier
+    /// to skip these findings.
+    #[serde(skip)]
+    pub from_legacy: bool,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ParsedReport {
     pub verdict: String,
     pub confidence: String,
+    pub findings: Vec<Finding>,
     pub line_comments: Vec<LineComment>,
     pub review_action: Option<String>,
     pub review_body: Option<String>,
@@ -52,6 +86,7 @@ pub fn parse_report(content: &str) -> ParsedReport {
     ParsedReport {
         verdict,
         confidence,
+        findings: Vec::new(),
         line_comments: extract_line_comments(content),
         review_action,
         review_body,
@@ -523,5 +558,27 @@ mod tests {
         let json = serde_json::to_string(&report).unwrap();
         assert!(json.contains("APPROVE"));
         assert!(json.contains("HIGH"));
+    }
+
+    #[test]
+    fn test_finding_serializes_anchor_lowercase() {
+        let finding = Finding {
+            id: "F-01".into(),
+            title: "Test".into(),
+            trigger: "Code Change".into(),
+            severity: "HIGH".into(),
+            anchor: Anchor::Diff,
+            location: Some("src/main.rs:42".into()),
+            path: Some("src/main.rs".into()),
+            line: Some(42),
+            start_line: None,
+            why_it_matters: "Why".into(),
+            suggested_comment: "Comment".into(),
+            suggested_fix: "Fix".into(),
+            from_legacy: false,
+        };
+        let json = serde_json::to_string(&finding).unwrap();
+        assert!(json.contains("\"anchor\":\"diff\""), "json was: {json}");
+        assert!(!json.contains("from_legacy"), "from_legacy must not be in JSON");
     }
 }
