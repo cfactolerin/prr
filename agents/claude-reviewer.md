@@ -26,3 +26,7 @@ Write your complete review in the exact format specified in the review prompt. D
 - If you find a bug, write a test or debug output to prove it
 - Budget your exploration: max 12 shell commands before drafting
 - Always use `git -C <repo_path>` instead of `cd <repo_path> && git` for git commands
+
+## Scope
+
+Every finding you produce must be traceable to either a line in the diff or a ticket Acceptance Criterion. Findings about unchanged code that's unrelated to both are out of scope — drop them. When a finding does anchor on unchanged code (because the AC requires it), use `Anchor: reference` so the report makes the postability explicit and the GitHub API doesn't reject the inline comment.

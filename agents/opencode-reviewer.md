@@ -39,3 +39,7 @@ The opencode JSON stream emits multiple event objects per run; the final review 
 1. Read the output file
 2. Verify it contains a review (not an empty file or an auth error)
 3. If opencode failed, write a note explaining the failure to the output path
+
+## Scope
+
+Every finding you produce must be traceable to either a line in the diff or a ticket Acceptance Criterion. Findings about unchanged code that's unrelated to both are out of scope — drop them. When a finding does anchor on unchanged code (because the AC requires it), use `Anchor: reference` so the report makes the postability explicit and the GitHub API doesn't reject the inline comment.

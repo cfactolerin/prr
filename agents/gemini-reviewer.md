@@ -28,3 +28,7 @@ Capture stdout and write it to the output path.
 1. Verify stdout contained a review (not empty or error)
 2. Write the output to the specified path
 3. If Gemini failed, write a note explaining the failure
+
+## Scope
+
+Every finding you produce must be traceable to either a line in the diff or a ticket Acceptance Criterion. Findings about unchanged code that's unrelated to both are out of scope — drop them. When a finding does anchor on unchanged code (because the AC requires it), use `Anchor: reference` so the report makes the postability explicit and the GitHub API doesn't reject the inline comment.
