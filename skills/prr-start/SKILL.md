@@ -403,130 +403,171 @@ Use these exact strings for the verdict (no emojis — they don't render in the 
 
 ---
 
-## Phase 7: Line Comment Review
+## Phase 7: Findings Review
 
-### Step 7a: Parse the report
+### Step 7a — Parse the report (with diff verification)
 
 Run:
 ```
-${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal parse-report <ROUND_DIR>/results/final-report.md
+${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal parse-report <ROUND_DIR>/results/final-report.md --diff <ROUND_DIR>/results/diff.txt
 ```
 
 This outputs JSON to stdout. Parse it. The structure is:
+
 ```json
 {
   "verdict": "REQUEST_CHANGES",
   "confidence": "HIGH",
-  "line_comments": [
+  "findings": [
     {
-      "checked": true,
-      "path": "src/main.rs",
+      "id": "F-01",
+      "title": "...",
+      "trigger": "Acceptance Criteria",
+      "severity": "HIGH",
+      "anchor": "diff",
+      "location": "path/to/file:line",
+      "path": "path/to/file",
       "line": 42,
-      "url": "https://github.com/...",
-      "body": "Fix null check"
-    },
-    {
-      "checked": true,
-      "path": "merge.rb",
-      "line": 601,
-      "start_line": 600,
-      "url": null,
-      "body": "Not serialized to XML"
+      "start_line": null,
+      "why_it_matters": "...",
+      "suggested_comment": "...",
+      "suggested_fix": "..."
     }
   ],
+  "line_comments": [ /* derived: diff-anchored findings only */ ],
   "review_action": "Request Changes",
-  "review_body": "This PR needs..."
+  "review_body": "..."
 }
 ```
 
-### Step 7b: Review each comment with the user
+`anchor` is one of `"diff"`, `"reference"`, `"none"`. `location`, `path`, `line`, `start_line` are null when the anchor is `"none"`. The parser may have emitted stderr warnings (e.g., downgraded mislabels, malformed findings, unreadable diff) — surface those to the user before the interactive review.
 
-Only present comments where `checked` is `true` (these are the ones the arbiter marked for posting).
-
-For each comment, present it in **two parts**: rich context as regular text output, then a minimal AskUserQuestion for the user's decision. This split gives the comment details full markdown rendering (syntax-highlighted code, icons, formatting) while keeping the prompt clean.
-
-#### Gathering context for each comment
-
-1. **Clickable link**: Use the `url` field from the parsed JSON. If `start_line` is present, use `path#L<start_line>-L<line>` (range); otherwise use `path#L<line>`. If `url` is present, display as a markdown link: `[path#L<line>](url)`. If `url` is null, display as plain text.
-
-2. **Code context**: Read the file directly from `<ROUND_DIR>/repo/<path>`. Show ~5 lines before and after the target line. Use a **language-specific fenced code block** (e.g. ` ```ruby `, ` ```python `) for proper syntax highlighting. Do NOT add line number prefixes inside the code block — they break syntax highlighting. Instead, note the line range and target line in the **File:** line above the code block. Mark the target line with a trailing `# <--` comment. Example:
-   ```ruby
-   def resolve_ddex(key)
-     kgotla_override(key, :ddex) ||
-       @overrides.dig(:connection, @connection_id, key, :ddex) || # <--
-       @overrides.dig(:aggregate, @aggregate_feed_connection_id, key, :ddex) ||
-       self.class.default_entries[key]&.default_ddex ||
-   ```
-   If the diff at `<ROUND_DIR>/results/diff.txt` provides better context (shows +/- lines), prefer it but still use a language-hinted fenced block.
-
-3. **Explanation**: A brief explanation of **why** this is a problem — what could go wrong, what the expected behavior should be, or what the risk is. This should come from the comment body and the review findings.
-
-#### Part 1: Rich text output (before AskUserQuestion)
-
-Output the full comment details as regular text. This renders with proper markdown formatting, syntax-highlighted code, and icons. Use this format:
+Maintain an in-memory list of `CommentState` entries, one per `Finding`:
 
 ```
-## Comment N/M — <one-line summary>
+CommentState {
+  finding: Finding          // straight from the JSON
+  status: Pending | Accepted | Rejected | Edited
+  overridden_body: string | null  // populated when status == Edited
+}
+```
 
-📄 [path#L<line>](url) (lines N–M)
+Initialize every entry with `status = Pending`. New findings the user adds in Step 7d are appended with `status = Accepted`. The list survives across 7b / 7c / 7d and is consumed by Phase 8.
 
-<code context in language-specific fenced code block, target line marked with # <-->
+### Step 7b — Diff-anchored findings (inline-postable)
 
-**Why this matters:** <explanation>
+Walk `findings` where `anchor == "diff"`. For each, present in **two parts**: rich context as regular text, then a minimal AskUserQuestion.
+
+#### Rich text output
+
+```
+## Comment N/M — <Trigger> — <title> (<Severity>)
+
+📄 [path#L<line>](url) (lines start–end)
+
+<code context in a language-specific fenced block; target line marked with # <-->
+
+**Why this matters:** <why_it_matters>
 
 **Suggested comment:**
-> <body>
+> <suggested_comment>
+
+**Suggested fix:** <suggested_fix>
 ```
 
-#### Part 2: Minimal AskUserQuestion
+`N/M` counts only diff-anchored findings. Code context is read from `<ROUND_DIR>/repo/<path>`, ~5 lines before/after the target line, language-hinted fence (e.g., ` ```ruby `), target line marked with a trailing `# <--` comment. The clickable link uses the `url` field if present, else plain text `path#L<line>`.
 
-Immediately after the rich text output, use AskUserQuestion with **only** the comment title and options. Keep it minimal — the user has already read the details above.
-
-Use this format for the question text:
+#### AskUserQuestion
 
 ```
 Comment N/M — <one-line summary>
 ```
 
-Provide these options in the AskUserQuestion:
-- **Accept** — Keep this comment as-is
-- **Reject** — Skip this comment, don't post it
-- **Edit** — Provide replacement text for this comment
+Options:
+- **Accept** — keep as-is
+- **Reject** — drop this comment
+- **Edit** — provide replacement text
 
-And allow free-text input for edits, clarifications, or discussion.
+Free-text input is accepted as a clarification or edit (rewrite the comment incorporating the input, show for confirmation, then move on).
 
-#### Handling responses
+Special commands: `add`/`new`/`+` switches to Step 7d; `done`/`stop`/`enough` exits Phase 7.
 
-- **Accept** (a, accept, y, yes, ok, option 1): Keep the comment as-is. Move to the next comment.
-- **Reject** (r, reject, no, skip, option 2): Remove this comment from the list. Move to the next.
-- **Edit** (e, edit, option 3): Ask the user for the replacement text. Use it verbatim as the new body.
-- **Free text**: If the user types something else, treat it as a clarification or edit. Rewrite the comment body incorporating their input, show it for confirmation, then move on.
-- **Add new** (add, new, +): The user describes an issue. You draft a new comment:
-  - Ask for the file path and line number (or help them find it by searching the diff)
-  - Draft the comment body
-  - Show it for confirmation
-  - Add to the list
-  - Then continue reviewing remaining comments
-- **Done** (done, d, stop, enough): Stop reviewing individual comments. All remaining unreviewed comments are kept as-is. Proceed to Phase 8.
+#### Update CommentState
 
-#### After all comments reviewed
+- Accept → `status = Accepted`
+- Reject → `status = Rejected`
+- Edit → `status = Edited`, `overridden_body = <new text>`
 
-After reviewing all comments (or user says done), show the final list:
+### Step 7c — Reference / unanchored findings (report-only)
+
+After diff-anchored findings, walk `findings` where `anchor` is `"reference"` or `"none"`. These cannot be posted as inline comments but must still be reviewed for inclusion in the regenerated review body.
+
+#### Rich text output
+
+```
+## Report-Only Finding N/M — <Trigger> — <title> (<Severity>)
+
+(Report-only — won't be posted as an inline comment; will be summarized in the review body.)
+
+📄 <path:line if anchor == reference; else "(no anchor line)">
+
+**Why this matters:** <why_it_matters>
+
+**Suggested comment:**
+> <suggested_comment>
+
+**Suggested fix:** <suggested_fix>
+```
+
+For `anchor: reference`, render the code context the same way as 7b but note "(unchanged code — for reference only)" above the fence.
+
+#### AskUserQuestion
+
+```
+Report-Only Finding N/M — <one-line summary>
+```
+
+Options:
+- **Accept** — include this finding in the regenerated review body
+- **Reject** — drop it from the body
+- **Edit** — provide replacement text for the body summary
+
+CommentState updates as in 7b.
+
+### Step 7d — Add new finding
+
+Triggered by `add`/`new`/`+` at any point in 7b or 7c. Collect:
+
+1. **Trigger** — AskUserQuestion with the 8 options (Acceptance Criteria, Code Change, Code Quality, Logic Bug, Security, Performance, Missing Test, Missing Doc / Error Handling).
+2. **Severity** — AskUserQuestion: HIGH / MED / LOW.
+3. **Anchor** — AskUserQuestion: "Is this anchored on a changed line, on existing code, or no specific line?" → `diff` / `reference` / `none`.
+4. If Anchor ≠ `none`: ask for `path:line`. Validate against `<ROUND_DIR>/results/diff.txt` — if the user picked `diff` but the line isn't in the diff, ask whether to downgrade to `reference`.
+5. Draft `Why this matters`, `Suggested comment`, `Suggested fix` with the user; confirm.
+6. Append a synthetic CommentState with `status = Accepted` and continue the review.
+
+### After Phase 7
+
+Show the final list (accepted + edited entries from both 7b and 7c):
+
 ```
 ---
 
-## Final Comments (N total)
+## Final Findings (N total)
 
-1. **File:** [path#L<line>](url) — <body preview>
-2. **File:** [path#L<line>](url) — <body preview>
+**Inline comments (P):**
+
+1. `path:line` — <Trigger> — <one-line summary>
+...
+
+**Report-only findings (Q):**
+
+1. `path:line` (or no anchor) — <Trigger> — <one-line summary>
 ...
 
 ---
 ```
 
-Confirm with the user: "Ready to post these comments? [yes/edit more]"
-
----
+Confirm: "Ready to post? [yes / edit more]"
 
 ## Phase 8: Post to GitHub
 
