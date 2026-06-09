@@ -456,7 +456,11 @@ Initialize every entry with `status = Pending`. New findings the user adds in St
 
 ### Step 7b — Diff-anchored findings (inline-postable)
 
-Walk `findings` where `anchor == "diff"`. For each, present in **two parts**: rich context as regular text, then a minimal AskUserQuestion.
+Walk `findings` where `anchor == "diff"` **strictly one at a time**. Present one finding, then stop and resolve it before touching the next.
+
+**Hard rule — never batch.** Each iteration is exactly one rich-text block followed by exactly one AskUserQuestion call containing exactly one question about that single finding. Do NOT print multiple findings' context up front, and do NOT put more than one finding into a single AskUserQuestion call (AskUserQuestion accepts up to four questions — do not use that here). Batching forces the user to scroll and auto-advances their answers; that is the regression this rule exists to prevent.
+
+For each finding, present in **two parts**: rich context as regular text, then a minimal AskUserQuestion.
 
 #### Rich text output
 
@@ -488,7 +492,7 @@ Options:
 - **Reject** — drop this comment
 - **Edit** — provide replacement text
 
-Free-text input is accepted as a clarification or edit (rewrite the comment incorporating the input, show for confirmation, then move on).
+Free-text input is a clarification or edit, **not** a signal to advance. Stay on the **same** finding: incorporate the input (rewrite the comment, answer the question, or discuss), show the result, and ask again with a fresh single-question AskUserQuestion for the same finding. Only move to the next finding once the user picks Accept, Reject, or Edit (or issues a special command). The user may go several rounds on one comment — never auto-advance after recording a free-text reply.
 
 Special commands: `add`/`new`/`+` switches to Step 7d; `done`/`stop`/`enough` exits Phase 7.
 
@@ -500,7 +504,7 @@ Special commands: `add`/`new`/`+` switches to Step 7d; `done`/`stop`/`enough` ex
 
 ### Step 7c — Reference / unanchored findings (report-only)
 
-After diff-anchored findings, walk `findings` where `anchor` is `"reference"` or `"none"`. These cannot be posted as inline comments but must still be reviewed for inclusion in the regenerated review body.
+After diff-anchored findings, walk `findings` where `anchor` is `"reference"` or `"none"` **strictly one at a time**, under the same hard rule as 7b: one finding's rich-text block, then exactly one AskUserQuestion call with exactly one question — never batch multiple findings, and stay on the same finding for free-text follow-up until the user picks Accept/Reject/Edit. These cannot be posted as inline comments but must still be reviewed for inclusion in the regenerated review body.
 
 #### Rich text output
 
