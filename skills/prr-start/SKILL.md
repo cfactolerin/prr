@@ -240,7 +240,7 @@ Run the opencode CLI to review this PR. Here are your paths:
 - Write output to: <RESULTS_PATH>/opencode-review.md
 
 Run this exact command:
-cat "<PROMPT_PATH>" | opencode run --model openai/gpt-5.5 --dir "<REPO_PATH>" --format json --dangerously-skip-permissions | jq -r 'select(.type == "text") | .part.text' > "<RESULTS_PATH>/opencode-review.md"
+cat "<PROMPT_PATH>" | opencode run --model openai/gpt-5.5 --dir "<REPO_PATH>" --format json | jq -r 'select(.type == "text") | .part.text' > "<RESULTS_PATH>/opencode-review.md"
 ```
 
 ### Step 4e: Wait and verify
@@ -325,7 +325,7 @@ Search the output for a fenced JSON code block (` ```json `) whose content is an
    - For **gemini**: dispatch `gemini-reviewer` with the question prompt piped to gemini, output to the answer path.
    - For **opencode**: dispatch `opencode-reviewer` with instructions to run:
      ```
-     cat "<question_prompt_path>" | opencode run --model openai/gpt-5.5 --dir "<REPO_PATH>" --format json --dangerously-skip-permissions | jq -r 'select(.type == "text") | .part.text' > "<answer_path>"
+     cat "<question_prompt_path>" | opencode run --model openai/gpt-5.5 --dir "<REPO_PATH>" --format json | jq -r 'select(.type == "text") | .part.text' > "<answer_path>"
      ```
 
    Dispatch all agent answers in parallel.

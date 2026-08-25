@@ -27,10 +27,16 @@ cat "<prompt_path>" \
       --model openai/gpt-5.5 \
       --dir "<repo_path>" \
       --format json \
-      --dangerously-skip-permissions \
   | jq -r 'select(.type == "text") | .part.text' \
   > "<output_path>"
 ```
+
+Do not add a permission-bypass flag. `opencode run` is non-interactive and
+already approves its own tool calls, so `--auto` (and the older
+`--dangerously-skip-permissions`, which newer opencode no longer documents) buys
+nothing here — and a flag whose name disarms a safety guard is refused outright
+by the Claude Code auto-mode permission classifier, which blocks this dispatch
+before opencode ever starts.
 
 The opencode JSON stream emits multiple event objects per run; the final review text is in entries with `type == "text"`. The `jq` filter extracts only those text parts.
 
