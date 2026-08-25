@@ -330,7 +330,25 @@ Search the output for a fenced JSON code block (` ```json `) whose content is an
 
    Dispatch all agent answers in parallel.
 
-5. After all answers are collected, append the Q&A round to `<ROUND_DIR>/results/arbiter-log.md`:
+5. Verify each dispatched agent's answer file exists and is non-empty, the same
+   check Step 4e applies to reviews:
+
+   ```
+   wc -c "<ROUND_DIR>/results/round-<N>-<agent>-answer.md"
+   ```
+
+   A zero-byte answer means the agent produced no output — for the CLI agents
+   this is what a refused tool call looks like, since they exit `0` and the `jq`
+   filter writes an empty file rather than failing. Do not treat it as an empty
+   answer to the question.
+
+   For each agent whose answer is empty or missing, tell the user which agent
+   produced no output and continue with the answers you have. Record the gap in
+   the arbiter log so the arbiter knows the question went unanswered rather than
+   silently reading it as agreement. If every dispatched agent came back empty,
+   stop and report it — do not run another round.
+
+6. After all answers are collected, append the Q&A round to `<ROUND_DIR>/results/arbiter-log.md`:
    ```
    ## Round <N>
 
@@ -343,7 +361,7 @@ Search the output for a fenced JSON code block (` ```json `) whose content is an
    ---
    ```
 
-6. Increment the round counter. If rounds < `arbiter_rounds` (from config), go back to Step 5a (rebuild arbiter prompt with updated history). Otherwise, force the arbiter to produce a final report by telling it this is the last round.
+7. Increment the round counter. If rounds < `arbiter_rounds` (from config), go back to Step 5a (rebuild arbiter prompt with updated history). Otherwise, force the arbiter to produce a final report by telling it this is the last round.
 
 **If NO questions (final report):**
 

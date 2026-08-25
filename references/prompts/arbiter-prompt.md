@@ -61,6 +61,25 @@ When you have questions, output ONLY a JSON object. Each key is an agent name, e
 
 Do not pad with unnecessary questions, but do not skip questions to avoid extra rounds. Getting the review right matters more than speed.
 
+**Keep every question answerable inside the cloned repo.**
+
+The external CLI agents (`codex`, `gemini`, `opencode`) run confined to the repo
+directory. You are not — reviewer-global instructions are in your context but are
+invisible and unreachable to them. A question premised on material outside the
+repo cannot be answered.
+
+- When a finding rests on a rule from outside the repo, quote the relevant text
+  verbatim in the question and mark it as given. Never ask an agent to read,
+  locate, name, or cite the file it came from.
+- Ask for evidence the agent can actually produce: a `git` command against the
+  clone, a grep over tracked files, a `file:line` citation.
+- Do not attach warnings about what happens if the agent reads outside the repo.
+  Naming the path at all is what invites the read. State the rule, not the
+  boundary.
+
+A rejected out-of-repo read ends that agent's turn with no output at all, which
+reaches the pipeline as an empty answer indistinguishable from a crash.
+
 **Step 3 — Finalize only when:**
 - All agents agree, OR
 - You have already asked questions in a prior Q&A round and now have enough evidence from the answers to resolve remaining disagreements, OR

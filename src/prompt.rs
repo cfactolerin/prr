@@ -501,6 +501,14 @@ mod tests {
         assert_eq!(repo_from_url("https://github.com/a/b"), "a/b");
     }
 
+    /// The CLI reviewers are confined to the clone, so a question premised on
+    /// anything outside it comes back as an empty answer, not an error.
+    #[test]
+    fn test_arbiter_template_confines_questions_to_repo() {
+        assert!(ARBITER_TEMPLATE.contains("Keep every question answerable inside the cloned repo."));
+        assert!(ARBITER_TEMPLATE.contains("quote the relevant text"));
+    }
+
     #[test]
     fn test_parse_questions_keyed() {
         let json = r#"{"claude": ["What about line 10?", "Did you check auth?"]}"#;
