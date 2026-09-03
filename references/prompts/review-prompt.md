@@ -90,6 +90,59 @@ Each finding also carries an `Anchor` label:
 - `reference` — Location is on an unchanged line (the AC requires fixing it, or the diff relies on it). Won't be posted inline.
 - `none` — Cross-cutting finding with no single anchor line (e.g., "no integration test for X"). Won't be posted inline.
 
+### `Why this matters` — labelled slots
+
+Write `Why this matters` as a block of labelled sub-bullets, never as a
+paragraph. Two slots, both required — slot 1 can carry two labels, so a
+block has two or three sub-bullets. Pick each label from the tables
+below. Never emit a label whose value is `N/A` or `None` — pick the
+label that has real content instead.
+
+**Slot 1 — orientation.** Choose by what the diff did to the code this
+finding is about, never by the Anchor. The two are independent: a
+`Missing Test` finding about a newly added endpoint takes `What this
+adds` even though its Anchor is `none`.
+
+| Situation | Label(s) |
+|---|---|
+| The diff changed code that already existed | `Previous behavior` **and** `On this branch` |
+| The diff added the code | `What this adds` |
+| The diff did not touch the code | `Existing behavior` |
+
+**Slot 2 — the problem.**
+
+| Trigger | Label |
+|---|---|
+| `Missing Test`, `Missing Doc / Error Handling` | `What's missing` |
+| Every other trigger | `What's wrong` |
+
+Indent the sub-bullets two spaces under `- **Why this matters:**`.
+
+### Who reads what
+
+`Why this matters` and `Suggested fix` are read by the reviewer, who may
+be cold on this codebase and is deciding whether to send the finding to
+the author. `Suggested comment` is read by the author, who wrote the diff
+and already has that context.
+
+- `Suggested fix` argues the fix: what to change, and why that change
+  rather than another one. Where a more exact approach was available and
+  rejected, name it and say what it cost.
+- The fix line inside `Suggested comment` instructs: what to change. No
+  justification, no alternatives weighed.
+- If the two could be swapped without loss, both are wrong.
+
+### Writing rules
+
+- One idea per sentence. A sentence held together by `and ... but ...
+  so ...` is three sentences.
+- Put citations at the end of a sentence, never mid-clause.
+- No review-process narration. "Both reviewers confirmed this" says
+  nothing about the code, and confidence has its own section.
+- No rhetorical questions in `Suggested comment`. State the problem.
+- `Suggested comment` must not repeat orientation already given in
+  `Why this matters`.
+
 ## Output Format
 
 Respond with the following markdown structure **exactly**. Do not add extra sections.
@@ -117,18 +170,23 @@ HIGH | MEDIUM | LOW — one sentence explaining your confidence level.
 - **Anchor:** diff | reference | none
 - **Location:** `path/to/file:line` or `path/to/file:start-end`
   (omit only when Anchor is `none`)
-- **Why this matters:** 2-4 sentences. State the consequence and how the diff or AC makes it relevant.
-- **Suggested comment:** Text the author would post on the PR, as-is.
-- **Suggested fix:** Concrete remediation.
+- **Why this matters:**
+  - **Previous behavior:** What the code did before this diff.
+  - **On this branch:** What it does now.
+  - **What's wrong:** Why the new state is a problem, and for whom.
+- **Suggested fix:** What to change, and why that change rather than another.
+- **Suggested comment:** The problem, then the fix as an instruction.
 
 #### F-02 — <short title>
 
 - **Severity:** ...
 - **Anchor:** ...
 - **Location:** ...
-- **Why this matters:** ...
-- **Suggested comment:** ...
+- **Why this matters:**
+  - **What this adds:** ...
+  - **What's missing:** ...
 - **Suggested fix:** ...
+- **Suggested comment:** ...
 
 ### Trigger: Code Change
 

@@ -669,4 +669,46 @@ mod tests {
         assert!(out.contains("Did you check line 42?"));
         assert!(out.contains("My prior review text."));
     }
+
+    #[test]
+    fn test_templates_share_the_label_vocabulary() {
+        const LABELS: [&str; 6] = [
+            "Previous behavior",
+            "On this branch",
+            "What this adds",
+            "Existing behavior",
+            "What's wrong",
+            "What's missing",
+        ];
+        for label in LABELS {
+            assert!(
+                REVIEW_TEMPLATE.contains(label),
+                "review-prompt.md is missing the `{label}` slot label"
+            );
+            assert!(
+                ARBITER_TEMPLATE.contains(label),
+                "arbiter-prompt.md is missing the `{label}` slot label"
+            );
+        }
+    }
+
+    #[test]
+    fn test_templates_demonstrate_nested_why_this_matters() {
+        for (name, template) in [
+            ("review-prompt.md", REVIEW_TEMPLATE),
+            ("arbiter-prompt.md", ARBITER_TEMPLATE),
+        ] {
+            let lines: Vec<&str> = template.lines().collect();
+            let nested = lines.windows(2).any(|w| {
+                w[0].trim_start().starts_with("- **Why this matters:**")
+                    && w[1].starts_with("  - **")
+            });
+            assert!(
+                nested,
+                "{name} must show `Why this matters` followed by an indented \
+                 sub-bullet — a flattened one-line template teaches the shape \
+                 this change exists to remove"
+            );
+        }
+    }
 }
