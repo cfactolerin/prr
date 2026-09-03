@@ -39,10 +39,15 @@ echo "Say hello" | gemini -p "" -m <model> -o text --approval-mode yolo
 **If agent is `opencode`:**
 Run:
 ```bash
-printf 'Reply with exactly: HELLO\n' | timeout 30 opencode run --model openai/gpt-5.5 --format json | jq -r 'select(.type == "text") | .part.text'
+printf 'Reply with exactly: HELLO\n' | timeout 30 opencode run --model openai/gpt-5.5 --format json | jq -rR 'fromjson? // empty | if .type == "text" then .part.text elif .type == "error" then "OPENCODE ERROR: \(.error.name // "unknown"): \(.error.data.message // .error | tostring)" else empty end'
 ```
 
 opencode reads `OPENAI_API_KEY` from the environment. If the smoke test fails with an auth error, remind the user to either `export OPENAI_API_KEY=sk-...` in their shell rc or run `opencode auth`.
+
+opencode exits 0 whether or not the model call worked, so judge this one on its
+output: a line starting `OPENCODE ERROR:` is a failure. For a model error rather
+than an auth error, suggest `opencode upgrade` — the model list is pinned per
+release, so a stale build can 404 on a model that exists.
 
 ### Step 2: Handle smoke test result
 

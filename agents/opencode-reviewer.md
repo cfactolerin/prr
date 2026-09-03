@@ -27,7 +27,7 @@ cat "<prompt_path>" \
       --model openai/gpt-5.5 \
       --dir "<repo_path>" \
       --format json \
-  | jq -r 'select(.type == "text") | .part.text' \
+  | jq -rR 'fromjson? // empty | if .type == "text" then .part.text elif .type == "error" then "OPENCODE ERROR: \(.error.name // "unknown"): \(.error.data.message // .error | tostring)" else empty end' \
   > "<output_path>"
 ```
 
@@ -38,7 +38,18 @@ nothing here — and a flag whose name disarms a safety guard is refused outrigh
 by the Claude Code auto-mode permission classifier, which blocks this dispatch
 before opencode ever starts.
 
-The opencode JSON stream emits multiple event objects per run; the final review text is in entries with `type == "text"`. The `jq` filter extracts only those text parts.
+The same goes for the Bash tool's own `dangerouslyDisableSandbox`. opencode runs
+fine sandboxed: its oauth token in `~/.local/share/opencode/auth.json` is
+long-lived and the session store it writes on every run is already reachable. A
+failing opencode is a provider or version problem, not a sandbox one, so
+disabling the sandbox does not fix it — it just gets the dispatch blocked by the
+classifier and stalls the review.
+
+The opencode JSON stream emits multiple event objects per run. Review text
+arrives in `type == "text"` entries; failures arrive as a `type == "error"`
+entry and opencode still exits 0. The `jq` filter passes both through, so a run
+that dies mid-stream leaves the reason in the output file instead of a
+zero-byte file.
 
 ## After opencode Completes
 

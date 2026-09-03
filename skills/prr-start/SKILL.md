@@ -133,13 +133,22 @@ export GOOGLE_CLOUD_PROJECT="<GOOGLE_CLOUD_PROJECT>" GOOGLE_CLOUD_LOCATION="<GOO
 
 #### Opencode check (if "opencode" is in the agents list)
 ```bash
-printf 'Reply with exactly: HELLO\n' | timeout 30 opencode run --model openai/gpt-5.5 --format json 2>&1 | jq -r 'select(.type == "text") | .part.text' | head -5
+printf 'Reply with exactly: HELLO\n' | timeout 30 opencode run --model openai/gpt-5.5 --format json 2>&1 | jq -rR 'fromjson? // empty | if .type == "text" then .part.text elif .type == "error" then "OPENCODE ERROR: \(.error.name // "unknown"): \(.error.data.message // .error | tostring)" else empty end' | head -5
 ```
 - **Pass:** output contains recognizable text (not an error/auth failure)
 - **Fail:** command errors, times out, or returns an auth error
 
+opencode exits 0 even when the model call fails, so read the output, not the
+exit code. A line starting `OPENCODE ERROR:` is a failure; quote it to the user
+verbatim.
+
 If opencode fails, also check whether `OPENAI_API_KEY` is set in the environment. If it is missing, tell the user:
 > opencode requires `OPENAI_API_KEY` to be exported in your shell (e.g., add `export OPENAI_API_KEY=sk-...` to `~/.zshrc`), or run `opencode auth` to authenticate. Skipping opencode for this review.
+
+`opencode upgrade` is worth suggesting for any other error: opencode pins the
+provider's model list per release, so a stale build can 404 on a model that
+exists. Do not reach for the Bash tool's `dangerouslyDisableSandbox` — opencode
+works sandboxed, and the classifier blocks the dispatch outright.
 
 **Claude does not need a health check** — it runs as a native Claude Code sub-agent and is always available.
 
@@ -240,10 +249,21 @@ Run the opencode CLI to review this PR. Here are your paths:
 - Write output to: <RESULTS_PATH>/opencode-review.md
 
 Run this exact command:
-cat "<PROMPT_PATH>" | opencode run --model openai/gpt-5.5 --dir "<REPO_PATH>" --format json | jq -r 'select(.type == "text") | .part.text' > "<RESULTS_PATH>/opencode-review.md"
+cat "<PROMPT_PATH>" | opencode run --model openai/gpt-5.5 --dir "<REPO_PATH>" --format json | jq -rR 'fromjson? // empty | if .type == "text" then .part.text elif .type == "error" then "OPENCODE ERROR: \(.error.name // "unknown"): \(.error.data.message // .error | tostring)" else empty end' > "<RESULTS_PATH>/opencode-review.md"
 ```
 
 ### Step 4e: Wait and verify
+
+A dispatch that never starts counts as a failed agent, not as a reason to halt.
+If the permission classifier refuses an agent, or the agent dies without writing
+its file, drop it and carry on with the ones still running — the other reviewers
+are already working in the background, and holding the whole run open on a
+question strands them until their watchdog kills them. Record the drop and
+report it below; the user can re-run with that agent once the cause is sorted.
+
+Do not re-issue a refused dispatch with a sandbox or permission bypass added.
+The classifier refuses those on sight, and the second refusal costs another
+agent's worth of wall-clock.
 
 After all agents complete, verify each expected output file exists and is non-empty:
 - `<RESULTS_PATH>/claude-review.md` (if claude was dispatched)
@@ -325,7 +345,7 @@ Search the output for a fenced JSON code block (` ```json `) whose content is an
    - For **gemini**: dispatch `gemini-reviewer` with the question prompt piped to gemini, output to the answer path.
    - For **opencode**: dispatch `opencode-reviewer` with instructions to run:
      ```
-     cat "<question_prompt_path>" | opencode run --model openai/gpt-5.5 --dir "<REPO_PATH>" --format json | jq -r 'select(.type == "text") | .part.text' > "<answer_path>"
+     cat "<question_prompt_path>" | opencode run --model openai/gpt-5.5 --dir "<REPO_PATH>" --format json | jq -rR 'fromjson? // empty | if .type == "text" then .part.text elif .type == "error" then "OPENCODE ERROR: \(.error.name // "unknown"): \(.error.data.message // .error | tostring)" else empty end' > "<answer_path>"
      ```
 
    Dispatch all agent answers in parallel.
