@@ -103,7 +103,7 @@ The `bin/prr-darwin-universal` binary is committed to the repository so users do
 
 ### Bump rules (semver-ish, given current `0.x.y`)
 
-- **Binary-affecting changes** (files under `src/`, `Cargo.toml`/`Cargo.lock` deps) → bump **minor**, reset patch (e.g., `0.3.4` → `0.4.0`)
+- **Binary-affecting changes** (files under `src/`, `references/prompts/` — these are `include_str!`'d into the binary — `Cargo.toml`/`Cargo.lock` deps) → bump **minor**, reset patch (e.g., `0.3.4` → `0.4.0`)
 - **Non-binary changes** (skills, agents, docs, CLAUDE.md, README) → bump **patch** (e.g., `0.3.4` → `0.3.5`)
 
 ### Commit procedure (every commit)
@@ -135,7 +135,7 @@ git commit -m "your message"
 
 ## Findings Format
 
-PRR reviews produce structured findings classified by `Trigger`. Every finding carries six fields (Severity, Anchor, Location, Why this matters, Suggested comment, Suggested fix) and is grouped under one of 8 Triggers:
+PRR reviews produce structured findings classified by `Trigger`. Every finding carries six fields (Severity, Anchor, Location, Why this matters, Suggested fix, Suggested comment) and is grouped under one of 8 Triggers:
 
 `Acceptance Criteria` · `Code Change` · `Code Quality` · `Logic Bug` · `Security` · `Performance` · `Missing Test` · `Missing Doc / Error Handling`
 
@@ -152,7 +152,7 @@ PRR reviews produce structured findings classified by `Trigger`. Every finding c
 | New behaviour without docs / error handling | `Missing Doc / Error Handling` |
 | Suspicious but fits none of the above (catch-all of last resort) | `Code Change` |
 
-**Required bullets per finding:** `Severity`, `Anchor`, `Why this matters`, `Suggested comment`, `Suggested fix`. `Location` is required when `Anchor` is `diff` or `reference`; omitted when `none`.
+**Required bullets per finding:** `Severity`, `Anchor`, `Why this matters`, `Suggested fix`, `Suggested comment`. `Location` is required when `Anchor` is `diff` or `reference`; omitted when `none`. `Why this matters` is labelled sub-bullets, not prose — see `references/report-format.md` for the two slots and their situation-dependent labels.
 
 **Postability classification (the `Anchor` field):**
 

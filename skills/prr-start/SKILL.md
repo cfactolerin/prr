@@ -489,13 +489,21 @@ For each finding, present in **two parts**: rich context as regular text, then a
 
 <code context in a language-specific fenced block; target line marked with # <-->
 
-**Why this matters:** <why_it_matters>
+**Why this matters**
 
-**Suggested comment:**
-> <suggested_comment>
+<why_it_matters, printed verbatim>
 
 **Suggested fix:** <suggested_fix>
+
+**Suggested comment:**
+
+> <suggested_comment, one `>` per line, blank lines quoted as bare `>`>
 ```
+
+`why_it_matters` arrives carrying its own labelled sub-bullets. Print it
+verbatim — do not re-wrap it, re-indent it, collapse it onto one line, or
+prefix it with `**Why this matters:**` inline. `suggested_comment` may
+span several paragraphs; quote every line, including the blank ones.
 
 `N/M` counts only diff-anchored findings. Code context is read from `<ROUND_DIR>/repo/<path>`, ~5 lines before/after the target line, language-hinted fence (e.g., ` ```ruby `), target line marked with a trailing `# <--` comment. The clickable link uses the `url` field if present, else plain text `path#L<line>`.
 
@@ -533,12 +541,15 @@ After diff-anchored findings, walk `findings` where `anchor` is `"reference"` or
 
 📄 <path:line if anchor == reference; else "(no anchor line)">
 
-**Why this matters:** <why_it_matters>
+**Why this matters**
 
-**Suggested comment:**
-> <suggested_comment>
+<why_it_matters, printed verbatim>
 
 **Suggested fix:** <suggested_fix>
+
+**Suggested comment:**
+
+> <suggested_comment, one `>` per line, blank lines quoted as bare `>`>
 ```
 
 For `anchor: reference`, render the code context the same way as 7b but note "(unchanged code — for reference only)" above the fence.
@@ -564,7 +575,7 @@ Triggered by `add`/`new`/`+` at any point in 7b or 7c. Collect:
 2. **Severity** — AskUserQuestion: HIGH / MED / LOW.
 3. **Anchor** — AskUserQuestion: "Is this anchored on a changed line, on existing code, or no specific line?" → `diff` / `reference` / `none`.
 4. If Anchor ≠ `none`: ask for `path:line`. Validate against `<ROUND_DIR>/results/diff.txt` — if the user picked `diff` but the line isn't in the diff, ask whether to downgrade to `reference`.
-5. Draft `Why this matters`, `Suggested comment`, `Suggested fix` with the user; confirm.
+5. Draft `Why this matters` — using the slot labels in `references/report-format.md` — then `Suggested fix` and `Suggested comment` with the user; confirm.
 6. Append a synthetic CommentState with `status = Accepted` and continue the review.
 
 ### After Phase 7
@@ -606,11 +617,11 @@ Do NOT use the arbiter's original `review_body` directly. Regenerate based on th
    <one opening sentence with overall assessment>
 
    **Inline comments (P):**
-   - `path:line` — <Trigger> — <one-line summary from suggested_comment or overridden_body>
+   - `path:line` — <Trigger> — <first line of suggested_comment or overridden_body>
    - ...
 
    **Other findings (Q):**
-   - `path:line` (or "(no anchor)") — <Trigger> — <one-line summary>
+   - `path:line` (or "(no anchor)") — <Trigger> — <first line of suggested_comment or overridden_body>
    - ...
    ```
 
