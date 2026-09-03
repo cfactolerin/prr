@@ -493,17 +493,21 @@ For each finding, present in **two parts**: rich context as regular text, then a
 
 <why_it_matters, printed verbatim>
 
-**Suggested fix:** <suggested_fix>
+**Suggested fix**
+
+<suggested_fix, printed verbatim>
 
 **Suggested comment:**
 
 > <suggested_comment, one `>` per line, blank lines quoted as bare `>`>
 ```
 
-`why_it_matters` arrives carrying its own labelled sub-bullets. Print it
-verbatim — do not re-wrap it, re-indent it, collapse it onto one line, or
-prefix it with `**Why this matters:**` inline. `suggested_comment` may
-span several paragraphs; quote every line, including the blank ones.
+`why_it_matters` arrives carrying its own labelled sub-bullets, and
+`suggested_fix` runs to several lines and may carry an indented snippet.
+Print both verbatim — do not re-wrap them, re-indent them, collapse them
+onto one line, or prefix them with an inline `**<label>:**`.
+`suggested_comment` may span several paragraphs; quote every line,
+including the blank ones.
 
 `N/M` counts only diff-anchored findings. Code context is read from `<ROUND_DIR>/repo/<path>`, ~5 lines before/after the target line, language-hinted fence (e.g., ` ```ruby `), target line marked with a trailing `# <--` comment. The clickable link uses the `url` field if present, else plain text `path#L<line>`.
 
@@ -545,7 +549,9 @@ After diff-anchored findings, walk `findings` where `anchor` is `"reference"` or
 
 <why_it_matters, printed verbatim>
 
-**Suggested fix:** <suggested_fix>
+**Suggested fix**
+
+<suggested_fix, printed verbatim>
 
 **Suggested comment:**
 
@@ -575,7 +581,20 @@ Triggered by `add`/`new`/`+` at any point in 7b or 7c. Collect:
 2. **Severity** — AskUserQuestion: HIGH / MED / LOW.
 3. **Anchor** — AskUserQuestion: "Is this anchored on a changed line, on existing code, or no specific line?" → `diff` / `reference` / `none`.
 4. If Anchor ≠ `none`: ask for `path:line`. Validate against `<ROUND_DIR>/results/diff.txt` — if the user picked `diff` but the line isn't in the diff, ask whether to downgrade to `reference`.
-5. Draft `Why this matters` — using the slot labels in `references/report-format.md` — then `Suggested fix` and `Suggested comment` with the user; confirm.
+5. Draft `Why this matters` as labelled sub-bullets, indented two spaces. Two slots, both required — pick slot 1 by what the diff did to the code the finding is about, and slot 2 by the Trigger chosen in step 1.
+
+   | Situation | Slot 1 label(s) |
+   |---|---|
+   | The diff changed code that already existed | `Previous behavior` **and** `On this branch` |
+   | The diff added the code | `What this adds` |
+   | The diff did not touch the code | `Existing behavior` |
+
+   | Trigger | Slot 2 label |
+   |---|---|
+   | `Missing Test`, `Missing Doc / Error Handling` | `What's missing` |
+   | Every other trigger | `What's wrong` |
+
+   Then draft `Suggested fix` and `Suggested comment` with the user; confirm.
 6. Append a synthetic CommentState with `status = Accepted` and continue the review.
 
 ### After Phase 7
@@ -617,11 +636,11 @@ Do NOT use the arbiter's original `review_body` directly. Regenerate based on th
    <one opening sentence with overall assessment>
 
    **Inline comments (P):**
-   - `path:line` — <Trigger> — <first line of suggested_comment or overridden_body>
+   - `path:line` — <Trigger> — <one-line summary of suggested_comment or overridden_body>
    - ...
 
    **Other findings (Q):**
-   - `path:line` (or "(no anchor)") — <Trigger> — <first line of suggested_comment or overridden_body>
+   - `path:line` (or "(no anchor)") — <Trigger> — <one-line summary of suggested_comment or overridden_body>
    - ...
    ```
 
@@ -747,7 +766,8 @@ Build a JSON payload:
 ```
 
 For each comment: if `start_line` is present in the parsed JSON, include it in the payload (GitHub highlights the range). If `start_line` is absent, omit it (single-line comment).
-```
+
+`<comment_body>` routinely contains newlines and blank lines. JSON-escape them as `\n` — a raw line break inside the string makes the payload invalid JSON and `gh api` rejects the whole review.
 
 If there are no comments, omit the `comments` array (just post the review body with the event).
 

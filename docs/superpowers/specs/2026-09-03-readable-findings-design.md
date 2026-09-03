@@ -1,6 +1,6 @@
 # Readable Findings
 
-Status: approved, not yet implemented
+Status: implemented
 Amends: `docs/superpowers/specs/2026-05-21-trigger-based-findings-design.md`
 
 ## Problem
@@ -195,8 +195,9 @@ values may now contain newlines.
   `suggested_comment` as the GitHub comment body. Multi-paragraph
   bodies render correctly on GitHub; no change needed.
 - Phase 8 of `skills/prr-start/SKILL.md` builds a one-line summary from
-  `suggested_comment`. It must take the first line, not the whole
-  value.
+  `suggested_comment`. The concern is length, and hard wrapping makes
+  the first line a wrap boundary rather than a sentence, so the summary
+  must be written rather than sliced.
 - The Phase 7 render blocks print `why_it_matters` verbatim rather than
   as a single `**Why this matters:** <value>` line.
 
@@ -233,12 +234,10 @@ change only affects how line breaks are preserved.
 though they sit outside `src/`. `CLAUDE.md`'s bump rule does not
 currently say so; this change corrects that wording.
 
-Version: the feature is one minor bump, 0.6.0 to 0.7.0, across
-`Cargo.toml`, `.claude-plugin/plugin.json` and
-`.claude-plugin/marketplace.json`, with the binary rebuilt. If the work
-lands as more than one commit, `CLAUDE.md` requires a bump and a rebuild
-per commit; the implementation plan takes that literally and ends at
-0.8.1. Landing it as a single commit at 0.7.0 is tidier in `git log`.
+Version: the work landed as four commits sharing a single minor bump,
+0.6.0 to 0.7.0, and the review fixes that followed took it to 0.8.0.
+Each bump synced `Cargo.toml`, `.claude-plugin/plugin.json` and
+`.claude-plugin/marketplace.json` and rebuilt the binary.
 
 ## Testing
 

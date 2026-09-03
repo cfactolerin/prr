@@ -458,6 +458,11 @@ fn repo_from_url(url: &str) -> String {
 mod tests {
     use super::*;
 
+    /// The third home of the label vocabulary. Not compiled into the
+    /// binary — the skill reads it from disk — so the guard test pulls it
+    /// in here to keep all three copies in step.
+    const REPORT_FORMAT: &str = include_str!("../references/report-format.md");
+
     #[test]
     fn test_capitalize() {
         assert_eq!(capitalize("claude"), "Claude");
@@ -681,14 +686,16 @@ mod tests {
             "What's missing",
         ];
         for label in LABELS {
-            assert!(
-                REVIEW_TEMPLATE.contains(label),
-                "review-prompt.md is missing the `{label}` slot label"
-            );
-            assert!(
-                ARBITER_TEMPLATE.contains(label),
-                "arbiter-prompt.md is missing the `{label}` slot label"
-            );
+            for (name, text) in [
+                ("review-prompt.md", REVIEW_TEMPLATE),
+                ("arbiter-prompt.md", ARBITER_TEMPLATE),
+                ("report-format.md", REPORT_FORMAT),
+            ] {
+                assert!(
+                    text.contains(label),
+                    "{name} is missing the `{label}` slot label"
+                );
+            }
         }
     }
 

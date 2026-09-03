@@ -142,6 +142,9 @@ and already has that context.
 - No rhetorical questions in `Suggested comment`. State the problem.
 - `Suggested comment` must not repeat orientation already given in
   `Why this matters`.
+- Indent fenced code blocks two spaces inside a bullet value. A line at
+  column 0 inside a snippet — a literal `- **Severity:**`, say — is read
+  as a new bullet and hijacks the parse.
 
 ## Output Format
 
@@ -176,6 +179,8 @@ HIGH | MEDIUM | LOW — one sentence explaining your confidence level.
   - **What's wrong:** Why the new state is a problem, and for whom.
 - **Suggested fix:** What to change, and why that change rather than another.
 - **Suggested comment:** The problem, then the fix as an instruction.
+
+### Trigger: Missing Test
 
 #### F-02 — <short title>
 

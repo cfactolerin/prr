@@ -415,6 +415,11 @@ fn find_findings_section(content: &str) -> Option<(usize, u32)> {
 /// A line starting with `#` is treated as content, not a heading, because
 /// bullet values carry code snippets and a shell comment is indistinguishable
 /// from a markdown heading at this level.
+///
+/// Because nothing but the next bullet ends a value, prose sitting after the
+/// last bullet of a block is absorbed into that bullet. Findings are not
+/// supposed to carry trailing prose, and a lookahead to catch it costs more
+/// than it saves.
 fn parse_finding_bullets(block: &str) -> std::collections::HashMap<String, String> {
     let bullet_re = Regex::new(r"^-\s*\*\*([^:*]+):\*\*\s*(.*)$").unwrap();
     let mut out: std::collections::HashMap<String, String> = std::collections::HashMap::new();
@@ -539,7 +544,25 @@ const KNOWN_TRIGGERS: &[&str] = &[
     "Missing Doc / Error Handling",
 ];
 
-fn validate_finding(f: &Finding) -> Result<(), String> {
+/// The `Why this matters` slot labels, lowercased to match the keys
+/// `parse_finding_bullets` produces.
+const SLOT_LABELS: [&str; 6] = [
+    "previous behavior",
+    "on this branch",
+    "what this adds",
+    "existing behavior",
+    "what's wrong",
+    "what's missing",
+];
+
+/// `bullets` is the finding's raw bullet map. Sub-bullets written at
+/// column 0 parse as top-level bullets of their own, which empties
+/// `why_it_matters`; their labels turning up as keys is what separates
+/// that from a finding that never wrote the block.
+fn validate_finding(
+    f: &Finding,
+    bullets: &HashMap<String, String>,
+) -> Result<(), String> {
     if !KNOWN_TRIGGERS.iter().any(|t| t.eq_ignore_ascii_case(&f.trigger)) {
         return Err(format!("unknown Trigger '{}'", f.trigger));
     }
@@ -547,6 +570,13 @@ fn validate_finding(f: &Finding) -> Result<(), String> {
         return Err("missing Severity".into());
     }
     if f.why_it_matters.is_empty() {
+        if SLOT_LABELS.iter().any(|l| bullets.contains_key(*l)) {
+            return Err(
+                "'Why this matters' is empty — its sub-bullets must be \
+                 indented two spaces"
+                    .into(),
+            );
+        }
         return Err("missing 'Why this matters'".into());
     }
     if f.suggested_comment.is_empty() {
@@ -632,7 +662,9 @@ pub fn parse_findings_section(content: &str) -> Vec<Finding> {
             let block = &scope[line_end..next_start];
             let bullets = parse_finding_bullets(block);
 
-            let severity = bullets.get("severity").cloned().unwrap_or_default();
+            let severity = bullets.get("severity")
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
             let anchor_str = bullets.get("anchor").cloned().unwrap_or_default();
             let anchor = match parse_anchor(&anchor_str) {
                 Some(a) => a,
@@ -671,7 +703,7 @@ pub fn parse_findings_section(content: &str) -> Vec<Finding> {
                 from_legacy: false,
             };
 
-            match validate_finding(&finding) {
+            match validate_finding(&finding, &bullets) {
                 Ok(()) => findings.push(finding),
                 Err(msg) => eprintln!(
                     "warning: skipping finding {} ({}): {}",
@@ -1523,5 +1555,134 @@ REQUEST_CHANGES
         assert_eq!(report.line_comments[0].path, "src/main.rs");
         assert_eq!(report.line_comments[0].line, 42);
         assert_eq!(report.line_comments[0].body, "Body 1");
+    }
+
+    #[test]
+    fn test_unindented_slot_bullets_report_the_indentation_error() {
+        let content = r#"## Findings
+
+### Trigger: Logic Bug
+
+#### F-01 — Flag check runs too late
+
+- **Severity:** HIGH
+- **Anchor:** none
+- **Why this matters:**
+- **Previous behavior:** The guard ran before the flag check.
+- **What's wrong:** It now runs after, so flag-off traffic reaches it.
+- **Suggested fix:** f
+- **Suggested comment:** c
+"#;
+        let findings = parse_findings_section(content);
+        assert_eq!(findings.len(), 0, "the finding is still dropped");
+
+        let bullets = parse_finding_bullets(
+            "- **Why this matters:**\n- **What's wrong:** It runs too late.",
+        );
+        let finding = Finding {
+            id: "F-01".into(),
+            title: "Flag check runs too late".into(),
+            trigger: "Logic Bug".into(),
+            severity: "HIGH".into(),
+            anchor: Anchor::None,
+            location: None,
+            path: None,
+            line: None,
+            start_line: None,
+            why_it_matters: String::new(),
+            suggested_comment: "c".into(),
+            suggested_fix: "f".into(),
+            from_legacy: false,
+        };
+        assert_eq!(
+            validate_finding(&finding, &bullets),
+            Err("'Why this matters' is empty — its sub-bullets must be \
+                 indented two spaces"
+                .into()),
+        );
+    }
+
+    #[test]
+    fn test_missing_why_this_matters_keeps_its_own_message() {
+        let bullets = parse_finding_bullets("- **Suggested fix:** f");
+        let finding = Finding {
+            id: "F-01".into(),
+            title: "No block at all".into(),
+            trigger: "Logic Bug".into(),
+            severity: "HIGH".into(),
+            anchor: Anchor::None,
+            location: None,
+            path: None,
+            line: None,
+            start_line: None,
+            why_it_matters: String::new(),
+            suggested_comment: "c".into(),
+            suggested_fix: "f".into(),
+            from_legacy: false,
+        };
+        assert_eq!(
+            validate_finding(&finding, &bullets),
+            Err("missing 'Why this matters'".into()),
+        );
+    }
+
+    /// Characterization test: this is accepted behavior, not desired
+    /// behavior. Nothing but the next bullet ends a value, so prose after
+    /// the last bullet lands in that bullet — and, for `Suggested comment`,
+    /// in the GitHub comment body. It is pinned here so a future flush is a
+    /// deliberate choice rather than an accident.
+    #[test]
+    fn test_trailing_prose_is_absorbed_into_the_last_bullet() {
+        let content = r#"## Findings
+
+### Trigger: Code Change
+
+#### F-01 — Title
+
+- **Severity:** LOW
+- **Anchor:** diff
+- **Location:** `src/main.rs:42`
+- **Why this matters:** w
+- **Suggested fix:** f
+- **Suggested comment:** The real comment.
+
+Stray prose the reviewer left after the block.
+"#;
+        let report = parse_report(content);
+        assert_eq!(report.findings.len(), 1);
+        assert!(
+            report.findings[0]
+                .suggested_comment
+                .contains("Stray prose the reviewer left"),
+            "absorption is accepted: {}",
+            report.findings[0].suggested_comment
+        );
+        assert!(
+            report.line_comments[0]
+                .body
+                .contains("Stray prose the reviewer left"),
+            "it reaches GitHub: {}",
+            report.line_comments[0].body
+        );
+    }
+
+    #[test]
+    fn test_severity_on_a_continuation_line_is_trimmed() {
+        let content = r#"## Findings
+
+### Trigger: Code Change
+
+#### F-01 — Title
+
+- **Severity:**
+  HIGH
+- **Anchor:** none
+- **Why this matters:** w
+- **Suggested fix:** f
+- **Suggested comment:** c
+"#;
+        let findings = parse_findings_section(content);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, "HIGH");
     }
 }
