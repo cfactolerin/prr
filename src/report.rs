@@ -407,42 +407,44 @@ fn find_findings_section(content: &str) -> Option<(usize, u32)> {
     Some((end, level))
 }
 
-/// Parse the bullet block belonging to a finding. Returns a
-/// key→value map with keys lowercased. Multiline values are space-
-/// joined; blank lines end a value.
+/// Parse the `- **Key:** value` bullets of a finding block.
+///
+/// A value runs until the next top-level bullet or the end of the block.
+/// Line breaks and leading indentation are kept: `Why this matters` nests
+/// labelled sub-bullets, and the skill prints the captured value verbatim.
+/// A line starting with `#` is treated as content, not a heading, because
+/// bullet values carry code snippets and a shell comment is indistinguishable
+/// from a markdown heading at this level.
 fn parse_finding_bullets(block: &str) -> std::collections::HashMap<String, String> {
     let bullet_re = Regex::new(r"^-\s*\*\*([^:*]+):\*\*\s*(.*)$").unwrap();
     let mut out: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut current_key: Option<String> = None;
     let mut current_val: Vec<String> = Vec::new();
 
-    let flush = |key: &Option<String>, val: &mut Vec<String>, out: &mut std::collections::HashMap<String, String>| {
-        if let Some(k) = key {
-            out.insert(k.clone(), val.join(" ").trim().to_string());
+    let flush = |key: &mut Option<String>,
+                 val: &mut Vec<String>,
+                 out: &mut std::collections::HashMap<String, String>| {
+        if let Some(k) = key.take() {
+            out.insert(k, val.join("\n").trim_matches('\n').to_string());
         }
         val.clear();
     };
 
     for line in block.lines() {
         let trimmed = line.trim_end();
-        if trimmed.is_empty() {
-            flush(&current_key, &mut current_val, &mut out);
-            current_key = None;
-            continue;
-        }
         if let Some(caps) = bullet_re.captures(trimmed) {
-            flush(&current_key, &mut current_val, &mut out);
+            flush(&mut current_key, &mut current_val, &mut out);
             current_key = Some(caps[1].trim().to_lowercase());
             let initial = caps[2].trim().to_string();
             if !initial.is_empty() {
                 current_val.push(initial);
             }
         } else if current_key.is_some() {
-            current_val.push(trimmed.trim().to_string());
+            current_val.push(trimmed.to_string());
         }
         // Lines outside any bullet are ignored.
     }
-    flush(&current_key, &mut current_val, &mut out);
+    flush(&mut current_key, &mut current_val, &mut out);
     out
 }
 
@@ -1080,6 +1082,115 @@ REQUEST_CHANGES
         assert!(f.why_it_matters.contains("Sentence two continues"));
         assert!(f.suggested_comment.contains("author should post"));
         assert!(f.suggested_fix.contains("Replace"));
+    }
+
+    #[test]
+    fn test_bullet_value_keeps_indented_sublabels() {
+        let content = r#"## Findings
+
+### Trigger: Missing Test
+
+#### F-01 — Retry path is untested
+
+- **Severity:** MED
+- **Anchor:** diff
+- **Location:** `lib/deliverable.rb:57`
+- **Why this matters:**
+  - **What this adds:** A `retry_on_conflict` branch in `Deliverable#push`.
+  - **What's missing:** No spec covers the conflict path, so a regression
+    in the retry ceiling would ship silently.
+- **Suggested fix:** Add a spec driving two conflicting pushes.
+- **Suggested comment:** The conflict branch has no coverage.
+"#;
+        let findings = parse_findings_section(content);
+        assert_eq!(findings.len(), 1);
+        let why = &findings[0].why_it_matters;
+        assert!(
+            why.contains("- **What this adds:**"),
+            "sub-labels must survive: {why}"
+        );
+        assert!(
+            why.contains("- **What's missing:**"),
+            "sub-labels must survive: {why}"
+        );
+        assert_eq!(
+            why.lines().count(),
+            3,
+            "line breaks must survive: {why}"
+        );
+        assert!(
+            why.lines().next().unwrap().starts_with("  - **What this adds:**"),
+            "indentation must survive: {why}"
+        );
+    }
+
+    #[test]
+    fn test_blank_line_inside_bullet_value_does_not_truncate() {
+        let content = r#"## Findings
+
+### Trigger: Code Change
+
+#### F-01 — Title
+
+- **Severity:** LOW
+- **Anchor:** none
+- **Why this matters:** First paragraph.
+
+  Second paragraph after a blank line.
+- **Suggested fix:** f
+- **Suggested comment:** c
+"#;
+        let findings = parse_findings_section(content);
+        assert_eq!(findings.len(), 1);
+        let why = &findings[0].why_it_matters;
+        assert!(why.contains("First paragraph."), "{why}");
+        assert!(
+            why.contains("Second paragraph after a blank line."),
+            "a blank line must not truncate the value: {why}"
+        );
+        assert!(why.contains("\n\n"), "the blank line itself is kept: {why}");
+    }
+
+    #[test]
+    fn test_next_top_level_bullet_still_flushes_previous_value() {
+        let content = r#"## Findings
+
+### Trigger: Code Change
+
+#### F-01 — Title
+
+- **Severity:** LOW
+- **Anchor:** none
+- **Why this matters:** w
+- **Suggested fix:** f
+- **Suggested comment:** c
+"#;
+        let findings = parse_findings_section(content);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].why_it_matters, "w");
+        assert_eq!(findings[0].suggested_fix, "f");
+        assert_eq!(findings[0].suggested_comment, "c");
+    }
+
+    #[test]
+    fn test_bullet_value_trailing_blank_lines_stripped() {
+        let content = "## Findings\n\n### Trigger: Code Change\n\n#### F-01 — Title\n\n- **Severity:** LOW\n- **Anchor:** none\n- **Why this matters:** w\n- **Suggested fix:** f\n- **Suggested comment:** Only line.\n\n\n";
+        let findings = parse_findings_section(content);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].suggested_comment, "Only line.");
+    }
+
+    #[test]
+    fn test_hash_prefixed_line_in_bullet_value_is_content() {
+        let block = r#"- **Suggested fix:** Retry with backoff:
+  # Use exponential backoff
+  sleep $((2 ** attempt))
+- **Suggested comment:** c"#;
+        let bullets = parse_finding_bullets(block);
+        let fix = &bullets["suggested fix"];
+        assert!(fix.contains("# Use exponential backoff"), "hash line must survive: {fix}");
+        assert!(fix.contains("sleep $((2 ** attempt))"), "line after hash must survive: {fix}");
+        assert_eq!(fix.lines().count(), 3, "all three lines must survive: {fix}");
     }
 
     #[test]
