@@ -62,31 +62,90 @@ pub fn clone_and_checkout_pr(
     Ok(())
 }
 
-/// Compute diff of PR branch against base. Tries multiple strategies.
+/// Compute diff of PR branch against base.
+///
+/// Three-dot, so the diff starts at the merge-base rather than the base tip.
+/// Two-dot would render every commit that landed on the base after the branch
+/// point as a reversal, which reviewers read as deletions the PR never made.
+/// Three-dot is also what GitHub shows under "Files changed".
 pub fn diff(repo: &Path, base_branch: &str) -> Result<String, Box<dyn std::error::Error>> {
     let candidates = [base_branch.to_string(), format!("origin/{base_branch}")];
     for ref_name in &candidates {
-        if let Some(output) = git_silent(repo, &["diff", &format!("{ref_name}..pr-review"), "--"]) {
+        if let Some(output) = git_silent(repo, &["diff", &format!("{ref_name}...pr-review"), "--"]) {
             return Ok(output);
-        }
-        if let Some(mb) = git_silent(repo, &["merge-base", ref_name, "pr-review"]) {
-            let mb = mb.trim();
-            if let Some(output) = git_silent(repo, &["diff", &format!("{mb}..pr-review"), "--"]) {
-                return Ok(output);
-            }
         }
     }
     eprintln!("warning: could not compute diff against {base_branch}");
     Ok(String::new())
 }
 
-/// List changed files in the PR branch vs base.
+/// List changed files in the PR branch vs base. Three-dot, matching `diff`.
 pub fn changed_files(repo: &Path, base_branch: &str) -> Result<String, Box<dyn std::error::Error>> {
     let candidates = [base_branch.to_string(), format!("origin/{base_branch}")];
     for ref_name in &candidates {
-        if let Some(output) = git_silent(repo, &["diff", "--name-only", &format!("{ref_name}..pr-review"), "--"]) {
+        if let Some(output) = git_silent(repo, &["diff", "--name-only", &format!("{ref_name}...pr-review"), "--"]) {
             return Ok(output);
         }
     }
     Ok(String::new())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run(repo: &Path, args: &[&str]) {
+        let out = Command::new("git").arg("-C").arg(repo).args(args).output().unwrap();
+        assert!(
+            out.status.success(),
+            "git {}: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// A PR branch whose base has moved on since the branch was cut — the
+    /// shape that exposes the difference between two-dot and three-dot.
+    fn repo_with_diverged_base() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path();
+
+        let init = Command::new("git").args(["init", "-b", "master"]).arg(repo).output().unwrap();
+        assert!(init.status.success(), "{}", String::from_utf8_lossy(&init.stderr));
+        run(repo, &["config", "user.email", "test@example.com"]);
+        run(repo, &["config", "user.name", "Test"]);
+        run(repo, &["config", "commit.gpgsign", "false"]);
+
+        std::fs::write(repo.join("shared.txt"), "base\n").unwrap();
+        run(repo, &["add", "."]);
+        run(repo, &["commit", "-m", "initial"]);
+
+        run(repo, &["checkout", "-b", "pr-review"]);
+        std::fs::write(repo.join("branch-only.txt"), "from the pr\n").unwrap();
+        run(repo, &["add", "."]);
+        run(repo, &["commit", "-m", "pr change"]);
+
+        run(repo, &["checkout", "master"]);
+        std::fs::write(repo.join("master-only.txt"), "landed after the branch point\n").unwrap();
+        run(repo, &["add", "."]);
+        run(repo, &["commit", "-m", "master moves on"]);
+
+        run(repo, &["checkout", "pr-review"]);
+        dir
+    }
+
+    #[test]
+    fn test_diff_excludes_commits_landed_on_base_after_branch_point() {
+        let dir = repo_with_diverged_base();
+        let out = diff(dir.path(), "master").unwrap();
+        assert!(out.contains("branch-only.txt"), "diff was:\n{out}");
+        assert!(!out.contains("master-only.txt"), "diff was:\n{out}");
+    }
+
+    #[test]
+    fn test_changed_files_excludes_commits_landed_on_base_after_branch_point() {
+        let dir = repo_with_diverged_base();
+        let out = changed_files(dir.path(), "master").unwrap();
+        assert_eq!(out.lines().collect::<Vec<_>>(), vec!["branch-only.txt"]);
+    }
 }
