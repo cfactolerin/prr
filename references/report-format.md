@@ -28,6 +28,8 @@ Each finding carries:
 - **Suggested fix** — what to change and why that change rather than another. Read by the reviewer.
 - **Suggested comment** — the problem, then the fix as an instruction. Posted to the PR as-is. Read by the author.
 
+The last three are prose in short paragraphs: 1-3 sentences and 50-100 words each, broken with a blank line when a value needs more. Bullets inside them are for genuinely parallel items only — an argument stays sentences. The agent prompts carry the full writing rules.
+
 `Why this matters` slot 1 — orientation. Chosen by what the diff did to
 the code the finding is about, not by the Anchor:
 
@@ -63,7 +65,12 @@ Example finding (per-agent):
     `Asset#sync`, before the feature flag is checked.
   - **What's wrong:** It raises `ClientResponsibilityError` on assets with
     no org, so flag-off tenants fail a sync that used to succeed.
+
+    Orgless assets are reachable on every tier, not only during onboarding
+    (`app/models/asset.rb:214`). No spec covers the combination, so the
+    failure ships silently.
 - **Suggested fix:** Guard the call with `cp_supports_rights_claim_feature?`.
+
   Checking the org inside the parser would also work, but it spreads the
   flag's meaning across two files.
 - **Suggested comment:** This runs before the flag check, so flag-off

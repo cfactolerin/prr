@@ -92,8 +92,8 @@ Each finding also carries an `Anchor` label:
 
 ### `Why this matters` — labelled slots
 
-Write `Why this matters` as a block of labelled sub-bullets, never as a
-paragraph. Two slots, both required — slot 1 can carry two labels, so a
+Write `Why this matters` as a block of labelled sub-bullets, never as one
+unlabelled paragraph. Two slots, both required — slot 1 can carry two labels, so a
 block has two or three sub-bullets. Pick each label from the tables
 below. Never emit a label whose value is `N/A` or `None` — pick the
 label that has real content instead.
@@ -134,14 +134,35 @@ and already has that context.
 
 ### Writing rules
 
+A reviewer reads this in a terminal. Four fields go wrong there: the two
+`Why this matters` problem slots, `Suggested fix`, and `Suggested
+comment`. The rules below are about those four.
+
+- Keep every paragraph to 1-3 sentences and 50-100 words. When a value
+  needs more than that, break it with a blank line and continue in a
+  second paragraph. Three short paragraphs are right; the same words as
+  one block are not.
+- One idea per paragraph. Two mechanisms means two paragraphs. Reaching
+  for "and also" means the paragraph ended a clause ago.
+- Open each paragraph with the claim it makes, then give the evidence. A
+  paragraph that arrives at its point in the last sentence is backwards.
+- Keep these fields prose. Bullets are for genuinely parallel items —
+  four table rows that each fail for a different reason, say. An
+  argument stays sentences, however long it runs.
 - One idea per sentence. A sentence held together by `and ... but ...
   so ...` is three sentences.
+- Mix short sentences with medium ones. Prefer the plain word. Open with
+  a transition when the thought turns — `also`, `however`, `so`, `then`.
 - Put citations at the end of a sentence, never mid-clause.
+- Write `Suggested comment` as a problem paragraph, a blank line, then a
+  paragraph starting `Fix:`.
 - No review-process narration. "Both reviewers confirmed this" says
   nothing about the code, and confidence has its own section.
 - No rhetorical questions in `Suggested comment`. State the problem.
 - `Suggested comment` must not repeat orientation already given in
   `Why this matters`.
+- A continuation paragraph indents two spaces under a top-level bullet,
+  four under a `Why this matters` sub-bullet.
 - Indent fenced code blocks two spaces inside a bullet value. A line at
   column 0 inside a snippet — a literal `- **Severity:**`, say — is read
   as a new bullet and hijacks the parse.
@@ -174,11 +195,24 @@ HIGH | MEDIUM | LOW — one sentence explaining your confidence level.
 - **Location:** `path/to/file:line` or `path/to/file:start-end`
   (omit only when Anchor is `none`)
 - **Why this matters:**
-  - **Previous behavior:** What the code did before this diff.
-  - **On this branch:** What it does now.
-  - **What's wrong:** Why the new state is a problem, and for whom.
-- **Suggested fix:** What to change, and why that change rather than another.
-- **Suggested comment:** The problem, then the fix as an instruction.
+  - **Previous behavior:** What the code did before this diff. One or two
+    sentences.
+  - **On this branch:** What it does now. One or two sentences.
+  - **What's wrong:** The problem, claimed in the first sentence. Then the
+    evidence for it, cited at the end of a sentence (`path/file.rb:31`).
+
+    A second paragraph when one mechanism is not the whole story — a
+    second code path, a reachable flag combination, a case any fix has to
+    cover. Blank line between paragraphs, four-space indent to stay
+    inside this sub-bullet.
+- **Suggested fix:** What to change, in the first sentence.
+
+  Then why that change rather than another. Name a more exact approach you
+  rejected and say what it cost.
+- **Suggested comment:** The problem, in one short paragraph. None of the
+  orientation the author already has.
+
+  Fix: what to change, as an instruction.
 
 ### Trigger: Missing Test
 

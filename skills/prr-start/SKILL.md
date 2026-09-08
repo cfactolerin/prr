@@ -615,6 +615,12 @@ Triggered by `add`/`new`/`+` at any point in 7b or 7c. Collect:
    | Every other trigger | `What's wrong` |
 
    Then draft `Suggested fix` and `Suggested comment` with the user; confirm.
+
+   Write all three fields the way the agent prompts require: prose in
+   paragraphs of 1-3 sentences and 50-100 words, the claim in the first
+   sentence, a blank line between paragraphs, citations at the end of a
+   sentence. `Suggested comment` is a problem paragraph, a blank line, then
+   a paragraph starting `Fix:`. Bullets only for genuinely parallel items.
 6. Append a synthetic CommentState with `status = Accepted` and continue the review.
 
 ### After Phase 7

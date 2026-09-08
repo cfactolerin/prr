@@ -152,7 +152,9 @@ PRR reviews produce structured findings classified by `Trigger`. Every finding c
 | New behaviour without docs / error handling | `Missing Doc / Error Handling` |
 | Suspicious but fits none of the above (catch-all of last resort) | `Code Change` |
 
-**Required bullets per finding:** `Severity`, `Anchor`, `Why this matters`, `Suggested fix`, `Suggested comment`. `Location` is required when `Anchor` is `diff` or `reference`; omitted when `none`. `Why this matters` is labelled sub-bullets, not prose — see `references/report-format.md` for the two slots and their situation-dependent labels.
+**Required bullets per finding:** `Severity`, `Anchor`, `Why this matters`, `Suggested fix`, `Suggested comment`. `Location` is required when `Anchor` is `diff` or `reference`; omitted when `none`. `Why this matters` is labelled sub-bullets — see `references/report-format.md` for the two slots and their situation-dependent labels.
+
+`Why this matters`, `Suggested fix` and `Suggested comment` are prose inside that structure: paragraphs of 1-3 sentences and 50-100 words, broken with a blank line when a value needs more, with the claim in the first sentence. Bullets inside a value are for genuinely parallel items only. The full writing rules live in the `### Writing rules` block of `references/prompts/review-prompt.md` and `references/prompts/arbiter-prompt.md`, which carry identical copies.
 
 **Postability classification (the `Anchor` field):**
 
