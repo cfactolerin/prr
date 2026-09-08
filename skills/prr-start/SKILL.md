@@ -653,26 +653,58 @@ Confirm: "Ready to post? [yes / edit more]"
 
 Do NOT use the arbiter's original `review_body` directly. Regenerate based on the CommentState list from Phase 7.
 
+The body is short by design. Never open with a paragraph assessing the PR, and
+never enumerate every inline comment — the inline comments carry themselves.
+
 1. Partition Accepted + Edited entries into two groups:
    - `inline = findings with anchor == "diff"`
    - `other  = findings with anchor == "reference" or "none"`
-2. Build the body:
+2. Normalize each finding's severity before counting: `CRITICAL` counts as HIGH,
+   `MEDIUM` counts as MED.
+3. Build the main body from the action.
+
+   **APPROVE** — one line, whichever applies:
+   - No findings in either group: `LGTM!`
+   - Any findings: `Approved but with minor improvement suggestions.`
+
+   **COMMENT / REQUEST_CHANGES** — take the highest severity band present in
+   `inline`: HIGH if any HIGH, else MED if any MED, else LOW.
+
+   HIGH or MED band — a lead line, one bullet per finding in that band, then a
+   count of everything below it:
 
    ```
-   <one opening sentence with overall assessment>
+   <N> issue(s) <verb phrase>:
 
-   **Inline comments (P):**
    - `path:line` — <Trigger> — <one-line summary of suggested_comment or overridden_body>
    - ...
 
-   **Other findings (Q):**
+   Plus <X> MED and <Y> LOW in the inline comments.
+   ```
+
+   The verb phrase is `need fixing before merge` for REQUEST_CHANGES and
+   `worth addressing` for COMMENT. Omit the `Plus` line when no findings sit
+   below the named band, and drop either half of it when that count is zero.
+
+   LOW band only — no bullets, just the count:
+
+   ```
+   <N> low-severity suggestion(s) in the inline comments.
+   ```
+
+   `inline` empty — `No inline findings.`
+4. Append the report-only group when `other` is non-empty. These findings are
+   never posted inline, so the body is the only place they appear: list all of
+   them regardless of severity, in every case including APPROVE.
+
+   ```
+   **Other findings (Q)** — on code the diff didn't change:
+
    - `path:line` (or "(no anchor)") — <Trigger> — <one-line summary of suggested_comment or overridden_body>
    - ...
    ```
 
-3. Omit either section if its list is empty. If both lists are empty, use a short body appropriate to the action (e.g., "LGTM" for APPROVE, "No actionable findings." for COMMENT).
-
-Save as `REVIEW_BODY`.
+Match singular and plural to the counts. Save the result as `REVIEW_BODY`.
 
 The GitHub payload (Step 8e) builds `comments[]` from the `inline` group only — the `other` group is captured in the review body and never sent as inline comments.
 
@@ -710,6 +742,11 @@ Handle the response:
 - **Comment** (c, comment, option 2): set `EVENT` to `COMMENT`, proceed to Step 2
 - **Request Changes** (r, request, option 3): set `EVENT` to `REQUEST_CHANGES`, proceed to Step 2
 - **Skip** (skip, no, nothing, done, option 4): **stop** — do not post anything to GitHub
+
+`REVIEW_BODY` was built in Step 8a from the *suggested* action. If the chosen
+`EVENT` takes a different shape — APPROVE on one side, COMMENT and
+REQUEST_CHANGES on the other — regenerate the body under the new action before
+showing it in Step 2.
 
 Do NOT accept free-text input here. If the user types something other than picking an option, re-ask the question. Body editing happens in Step 2, not here.
 
