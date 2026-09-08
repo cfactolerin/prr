@@ -12,7 +12,62 @@ PRR is a Claude Code plugin that runs parallel AI code reviews using Claude, Cod
 **Optional (enable additional reviewers):**
 - [Codex CLI](https://github.com/openai/codex) — for the `codex` agent
 - [Gemini CLI](https://github.com/google-gemini/gemini-cli) — for the `gemini` agent
-- [opencode](https://opencode.ai) — for the `opencode` agent. Requires `OPENAI_API_KEY` exported in your shell (e.g., in `~/.zshrc`) or `opencode auth` to be configured. PRR does not store this key.
+- [opencode](https://opencode.ai) — for the `opencode` agent
+
+Each optional reviewer authenticates itself — see [Reviewer setup](#reviewer-setup) below. PRR never stores or reads these credentials.
+
+## Reviewer setup
+
+Codex, Gemini, and opencode each keep their own credentials. PRR shells out to
+the CLIs, so whatever works when you run them by hand works under PRR. Sign in
+once per machine before adding the agent.
+
+### opencode
+
+```bash
+opencode providers login
+```
+
+Pick a provider (e.g. OpenAI/ChatGPT), and the CLI opens a browser to complete
+the login. Credentials land in `~/.local/share/opencode/auth.json`.
+
+Verify with `opencode models` — if it lists models for your provider, you're
+signed in. Then:
+
+```
+/prr:add-agent opencode
+```
+
+An `OPENAI_API_KEY` in your environment also works instead of a browser login,
+if you'd rather use a raw API key.
+
+### Codex
+
+Run the CLI once and log in from inside it:
+
+```bash
+codex
+```
+
+Then type `/login` at the prompt and finish the browser flow. Credentials land
+in `~/.codex/auth.json`. Exit with `/quit`, then:
+
+```
+/prr:add-agent codex
+```
+
+### Gemini
+
+```bash
+gemini
+```
+
+The first run walks you through auth (Google login or a `GEMINI_API_KEY`).
+Then:
+
+```
+/prr:add-agent gemini
+```
 
 ## Installation
 
