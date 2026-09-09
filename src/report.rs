@@ -410,8 +410,9 @@ fn find_findings_section(content: &str) -> Option<(usize, u32)> {
 /// Parse the `- **Key:** value` bullets of a finding block.
 ///
 /// A value runs until the next top-level bullet or the end of the block.
-/// Line breaks and leading indentation are kept: `Why this matters` nests
-/// labelled sub-bullets, and the skill prints the captured value verbatim.
+/// Line breaks are kept, and so is any indentation deeper than the
+/// bullet's own content column: `Why this matters` nests labelled
+/// sub-bullets, and the skill prints the captured value verbatim.
 /// A line starting with `#` is treated as content, not a heading, because
 /// bullet values carry code snippets and a shell comment is indistinguishable
 /// from a markdown heading at this level.
@@ -421,10 +422,11 @@ fn find_findings_section(content: &str) -> Option<(usize, u32)> {
 /// supposed to carry trailing prose, and a lookahead to catch it costs more
 /// than it saves.
 fn parse_finding_bullets(block: &str) -> std::collections::HashMap<String, String> {
-    let bullet_re = Regex::new(r"^-\s*\*\*([^:*]+):\*\*\s*(.*)$").unwrap();
+    let bullet_re = Regex::new(r"^-(\s*)\*\*([^:*]+):\*\*\s*(.*)$").unwrap();
     let mut out: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut current_key: Option<String> = None;
     let mut current_val: Vec<String> = Vec::new();
+    let mut content_col = 0usize;
 
     let flush = |key: &mut Option<String>,
                  val: &mut Vec<String>,
@@ -439,18 +441,30 @@ fn parse_finding_bullets(block: &str) -> std::collections::HashMap<String, Strin
         let trimmed = line.trim_end();
         if let Some(caps) = bullet_re.captures(trimmed) {
             flush(&mut current_key, &mut current_val, &mut out);
-            current_key = Some(caps[1].trim().to_lowercase());
-            let initial = caps[2].trim().to_string();
+            content_col = 1 + caps[1].len();
+            current_key = Some(caps[2].trim().to_lowercase());
+            let initial = caps[3].trim().to_string();
             if !initial.is_empty() {
                 current_val.push(initial);
             }
         } else if current_key.is_some() {
-            current_val.push(trimmed.to_string());
+            current_val.push(dedent(trimmed, content_col));
         }
         // Lines outside any bullet are ignored.
     }
     flush(&mut current_key, &mut current_val, &mut out);
     out
+}
+
+/// Drop the list indentation a continuation line needs to stay inside its
+/// bullet. The value is printed and posted outside any list, where that
+/// indent is no longer structural — it arrives as a stray two spaces in
+/// front of every paragraph after the first. Anything deeper than the
+/// bullet's content column is relative structure — nested sub-bullets, an
+/// indented code block — and survives.
+fn dedent(line: &str, width: usize) -> String {
+    let leading = line.len() - line.trim_start_matches(' ').len();
+    line[leading.min(width)..].to_string()
 }
 
 fn parse_anchor(s: &str) -> Option<Anchor> {
@@ -1151,8 +1165,32 @@ REQUEST_CHANGES
             "line breaks must survive: {why}"
         );
         assert!(
-            why.lines().next().unwrap().starts_with("  - **What this adds:**"),
-            "indentation must survive: {why}"
+            why.lines().next().unwrap().starts_with("- **What this adds:**"),
+            "the bullet's own indent must go: {why}"
+        );
+        assert!(
+            why.lines().nth(2).unwrap().starts_with("  in the retry"),
+            "nesting under the sub-bullet must survive: {why}"
+        );
+    }
+
+    #[test]
+    fn test_bullet_value_dedents_continuation_paragraphs() {
+        let block = r#"- **Suggested fix:** Guard the call with `supports_rights_claim?`.
+
+  Checking the org inside the parser would also work, but it spreads the
+  flag's meaning across two files.
+
+      parser.call if supports_rights_claim?
+- **Suggested comment:** c"#;
+        let bullets = parse_finding_bullets(block);
+        let fix = &bullets["suggested fix"];
+        assert_eq!(
+            fix,
+            "Guard the call with `supports_rights_claim?`.\n\n\
+             Checking the org inside the parser would also work, but it spreads the\n\
+             flag's meaning across two files.\n\n\
+             \x20   parser.call if supports_rights_claim?",
         );
     }
 
