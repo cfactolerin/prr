@@ -63,6 +63,15 @@ pub fn run(
     std::fs::write(round_dir.join("results/changed-files.txt"), &changed)?;
 
     let repo_docs = gather_repo_docs(&repo_dir, &changed);
+    for doc in &repo_docs.excluded {
+        eprintln!("warning: withheld {} — points at {}", doc.path, doc.links.join(", "));
+    }
+    if !repo_docs.excluded.is_empty() {
+        eprintln!(
+            "warning: those paths only exist on the machine that committed them; \
+             remove the links to get the docs back into the review"
+        );
+    }
 
     // Check for previous review
     let previous_review = if round_num > 1 {
@@ -119,6 +128,21 @@ pub fn run(
             ));
         }
         manifest.push_str(&format!("- Repo docs: {}\n", summary.join(" + ")));
+    }
+    if !repo_docs.excluded.is_empty() {
+        manifest.push_str(&format!("- Docs withheld: {}\n", repo_docs.excluded.len()));
+    }
+
+    if !repo_docs.excluded.is_empty() {
+        manifest.push_str("\n## Docs Withheld\n\n");
+        manifest.push_str(
+            "These committed docs point at paths that only exist on the machine that wrote \
+             them, so nothing running against this clone can follow them. They were left out \
+             of every prompt. Removing the links puts them back in the review.\n\n",
+        );
+        for doc in &repo_docs.excluded {
+            manifest.push_str(&format!("- `{}` -> {}\n", doc.path, doc.links.join(", ")));
+        }
     }
     manifest.push_str("\n## Review Tasks\n\n(none yet)\n");
 
@@ -181,6 +205,14 @@ struct RepoDocs {
     root_files: Vec<String>,
     guide_count: usize,
     covering_count: usize,
+    excluded: Vec<ExcludedDoc>,
+}
+
+/// A committed doc withheld from every prompt, and the paths that cost it its
+/// place.
+struct ExcludedDoc {
+    path: String,
+    links: Vec<String>,
 }
 
 /// Directories never worth walking for agent docs.
@@ -189,9 +221,47 @@ const SKIPPED_DIRS: &[&str] = &["node_modules", "vendor", "target", "build", "di
 const MAX_GUIDE_DEPTH: usize = 12;
 const MAX_GUIDES: usize = 100;
 
+/// Absolute-path prefixes that only resolve on the machine that wrote them.
+const LOCAL_ROOTS: &[&str] = &["/Users/", "/home/"];
+
+const LINK_TERMINATORS: &[char] =
+    &[' ', '\t', '\n', '\r', '`', '\'', '"', '(', ')', '[', ']', '{', '}', '<', '>', ',', ';'];
+
+/// Machine-local absolute paths in `content`, deduplicated, in document order.
+///
+/// Reviewers run against a fresh clone, so a doc pointing at the author's own
+/// checkout sends every agent outside its sandbox. The sandboxed CLIs handle
+/// that badly: `opencode run` rejects the read and then abandons the turn
+/// without emitting an error, which reads downstream as an empty review.
+fn local_links(content: &str) -> Vec<String> {
+    let mut starts: Vec<usize> = Vec::new();
+    for root in LOCAL_ROOTS {
+        starts.extend(content.match_indices(root).map(|(i, _)| i));
+    }
+    starts.sort_unstable();
+
+    let mut links: Vec<String> = Vec::new();
+    for start in starts {
+        let rest = &content[start..];
+        let end = rest.find(|c| LINK_TERMINATORS.contains(&c)).unwrap_or(rest.len());
+        let link = rest[..end].trim_end_matches(|c| c == '.' || c == ':');
+
+        // A bare home root is prose ("your home directory"); a path below one
+        // is a pointer an agent will try to follow.
+        if link.matches('/').count() < 3 {
+            continue;
+        }
+        if !links.iter().any(|l| l == link) {
+            links.push(link.to_string());
+        }
+    }
+    links
+}
+
 fn gather_repo_docs(repo_dir: &std::path::Path, changed_files: &str) -> RepoDocs {
     let mut rendered = String::new();
     let mut root_files = Vec::new();
+    let mut excluded = Vec::new();
 
     for filename in &["CLAUDE.md", "AGENTS.md", "README.md"] {
         let path = repo_dir.join(filename);
@@ -199,6 +269,11 @@ fn gather_repo_docs(repo_dir: &std::path::Path, changed_files: &str) -> RepoDocs
             continue;
         }
         if let Ok(content) = std::fs::read_to_string(&path) {
+            let links = local_links(&content);
+            if !links.is_empty() {
+                excluded.push(ExcludedDoc { path: filename.to_string(), links });
+                continue;
+            }
             rendered.push_str(&format!("### {filename}\n\n{content}\n\n"));
             root_files.push(filename.to_string());
         }
@@ -206,9 +281,21 @@ fn gather_repo_docs(repo_dir: &std::path::Path, changed_files: &str) -> RepoDocs
 
     let changed: Vec<&str> =
         changed_files.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    let mut found = Vec::new();
+    collect_area_guides(repo_dir, repo_dir, 0, &mut found);
+    found.sort();
+
     let mut guides = Vec::new();
-    collect_area_guides(repo_dir, repo_dir, 0, &mut guides);
-    guides.sort();
+    for guide in found {
+        let links = std::fs::read_to_string(repo_dir.join(&guide))
+            .map(|c| local_links(&c))
+            .unwrap_or_default();
+        if links.is_empty() {
+            guides.push(guide);
+        } else {
+            excluded.push(ExcludedDoc { path: guide, links });
+        }
+    }
 
     let covering: Vec<bool> = guides.iter().map(|g| guide_covers_changed(g, &changed)).collect();
     let covering_count = covering.iter().filter(|c| **c).count();
@@ -228,8 +315,26 @@ fn gather_repo_docs(repo_dir: &std::path::Path, changed_files: &str) -> RepoDocs
         rendered.push('\n');
     }
 
-    RepoDocs { rendered, root_files, guide_count: guides.len(), covering_count }
+    // Withholding a doc is not enough on its own: repos cross-reference their
+    // own guides, so a pointer table in an inlined root doc still sends agents
+    // to a guide prr left out of the index.
+    if !rendered.is_empty() {
+        rendered.insert_str(0, STAY_IN_THE_CLONE);
+    }
+
+    RepoDocs { rendered, root_files, guide_count: guides.len(), covering_count, excluded }
 }
+
+/// Prepended to every rendered doc set, and so to every prompt carrying one.
+const STAY_IN_THE_CLONE: &str = "\
+### Reading these docs
+
+Everything here lives in the clone. A doc may still point at an absolute path outside it — a \
+checkout on the machine that wrote the doc, most often. Nothing outside the clone is readable \
+during a review, so don't try to open one: note that the reference was unavailable and answer \
+from what the clone holds.
+
+";
 
 /// Walk `dir` for `CLAUDE.md` / `AGENTS.md` outside the repo root, pushing
 /// repo-relative paths into `out`.
@@ -372,5 +477,91 @@ mod tests {
         assert!(docs.root_files.is_empty());
         assert!(docs.rendered.contains("`lib/CLAUDE.md`"));
         assert_eq!(docs.covering_count, 1);
+    }
+
+    #[test]
+    fn drops_area_guides_pointing_outside_the_clone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        write(repo, "CLAUDE.md", "root");
+        write(repo, "lib/xml/CLAUDE.md", "see `/Users/dev/git/xml_generator` for the base class");
+        write(repo, "lib/models/CLAUDE.md", "models");
+
+        let docs = gather_repo_docs(repo, "lib/xml/album.rb\n");
+
+        assert!(
+            !docs.rendered.contains("lib/xml/CLAUDE.md"),
+            "a guide agents cannot fully follow is not indexed at all"
+        );
+        assert!(docs.rendered.contains("`lib/models/CLAUDE.md`"));
+        assert_eq!(docs.guide_count, 1, "the dropped guide is not counted as indexed");
+        assert_eq!(docs.covering_count, 0);
+        assert_eq!(docs.excluded.len(), 1);
+        assert_eq!(docs.excluded[0].path, "lib/xml/CLAUDE.md");
+        assert_eq!(docs.excluded[0].links, vec!["/Users/dev/git/xml_generator"]);
+    }
+
+    #[test]
+    fn drops_root_docs_pointing_outside_the_clone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        write(repo, "CLAUDE.md", "clone the gem to /home/dev/src/shared first");
+        write(repo, "README.md", "readme body");
+
+        let docs = gather_repo_docs(repo, "");
+
+        assert!(!docs.rendered.contains("clone the gem"), "the local link never reaches a prompt");
+        assert!(docs.rendered.contains("readme body"));
+        assert_eq!(docs.root_files, vec!["README.md"]);
+        assert_eq!(docs.excluded.len(), 1);
+        assert_eq!(docs.excluded[0].path, "CLAUDE.md");
+        assert_eq!(docs.excluded[0].links, vec!["/home/dev/src/shared"]);
+    }
+
+    #[test]
+    fn keeps_docs_whose_absolute_paths_are_not_machine_local() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        write(repo, "lib/CLAUDE.md", "binaries land in /usr/local/bin; specs read /etc/hosts");
+
+        let docs = gather_repo_docs(repo, "lib/thing.rb\n");
+
+        assert!(docs.rendered.contains("`lib/CLAUDE.md`"));
+        assert!(docs.excluded.is_empty(), "only paths under a user home are machine-local");
+    }
+
+    #[test]
+    fn tells_agents_to_stay_in_the_clone_whenever_docs_render() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        // A pointer table naming a guide prr withheld: the agent can still
+        // reach the guide, so the rule has to travel with the docs.
+        write(repo, "CLAUDE.md", "see `lib/xml/CLAUDE.md` for the node pattern");
+        write(repo, "lib/xml/CLAUDE.md", "base class lives in `/Users/dev/git/gem`");
+
+        let docs = gather_repo_docs(repo, "lib/xml/album.rb\n");
+
+        assert!(docs.rendered.starts_with("### Reading these docs"));
+        assert!(docs.rendered.contains("Nothing outside the clone is readable"));
+        assert_eq!(docs.excluded.len(), 1);
+    }
+
+    #[test]
+    fn reports_each_local_link_once_in_document_order() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        write(
+            repo,
+            "lib/CLAUDE.md",
+            "`/Users/dev/git/two` then `/Users/dev/git/one`, and /Users/dev/git/two again",
+        );
+
+        let docs = gather_repo_docs(repo, "");
+
+        assert_eq!(
+            docs.excluded[0].links,
+            vec!["/Users/dev/git/two", "/Users/dev/git/one"],
+            "the reviewer gets one entry per distinct link, in the order they appear"
+        );
     }
 }

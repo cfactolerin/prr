@@ -87,6 +87,15 @@ Phases 7 and 8 (line comment review, posting to GitHub) are interactive flows th
 3. Read `<ROUND_DIR>/context-manifest.md` and store its contents for the next phase.
 4. Read `<ROUND_DIR>/results/repo-docs.md` if it exists, and keep it for the rest of the review —
    the area-guide index tells you which guides to open later (see **Standing Rule** above).
+5. If the manifest carries a **Docs Withheld** section, tell the user in Phase 3, quoting each
+   doc and the paths it points at:
+
+   > `delivery/lib/xml/CLAUDE.md` was left out of this review — it points at
+   > `/Users/someone/git/some_gem`, which only exists on the machine that committed it.
+   > Worth removing that link.
+
+   Those docs reached no prompt, so the review runs without their domain rules. Say so plainly
+   rather than burying it, and do not go looking for the paths yourself — they are not there.
 
 **Update task 2 to completed.**
 
