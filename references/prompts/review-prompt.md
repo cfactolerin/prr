@@ -18,6 +18,13 @@
 
 {{repo_docs}}
 
+The docs above are authoritative for this repo. A rule stated in a guide outranks your
+general-practice prior, so look for one before you flag a convention.
+
+When the area-guide index marks a guide as covering changed files, read it from the clone
+before forming findings in that directory. Those guides carry domain rules and known pitfalls
+that the code alone doesn't show, and a finding that contradicts one is a false positive.
+
 ## Previous Review
 
 {{previous_review}}

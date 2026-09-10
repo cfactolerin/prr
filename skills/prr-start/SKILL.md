@@ -15,6 +15,19 @@ Throughout this skill, use these shorthands:
 - **PRR** = `${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal`
 - **PR_REF** = the value of `$ARGUMENTS`
 
+## Standing Rule: Read the Repo's Own Docs
+
+`<ROUND_DIR>/results/repo-docs.md` holds the reviewed repo's root `CLAUDE.md` / `AGENTS.md` /
+`README.md` inlined, followed by an index of every subdirectory guide, with the ones covering
+changed files marked. Many repos use progressive disclosure — the root file is a pointer table and
+the real domain rules live in area guides. Those guides are listed, not inlined, so you have to
+open them.
+
+This applies to you, not just the sub-agents. Before you investigate a question, judge a finding,
+or weigh a user's challenge, read the guides covering the files in question from `<REPO_PATH>`. A
+convention or domain rule documented in a guide settles the question — treat it as authoritative
+over your own reading of the code, and drop findings that contradict it.
+
 ## Preflight: Check Setup
 
 Before anything else, check if `~/.prr/config.yml` exists by reading it.
@@ -72,6 +85,8 @@ Phases 7 and 8 (line comment review, posting to GitHub) are interactive flows th
 2. Capture the **last line of stdout** — this is the round directory path. Save it as `ROUND_DIR` for all subsequent phases.
    - Example: `/Users/me/.prr/workspace/owner-repo-pr-42/r1`
 3. Read `<ROUND_DIR>/context-manifest.md` and store its contents for the next phase.
+4. Read `<ROUND_DIR>/results/repo-docs.md` if it exists, and keep it for the rest of the review —
+   the area-guide index tells you which guides to open later (see **Standing Rule** above).
 
 **Update task 2 to completed.**
 
@@ -460,6 +475,7 @@ Use these exact strings for the verdict (no emojis — they don't render in the 
 
 4. Enter an interactive loop using AskUserQuestion:
    - If the user asks a question: investigate using the repo at `<REPO_PATH>`. Read files, run git commands, grep for patterns, etc. Present findings and ask if they have more questions.
+     - **Read the area guides first.** Before reading code to answer a question or check a challenge, open the guides from `repo-docs.md` that cover the files involved. They usually answer domain questions directly, and reconstructing an answer from code that a guide already documents wastes the round and risks getting it wrong.
      - **Important:** Always use `git -C <REPO_PATH> <command>` instead of `cd <REPO_PATH> && git <command>` to avoid security prompts.
    - If the user says "re-review": run `prr context "$ARGUMENTS" --workspace <workspace_path>` again (this creates rN+1), then re-run Phases 4-5 with the new round dir. Include any guidance the user provides.
    - If the user says "continue", "next", "comments", "done", or similar: exit the loop and proceed to Phase 7.
@@ -570,6 +586,10 @@ Options:
 - **Edit** — provide replacement text
 
 Free-text input is a clarification or edit, **not** a signal to advance. Stay on the **same** finding: incorporate the input (rewrite the comment, answer the question, or discuss), show the result, and ask again with a fresh single-question AskUserQuestion for the same finding. Only move to the next finding once the user picks Accept, Reject, or Edit (or issues a special command). The user may go several rounds on one comment — never auto-advance after recording a free-text reply.
+
+When the input disputes the finding on domain grounds, check the area guides covering the file
+before you concede or defend it (see **Standing Rule** above) — the repo often documents the answer
+already, and the guide outranks both the reviewer's reasoning and yours.
 
 Special commands: `add`/`new`/`+` switches to Step 7d; `done`/`stop`/`enough` exits Phase 7.
 

@@ -16,6 +16,20 @@
 
 ---
 
+## Repo Conventions
+
+{{repo_docs}}
+
+The docs above are authoritative for this repo. Before keeping a finding about naming,
+structure, or domain behaviour, check it against them — a finding that contradicts a
+documented rule is a false positive however confident the reviewer sounds.
+
+When the area-guide index marks a guide as covering changed files, read it from the clone.
+Reviewers were given the same index and may not have opened it, so a guide can settle a
+disagreement they couldn't.
+
+---
+
 ## Agent Reviews
 
 {{reviews}}
@@ -36,6 +50,8 @@ You are the arbiter. Your job is to synthesize the agent reviews above into a de
 - Identify points of agreement between reviewers.
 - Identify points of disagreement or contradiction.
 - Note anything one reviewer caught that the other missed.
+- Check every finding that rests on a convention or on domain behaviour against the repo's own
+  guides. Drop the ones a guide contradicts, and say so in your reasoning.
 
 **Step 2 — Decide: ask questions or finalize.**
 

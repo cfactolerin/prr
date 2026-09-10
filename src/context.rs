@@ -62,8 +62,7 @@ pub fn run(
     std::fs::write(round_dir.join("results/diff.txt"), &diff_text)?;
     std::fs::write(round_dir.join("results/changed-files.txt"), &changed)?;
 
-    // Read repo docs
-    let repo_docs = read_repo_docs(&repo_dir);
+    let repo_docs = gather_repo_docs(&repo_dir, &changed);
 
     // Check for previous review
     let previous_review = if round_num > 1 {
@@ -108,8 +107,18 @@ pub fn run(
     if previous_review.is_some() {
         manifest.push_str(&format!("- Previous review: r{}\n", round_num - 1));
     }
-    if !repo_docs.is_empty() {
-        manifest.push_str("- Repo docs: found (CLAUDE.md / AGENTS.md / README.md)\n");
+    if !repo_docs.rendered.is_empty() {
+        let mut summary = Vec::new();
+        if !repo_docs.root_files.is_empty() {
+            summary.push(repo_docs.root_files.join(", "));
+        }
+        if repo_docs.guide_count > 0 {
+            summary.push(format!(
+                "{} area guides ({} covering changed files)",
+                repo_docs.guide_count, repo_docs.covering_count
+            ));
+        }
+        manifest.push_str(&format!("- Repo docs: {}\n", summary.join(" + ")));
     }
     manifest.push_str("\n## Review Tasks\n\n(none yet)\n");
 
@@ -120,8 +129,8 @@ pub fn run(
         round_dir.join("results/pr-metadata.json"),
         serde_json::to_string_pretty(&pr_data)?,
     )?;
-    if !repo_docs.is_empty() {
-        std::fs::write(round_dir.join("results/repo-docs.md"), &repo_docs)?;
+    if !repo_docs.rendered.is_empty() {
+        std::fs::write(round_dir.join("results/repo-docs.md"), &repo_docs.rendered)?;
     }
     if let Some(prev) = &previous_review {
         std::fs::write(round_dir.join("results/previous-review.md"), prev)?;
@@ -161,15 +170,207 @@ fn fetch_pr_metadata(pr_ref: &pr::PrRef) -> Result<Value, Box<dyn std::error::Er
     Ok(serde_json::from_str(&clean)?)
 }
 
-fn read_repo_docs(repo_dir: &std::path::Path) -> String {
-    let mut docs = String::new();
+/// Agent-facing docs found in the clone.
+///
+/// Root docs are inlined; subdirectory guides are listed by path only. A large
+/// repo can carry a dozen area guides of a hundred-plus lines each, which would
+/// dwarf the diff in every prompt, so agents read the ones they need from the
+/// clone instead.
+struct RepoDocs {
+    rendered: String,
+    root_files: Vec<String>,
+    guide_count: usize,
+    covering_count: usize,
+}
+
+/// Directories never worth walking for agent docs.
+const SKIPPED_DIRS: &[&str] = &["node_modules", "vendor", "target", "build", "dist"];
+
+const MAX_GUIDE_DEPTH: usize = 12;
+const MAX_GUIDES: usize = 100;
+
+fn gather_repo_docs(repo_dir: &std::path::Path, changed_files: &str) -> RepoDocs {
+    let mut rendered = String::new();
+    let mut root_files = Vec::new();
+
     for filename in &["CLAUDE.md", "AGENTS.md", "README.md"] {
         let path = repo_dir.join(filename);
-        if path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                docs.push_str(&format!("## {filename}\n\n{content}\n\n"));
+        if !path.exists() {
+            continue;
+        }
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            rendered.push_str(&format!("### {filename}\n\n{content}\n\n"));
+            root_files.push(filename.to_string());
+        }
+    }
+
+    let changed: Vec<&str> =
+        changed_files.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    let mut guides = Vec::new();
+    collect_area_guides(repo_dir, repo_dir, 0, &mut guides);
+    guides.sort();
+
+    let covering: Vec<bool> = guides.iter().map(|g| guide_covers_changed(g, &changed)).collect();
+    let covering_count = covering.iter().filter(|c| **c).count();
+
+    if !guides.is_empty() {
+        rendered.push_str("### Area guides\n\n");
+        rendered.push_str(
+            "This repo uses progressive disclosure: the guides below carry the domain rules, \
+             pitfalls and architectural decisions for their own directory. Read them from the \
+             clone — start with the ones marked **covers changed files**, whose directory holds \
+             a file this PR touches.\n\n",
+        );
+        for (guide, covers) in guides.iter().zip(&covering) {
+            let mark = if *covers { " — **covers changed files**" } else { "" };
+            rendered.push_str(&format!("- `{guide}`{mark}\n"));
+        }
+        rendered.push('\n');
+    }
+
+    RepoDocs { rendered, root_files, guide_count: guides.len(), covering_count }
+}
+
+/// Walk `dir` for `CLAUDE.md` / `AGENTS.md` outside the repo root, pushing
+/// repo-relative paths into `out`.
+fn collect_area_guides(
+    repo_root: &std::path::Path,
+    dir: &std::path::Path,
+    depth: usize,
+    out: &mut Vec<String>,
+) {
+    if depth > MAX_GUIDE_DEPTH || out.len() >= MAX_GUIDES {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut subdirs = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let path = entry.path();
+        if path.is_dir() {
+            if name.starts_with('.') || SKIPPED_DIRS.contains(&name.as_str()) {
+                continue;
+            }
+            subdirs.push(path);
+        } else if depth > 0 && (name == "CLAUDE.md" || name == "AGENTS.md") {
+            if let Ok(rel) = path.strip_prefix(repo_root) {
+                out.push(rel.to_string_lossy().to_string());
             }
         }
     }
-    docs
+    subdirs.sort();
+    for subdir in subdirs {
+        collect_area_guides(repo_root, &subdir, depth + 1, out);
+    }
+}
+
+fn guide_covers_changed(guide: &str, changed: &[&str]) -> bool {
+    let Some((dir, _)) = guide.rsplit_once('/') else {
+        return false;
+    };
+    let prefix = format!("{dir}/");
+    changed.iter().any(|f| f.starts_with(&prefix))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn write(root: &Path, rel: &str, body: &str) {
+        let path = root.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, body).unwrap();
+    }
+
+    fn line_for<'a>(rendered: &'a str, needle: &str) -> &'a str {
+        rendered
+            .lines()
+            .find(|l| l.contains(needle))
+            .unwrap_or_else(|| panic!("no line mentioning {needle} in:\n{rendered}"))
+    }
+
+    #[test]
+    fn inlines_root_docs_and_indexes_area_guides_separately() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        write(repo, "CLAUDE.md", "root conventions");
+        write(repo, "README.md", "readme body");
+        write(repo, "lib/xml/CLAUDE.md", "xml area guide");
+
+        let docs = gather_repo_docs(repo, "");
+
+        assert!(docs.rendered.contains("root conventions"));
+        assert!(docs.rendered.contains("readme body"));
+        assert!(docs.rendered.contains("`lib/xml/CLAUDE.md`"));
+        assert!(
+            !docs.rendered.contains("xml area guide"),
+            "area guides are listed by path, never inlined"
+        );
+        assert_eq!(docs.root_files, vec!["CLAUDE.md", "README.md"]);
+        assert_eq!(docs.guide_count, 1);
+        assert_eq!(docs.covering_count, 0);
+    }
+
+    #[test]
+    fn marks_guides_covering_changed_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        write(repo, "CLAUDE.md", "root");
+        write(repo, "lib/CLAUDE.md", "lib");
+        write(repo, "lib/xml/apple_music/CLAUDE.md", "apple");
+        write(repo, "lib/models/CLAUDE.md", "models");
+
+        let docs = gather_repo_docs(repo, "lib/xml/apple_music/track.rb\nREADME.md\n");
+
+        assert!(line_for(&docs.rendered, "lib/CLAUDE.md").contains("covers changed files"));
+        assert!(
+            line_for(&docs.rendered, "lib/xml/apple_music/CLAUDE.md").contains("covers changed files")
+        );
+        assert!(!line_for(&docs.rendered, "lib/models/CLAUDE.md").contains("covers changed files"));
+        assert_eq!(docs.guide_count, 3);
+        assert_eq!(docs.covering_count, 2);
+    }
+
+    #[test]
+    fn finds_agents_md_and_skips_vendored_trees() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        write(repo, "app/AGENTS.md", "app agents");
+        write(repo, ".git/CLAUDE.md", "git internals");
+        write(repo, "node_modules/pkg/CLAUDE.md", "dependency");
+        write(repo, "vendor/bundle/AGENTS.md", "vendored");
+        write(repo, "target/debug/CLAUDE.md", "build output");
+
+        let docs = gather_repo_docs(repo, "");
+
+        assert!(docs.rendered.contains("`app/AGENTS.md`"));
+        assert_eq!(docs.guide_count, 1, "vendored and build trees are skipped");
+    }
+
+    #[test]
+    fn renders_nothing_when_repo_has_no_docs() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), "src/main.rs", "fn main() {}");
+
+        let docs = gather_repo_docs(tmp.path(), "src/main.rs\n");
+
+        assert!(docs.rendered.is_empty(), "empty output drives the no-docs fallback");
+        assert_eq!(docs.guide_count, 0);
+    }
+
+    #[test]
+    fn indexes_area_guides_when_no_root_doc_exists() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        write(repo, "lib/CLAUDE.md", "area only");
+
+        let docs = gather_repo_docs(repo, "lib/thing.rb\n");
+
+        assert!(docs.root_files.is_empty());
+        assert!(docs.rendered.contains("`lib/CLAUDE.md`"));
+        assert_eq!(docs.covering_count, 1);
+    }
 }

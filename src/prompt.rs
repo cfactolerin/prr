@@ -42,16 +42,10 @@ pub fn build_review(
     // Optional context files
     let diff = read_if_exists(&results.join("diff.txt"));
     let changed_files = read_if_exists(&results.join("changed-files.txt"));
-    let repo_docs_raw = read_if_exists(&results.join("repo-docs.md"));
     let previous_review_raw = read_if_exists(&results.join("previous-review.md"));
     let ticket_context_raw = read_if_exists(&base.join("context/ticket-context.md"));
 
-    // Conditional section handling
-    let repo_docs = if repo_docs_raw.trim().is_empty() {
-        "No docs found.".to_string()
-    } else {
-        repo_docs_raw
-    };
+    let repo_docs = repo_docs_section(&results);
 
     let ticket_context = if ticket_context_raw.trim().is_empty() {
         "No ticket details available.".to_string()
@@ -125,6 +119,8 @@ pub fn build_arbiter(context_dir: &str) -> Result<(), Box<dyn std::error::Error>
     // Q&A round history
     let round_history = collect_round_history(&results);
 
+    let repo_docs = repo_docs_section(&results);
+
     // Reviewer tasks — re-use from context manifest if present
     let reviewer_tasks = read_if_exists(&base.join("context-manifest.md"));
     let reviewer_tasks_section = extract_tasks_from_manifest(&reviewer_tasks);
@@ -139,6 +135,7 @@ pub fn build_arbiter(context_dir: &str) -> Result<(), Box<dyn std::error::Error>
             ("{{head_branch}}", &head_branch),
             ("{{base_branch}}", &base_branch),
             ("{{ticket_id}}", &ticket_id),
+            ("{{repo_docs}}", &repo_docs),
             ("{{reviews}}", &reviews),
             ("{{round_history}}", &round_history),
             ("{{reviewer_tasks}}", &reviewer_tasks_section),
@@ -176,6 +173,8 @@ pub fn build_question(
         format!("(no prior review found for agent '{agent}')")
     };
 
+    let repo_docs = repo_docs_section(&results);
+
     // Parse questions from JSON (array of strings keyed by agent name, or plain array)
     let questions = parse_questions_for_agent(questions_json, agent);
 
@@ -188,6 +187,7 @@ pub fn build_question(
             ("{{pr_number}}", &pr_number),
             ("{{pr_title}}", &pr_title),
             ("{{repo}}", &repo),
+            ("{{repo_docs}}", &repo_docs),
             ("{{previous_review}}", &previous_review),
             ("{{questions}}", &questions),
         ],
@@ -202,6 +202,17 @@ pub fn build_question(
 // ---------------------------------------------------------------------------
 // Helper functions
 // ---------------------------------------------------------------------------
+
+/// Inlined root docs plus the area-guide index, or a placeholder when the repo
+/// ships neither. Every prompt that can reach the clone gets this section.
+fn repo_docs_section(results: &Path) -> String {
+    let docs = read_if_exists(&results.join("repo-docs.md"));
+    if docs.trim().is_empty() {
+        "No docs found.".to_string()
+    } else {
+        docs
+    }
+}
 
 /// Returns file contents as a String, or empty string if file doesn't exist.
 fn read_if_exists(path: &Path) -> String {

@@ -108,7 +108,7 @@ Start a full review. PRR gathers context, runs all configured agents in parallel
 
 ## How It Works
 
-1. **Context gathering** — PRR clones the repo, checks out the PR branch, fetches the diff, and downloads any linked Jira ticket and Confluence pages into a local context directory.
+1. **Context gathering** — PRR clones the repo, checks out the PR branch, fetches the diff, and downloads any linked Jira ticket and Confluence pages into a local context directory. It also collects the repo's own agent docs: the root `CLAUDE.md` / `AGENTS.md` / `README.md` are inlined into every prompt, and subdirectory guides are indexed by path with the ones covering changed files marked, so reviewers, the arbiter, and the main session can open the area guides that apply.
 2. **Parallel review** — All configured agents (Claude, Codex, Gemini, opencode) receive the same review prompt and run simultaneously, each writing an independent `*-review.md` to the results directory.
 3. **Arbiter synthesis** — A Claude arbiter reads all reviews, asks targeted follow-up questions of individual agents (up to N configurable rounds), then produces a final report with a verdict, confidence level, and checked line comments.
 4. **Interactive investigation** — You can ask questions about findings, read code, run git blame, or trigger a re-review with additional guidance before proceeding.
