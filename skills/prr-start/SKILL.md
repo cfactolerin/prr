@@ -300,7 +300,9 @@ Run the opencode CLI to review this PR. Here are your paths:
 - Write output to: <RESULTS_PATH>/opencode-review.md
 
 Run this exact command:
-cat "<PROMPT_PATH>" | timeout <OPENCODE_TIMEOUT> opencode run --model <OPENCODE_MODEL> --dir "<REPO_PATH>" --format json | jq -rR 'fromjson? // empty | if .type == "text" then .part.text elif .type == "error" then "OPENCODE ERROR: \(.error.name // "unknown"): \(.error.data.message // .error | tostring)" else empty end' > "<RESULTS_PATH>/opencode-review.md"
+set -o pipefail; cat "<PROMPT_PATH>" | timeout <OPENCODE_TIMEOUT> opencode run --model <OPENCODE_MODEL> --dir "<REPO_PATH>" --format json 2> "<RESULTS_PATH>/opencode-review.md.stderr" | jq -rR 'fromjson? // empty | if .type == "text" then .part.text elif .type == "error" then "OPENCODE ERROR: \(.error.name // "unknown"): \(.error.data.message // .error | tostring)" else empty end' > "<RESULTS_PATH>/opencode-review.md"
+
+If the output file comes back empty, classify it before reporting: exit 124 is a wedged run, and an `auto-rejecting` line in the `.stderr` file is a permission opencode refused itself. Report which, naming the blocked path.
 ```
 
 ### Step 4e: Wait and verify
@@ -396,7 +398,7 @@ Search the output for a fenced JSON code block (` ```json `) whose content is an
    - For **gemini**: dispatch `gemini-reviewer` with the question prompt piped to gemini, output to the answer path.
    - For **opencode**: dispatch `opencode-reviewer` with instructions to run:
      ```
-     cat "<question_prompt_path>" | timeout <OPENCODE_TIMEOUT> opencode run --model <OPENCODE_MODEL> --dir "<REPO_PATH>" --format json | jq -rR 'fromjson? // empty | if .type == "text" then .part.text elif .type == "error" then "OPENCODE ERROR: \(.error.name // "unknown"): \(.error.data.message // .error | tostring)" else empty end' > "<answer_path>"
+     set -o pipefail; cat "<question_prompt_path>" | timeout <OPENCODE_TIMEOUT> opencode run --model <OPENCODE_MODEL> --dir "<REPO_PATH>" --format json 2> "<answer_path>.stderr" | jq -rR 'fromjson? // empty | if .type == "text" then .part.text elif .type == "error" then "OPENCODE ERROR: \(.error.name // "unknown"): \(.error.data.message // .error | tostring)" else empty end' > "<answer_path>"
      ```
 
    Dispatch all agent answers in parallel.
@@ -412,6 +414,14 @@ Search the output for a fenced JSON code block (` ```json `) whose content is an
    this is what a refused tool call looks like, since they exit `0` and the `jq`
    filter writes an empty file rather than failing. Do not treat it as an empty
    answer to the question.
+
+   For opencode, read the matching `.stderr` file before reporting. An
+   `auto-rejecting` line there means opencode refused itself a permission and
+   then abandoned the turn, and the pattern in that line names the path it was
+   blocked from reading. That distinction matters to the user: a rejected
+   `external_directory` read points at a doc in the reviewed repo carrying a
+   path from someone's own machine, which is a repo problem they can fix, not a
+   flaky agent.
 
    For each agent whose answer is empty or missing, tell the user which agent
    produced no output and continue with the answers you have. Record the gap in
