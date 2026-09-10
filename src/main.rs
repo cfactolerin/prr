@@ -10,6 +10,7 @@ mod context;
 mod prompt;
 mod report;
 mod cleanup;
+mod opencode;
 
 #[derive(Parser)]
 #[command(name = "prr", about = "PRR — AI-powered PR review tool")]
@@ -71,6 +72,11 @@ enum Commands {
         #[command(subcommand)]
         action: AgentAction,
     },
+    /// Check and heal the opencode model setting
+    Opencode {
+        #[command(subcommand)]
+        action: OpencodeAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -81,6 +87,14 @@ enum AgentAction {
     Add { name: String },
     /// Remove an agent
     Delete { name: String },
+}
+
+#[derive(Subcommand)]
+enum OpencodeAction {
+    /// Smoke-test the configured model, probing replacements if it fails
+    Check,
+    /// Set the model the opencode reviewer runs with
+    SetModel { id: String },
 }
 
 fn main() {
@@ -110,6 +124,10 @@ fn main() {
             AgentAction::List => config::agents_list(),
             AgentAction::Add { name } => config::agents_add(&name),
             AgentAction::Delete { name } => config::agents_delete(&name),
+        },
+        Commands::Opencode { action } => match action {
+            OpencodeAction::Check => opencode::check(),
+            OpencodeAction::SetModel { id } => opencode::set_model(&id),
         },
     };
 

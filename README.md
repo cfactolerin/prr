@@ -38,6 +38,12 @@ signed in. Then:
 /prr:add-agent opencode
 ```
 
+Which models you can actually reach depends on how you signed in. A ChatGPT
+account serves a different set than a platform API key, and `opencode models`
+lists both, so an id it prints may still be refused. PRR checks the configured
+model before every review and, when it fails, offers you the ones that
+answered and saves your pick to `opencode_model`.
+
 An `OPENAI_API_KEY` in your environment also works instead of a browser login,
 if you'd rather use a raw API key.
 
@@ -137,6 +143,7 @@ Config lives at `~/.prr/config.yml`. All keys are optional — defaults are show
 | `gemini_timeout` | `300` | Seconds before Gemini reviewer times out |
 | `opencode_timeout` | `900` | Seconds before opencode reviewer times out |
 | `gemini_model` | `gemini-2.5-flash` | Gemini model name passed to the CLI |
+| `opencode_model` | `openai/gpt-6-astra` | Model the opencode reviewer runs with |
 | `arbiter_rounds` | `3` | Maximum Q&A rounds before the arbiter is forced to finalize |
 | `jira_base_url` | _(empty)_ | Your Jira instance URL (e.g. `https://yourorg.atlassian.net`) |
 | `jira_email` | _(empty)_ | Jira account email for Basic auth |

@@ -39,15 +39,23 @@ echo "Say hello" | gemini -p "" -m <model> -o text --approval-mode yolo
 **If agent is `opencode`:**
 Run:
 ```bash
-printf 'Reply with exactly: HELLO\n' | timeout 30 opencode run --model openai/gpt-5.5 --format json | jq -rR 'fromjson? // empty | if .type == "text" then .part.text elif .type == "error" then "OPENCODE ERROR: \(.error.name // "unknown"): \(.error.data.message // .error | tostring)" else empty end'
+${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal opencode check
 ```
 
-opencode reads `OPENAI_API_KEY` from the environment. If the smoke test fails with an auth error, remind the user to either `export OPENAI_API_KEY=sk-...` in their shell rc or run `opencode auth`.
+Judge this one on the exit code alone. opencode exits 0 whether or not the
+model call worked, and stays silent while it backs off a retryable model error,
+so its own output can't tell you it's healthy. `opencode check` applies the
+timeout and the verdict.
 
-opencode exits 0 whether or not the model call worked, so judge this one on its
-output: a line starting `OPENCODE ERROR:` is a failure. For a model error rather
-than an auth error, suggest `opencode upgrade` — the model list is pinned per
-release, so a stale build can 404 on a model that exists.
+On exit 1 the command prints the failure reason and probes for models that do
+work. Offer the working ones with `AskUserQuestion`, then persist the choice and
+re-check:
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal opencode set-model <chosen-id>
+${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal opencode check
+```
+
+opencode reads `OPENAI_API_KEY` from the environment. If the probe finds nothing at all, remind the user to either `export OPENAI_API_KEY=sk-...` in their shell rc or run `opencode auth`. An account with no credits left, or a ChatGPT plan that doesn't cover the model, looks like a model failure rather than an auth error. `opencode upgrade` is worth a try too — the model list is pinned per release, so a stale build can 404 on a model that exists.
 
 ### Step 2: Handle smoke test result
 

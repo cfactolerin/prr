@@ -33,6 +33,10 @@ fn default_gemini_model() -> String {
     "gemini-2.5-flash".into()
 }
 
+fn default_opencode_model() -> String {
+    "openai/gpt-6-astra".into()
+}
+
 fn default_arbiter_rounds() -> u64 {
     3
 }
@@ -74,6 +78,9 @@ pub struct Config {
     #[serde(default = "default_gemini_model")]
     pub gemini_model: String,
 
+    #[serde(default = "default_opencode_model")]
+    pub opencode_model: String,
+
     #[serde(default = "default_arbiter_rounds")]
     pub arbiter_rounds: u64,
 
@@ -103,6 +110,7 @@ impl Default for Config {
             gemini_timeout: default_gemini_timeout(),
             opencode_timeout: default_opencode_timeout(),
             gemini_model: default_gemini_model(),
+            opencode_model: default_opencode_model(),
             arbiter_rounds: default_arbiter_rounds(),
             google_cloud_project: default_google_cloud_project(),
             google_cloud_location: default_google_cloud_location(),
@@ -242,7 +250,16 @@ mod tests {
         assert_eq!(cfg.gemini_timeout, 300);
         assert_eq!(cfg.opencode_timeout, 900);
         assert_eq!(cfg.gemini_model, "gemini-2.5-flash");
+        assert_eq!(cfg.opencode_model, "openai/gpt-6-astra");
         assert_eq!(cfg.arbiter_rounds, 3);
+    }
+
+    #[test]
+    fn test_opencode_model_override() {
+        let mut f = NamedTempFile::new().unwrap();
+        writeln!(f, "opencode_model: openai/gpt-5.6-sol").unwrap();
+        let cfg = Config::load_from_path(f.path()).unwrap();
+        assert_eq!(cfg.opencode_model, "openai/gpt-5.6-sol");
     }
 
     #[test]

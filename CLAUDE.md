@@ -25,7 +25,8 @@ prr/
 │   ├── html.rs                 # HTML-to-markdown conversion (html2text wrapper)
 │   ├── prompt.rs               # Prompt assembly for review, arbiter, and Q&A
 │   ├── report.rs               # Final-report parser → structured JSON
-│   └── cleanup.rs              # Workspace cleanup (removes merged/closed PR dirs)
+│   ├── cleanup.rs              # Workspace cleanup (removes merged/closed PR dirs)
+│   └── opencode.rs             # opencode model health check, probing, and healing
 ├── skills/
 │   ├── prr-setup/SKILL.md      # /prr:setup — interactive setup via AskUserQuestion
 │   ├── prr-start/SKILL.md      # /prr:start — full review orchestration
@@ -58,6 +59,8 @@ prr/
 | `agents list` | Print configured agents from `~/.prr/config.yml` |
 | `agents add <name>` | Add an agent to config (validates against `KNOWN_AGENTS`) |
 | `agents delete <name>` | Remove an agent from config |
+| `opencode check` | Smoke-test `opencode_model`; on failure probe replacements and exit 1 |
+| `opencode set-model <id>` | Persist the model the opencode reviewer runs with |
 
 The binary path in skills is `${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal`.
 

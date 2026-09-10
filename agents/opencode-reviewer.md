@@ -19,12 +19,15 @@ opencode reads `OPENAI_API_KEY` from the environment. The user is expected to ha
 
 ## opencode Command
 
-Run via Bash, piping the review prompt as stdin. The exact paths will be provided in your dispatch instructions. The command pattern is:
+Run via Bash, piping the review prompt as stdin. The exact paths, model and
+timeout will be provided in your dispatch instructions — the model comes from
+`opencode_model` in `~/.prr/config.yml`, so never substitute one of your own.
+The command pattern is:
 
 ```
 cat "<prompt_path>" \
-  | opencode run \
-      --model openai/gpt-5.5 \
+  | timeout <timeout> opencode run \
+      --model <model> \
       --dir "<repo_path>" \
       --format json \
   | jq -rR 'fromjson? // empty | if .type == "text" then .part.text elif .type == "error" then "OPENCODE ERROR: \(.error.name // "unknown"): \(.error.data.message // .error | tostring)" else empty end' \
@@ -50,6 +53,11 @@ arrives in `type == "text"` entries; failures arrive as a `type == "error"`
 entry and opencode still exits 0. The `jq` filter passes both through, so a run
 that dies mid-stream leaves the reason in the output file instead of a
 zero-byte file.
+
+One failure escapes that filter. When opencode judges a model error retryable
+it backs off and retries in silence, emitting no event at all, so `timeout`
+kills it and the output file is genuinely empty. Exit code 124 is that case —
+report it as a wedged run rather than an empty review.
 
 ## After opencode Completes
 

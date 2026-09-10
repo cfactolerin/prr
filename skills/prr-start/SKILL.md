@@ -111,7 +111,11 @@ Phases 7 and 8 (line comment review, posting to GitHub) are interactive flows th
 
 Read `~/.prr/config.yml` and extract the `agents` list. This determines which agents to dispatch. Possible values: `claude`, `codex`, `gemini`, `opencode` — in any combination.
 
-Also read `gemini_model` (default: `gemini-2.5-flash`), `google_cloud_project` (default: `fuga-prod`), `google_cloud_location` (default: `europe-west4`), and `arbiter_rounds` (default: 3) for later use.
+Also read `gemini_model` (default: `gemini-2.5-flash`), `opencode_model` (default: `openai/gpt-6-astra`), `google_cloud_project` (default: `fuga-prod`), `google_cloud_location` (default: `europe-west4`), and `arbiter_rounds` (default: 3) for later use.
+
+`opencode_model` is `<OPENCODE_MODEL>` below, and `opencode_timeout`
+(default: 900) is `<OPENCODE_TIMEOUT>`. Read the model again after the health
+check in Step 4b — that step may change it.
 
 ### Step 4b: Preflight agent health check
 
@@ -133,22 +137,45 @@ export GOOGLE_CLOUD_PROJECT="<GOOGLE_CLOUD_PROJECT>" GOOGLE_CLOUD_LOCATION="<GOO
 
 #### Opencode check (if "opencode" is in the agents list)
 ```bash
-printf 'Reply with exactly: HELLO\n' | timeout 30 opencode run --model openai/gpt-5.5 --format json 2>&1 | jq -rR 'fromjson? // empty | if .type == "text" then .part.text elif .type == "error" then "OPENCODE ERROR: \(.error.name // "unknown"): \(.error.data.message // .error | tostring)" else empty end' | head -5
+${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal opencode check
 ```
-- **Pass:** output contains recognizable text (not an error/auth failure)
-- **Fail:** command errors, times out, or returns an auth error
+- **Pass:** exit 0
+- **Fail:** exit 1
 
-opencode exits 0 even when the model call fails, so read the output, not the
-exit code. A line starting `OPENCODE ERROR:` is a failure; quote it to the user
-verbatim.
+Trust the exit code, not your reading of the output. opencode exits 0 even when
+the model call fails, and a model that opencode considers retryable produces no
+output at all while it backs off — which is why a wedged run used to read as
+healthy. `opencode check` applies the timeout and the verdict itself.
 
-If opencode fails, also check whether `OPENAI_API_KEY` is set in the environment. If it is missing, tell the user:
+On exit 1 the command prints why the configured model failed, then probes
+replacements and lists the ones that answered. Heal it before giving up:
+
+1. Show the user the working models with `AskUserQuestion`, best-first as
+   printed. Include the failure reason so they know what they're replacing.
+2. Write their choice:
+   ```bash
+   ${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal opencode set-model <chosen-id>
+   ```
+3. Run `opencode check` again. On exit 0, use the new model as
+   `<OPENCODE_MODEL>` and carry on.
+4. If it fails again, offer the remaining working models once more.
+
+Drop opencode from this run — don't keep asking — when the probe finds no
+working models, when the user cancels, or when the second pick also fails.
+
+The setting persists to `~/.prr/config.yml`, so the next review starts healthy.
+Tell the user they can change it there, or by re-running `opencode set-model`.
+
+If the probe finds nothing, check whether `OPENAI_API_KEY` is set in the environment. If it is missing, tell the user:
 > opencode requires `OPENAI_API_KEY` to be exported in your shell (e.g., add `export OPENAI_API_KEY=sk-...` to `~/.zshrc`), or run `opencode auth` to authenticate. Skipping opencode for this review.
 
-`opencode upgrade` is worth suggesting for any other error: opencode pins the
-provider's model list per release, so a stale build can 404 on a model that
-exists. Do not reach for the Bash tool's `dangerouslyDisableSandbox` — opencode
-works sandboxed, and the classifier blocks the dispatch outright.
+An exhausted account is worth ruling out too: an `OPENAI_API_KEY` with no
+credits left, or a ChatGPT sign-in whose plan doesn't cover the model, both
+surface as a model failure rather than an auth error. So does a stale build —
+opencode pins the provider's model list per release, so `opencode upgrade` can
+restore an id the account really does have. Do not reach for the Bash tool's
+`dangerouslyDisableSandbox` — opencode works sandboxed, and the classifier
+blocks the dispatch outright.
 
 **Claude does not need a health check** — it runs as a native Claude Code sub-agent and is always available.
 
@@ -249,7 +276,7 @@ Run the opencode CLI to review this PR. Here are your paths:
 - Write output to: <RESULTS_PATH>/opencode-review.md
 
 Run this exact command:
-cat "<PROMPT_PATH>" | opencode run --model openai/gpt-5.5 --dir "<REPO_PATH>" --format json | jq -rR 'fromjson? // empty | if .type == "text" then .part.text elif .type == "error" then "OPENCODE ERROR: \(.error.name // "unknown"): \(.error.data.message // .error | tostring)" else empty end' > "<RESULTS_PATH>/opencode-review.md"
+cat "<PROMPT_PATH>" | timeout <OPENCODE_TIMEOUT> opencode run --model <OPENCODE_MODEL> --dir "<REPO_PATH>" --format json | jq -rR 'fromjson? // empty | if .type == "text" then .part.text elif .type == "error" then "OPENCODE ERROR: \(.error.name // "unknown"): \(.error.data.message // .error | tostring)" else empty end' > "<RESULTS_PATH>/opencode-review.md"
 ```
 
 ### Step 4e: Wait and verify
@@ -345,7 +372,7 @@ Search the output for a fenced JSON code block (` ```json `) whose content is an
    - For **gemini**: dispatch `gemini-reviewer` with the question prompt piped to gemini, output to the answer path.
    - For **opencode**: dispatch `opencode-reviewer` with instructions to run:
      ```
-     cat "<question_prompt_path>" | opencode run --model openai/gpt-5.5 --dir "<REPO_PATH>" --format json | jq -rR 'fromjson? // empty | if .type == "text" then .part.text elif .type == "error" then "OPENCODE ERROR: \(.error.name // "unknown"): \(.error.data.message // .error | tostring)" else empty end' > "<answer_path>"
+     cat "<question_prompt_path>" | timeout <OPENCODE_TIMEOUT> opencode run --model <OPENCODE_MODEL> --dir "<REPO_PATH>" --format json | jq -rR 'fromjson? // empty | if .type == "text" then .part.text elif .type == "error" then "OPENCODE ERROR: \(.error.name // "unknown"): \(.error.data.message // .error | tostring)" else empty end' > "<answer_path>"
      ```
 
    Dispatch all agent answers in parallel.
