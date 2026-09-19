@@ -34,16 +34,14 @@ pub fn build_review(
     let base_branch = str_field(&meta, "baseRefName");
     let repo = repo_from_url(&pr_url);
 
-    // Infer ticket_id from head branch / title (stored in metadata body field)
-    let pr_body = str_field(&meta, "body");
-    let ticket_id = crate::pr::detect_ticket(&format!("{pr_title} {pr_body} {head_branch}"))
-        .unwrap_or_else(|| "none".to_string());
+    let ticket_id = resolved_ticket_id(&results, &meta);
 
     // Optional context files
     let diff = read_if_exists(&results.join("diff.txt"));
     let changed_files = read_if_exists(&results.join("changed-files.txt"));
     let previous_review_raw = read_if_exists(&results.join("previous-review.md"));
     let ticket_context_raw = read_if_exists(&base.join("context/ticket-context.md"));
+    let context_path = base.join("context").display().to_string();
 
     let repo_docs = repo_docs_section(&results);
 
@@ -61,6 +59,7 @@ pub fn build_review(
 
     // Parse tasks JSON (array of strings)
     let reviewer_tasks = parse_tasks(tasks_json);
+    std::fs::write(results.join("reviewer-tasks.md"), &reviewer_tasks)?;
 
     let prompt = interpolate(
         REVIEW_TEMPLATE,
@@ -73,6 +72,7 @@ pub fn build_review(
             ("{{base_branch}}", &base_branch),
             ("{{ticket_id}}", &ticket_id),
             ("{{ticket_context}}", &ticket_context),
+            ("{{context_path}}", &context_path),
             ("{{repo_docs}}", &repo_docs),
             ("{{previous_review}}", &previous_review),
             ("{{changed_files}}", &changed_files),
@@ -109,9 +109,7 @@ pub fn build_arbiter(context_dir: &str) -> Result<(), Box<dyn std::error::Error>
     let base_branch = str_field(&meta, "baseRefName");
     let repo = repo_from_url(&pr_url);
 
-    let pr_body = str_field(&meta, "body");
-    let ticket_id = crate::pr::detect_ticket(&format!("{pr_title} {pr_body} {head_branch}"))
-        .unwrap_or_else(|| "none".to_string());
+    let ticket_id = resolved_ticket_id(&results, &meta);
 
     // Collect agent reviews
     let reviews = collect_reviews(&results);
@@ -120,10 +118,22 @@ pub fn build_arbiter(context_dir: &str) -> Result<(), Box<dyn std::error::Error>
     let round_history = collect_round_history(&results);
 
     let repo_docs = repo_docs_section(&results);
+    let diff = read_if_exists(&results.join("diff.txt"));
+    let ticket_context_raw = read_if_exists(&base.join("context/ticket-context.md"));
+    let ticket_context = if ticket_context_raw.trim().is_empty() {
+        "No ticket details available.".to_string()
+    } else {
+        ticket_context_raw
+    };
+    let context_path = base.join("context").display().to_string();
 
-    // Reviewer tasks — re-use from context manifest if present
-    let reviewer_tasks = read_if_exists(&base.join("context-manifest.md"));
-    let reviewer_tasks_section = extract_tasks_from_manifest(&reviewer_tasks);
+    let saved_tasks = read_if_exists(&results.join("reviewer-tasks.md"));
+    let reviewer_tasks_section = if saved_tasks.trim().is_empty() {
+        let manifest = read_if_exists(&base.join("context-manifest.md"));
+        extract_tasks_from_manifest(&manifest)
+    } else {
+        saved_tasks
+    };
 
     let prompt = interpolate(
         ARBITER_TEMPLATE,
@@ -135,6 +145,9 @@ pub fn build_arbiter(context_dir: &str) -> Result<(), Box<dyn std::error::Error>
             ("{{head_branch}}", &head_branch),
             ("{{base_branch}}", &base_branch),
             ("{{ticket_id}}", &ticket_id),
+            ("{{ticket_context}}", &ticket_context),
+            ("{{context_path}}", &context_path),
+            ("{{diff}}", &diff),
             ("{{repo_docs}}", &repo_docs),
             ("{{reviews}}", &reviews),
             ("{{round_history}}", &round_history),
@@ -157,6 +170,7 @@ pub fn build_question(
     context_dir: &str,
     agent: &str,
     questions_json: &str,
+    round: Option<u32>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let base = Path::new(context_dir);
     let results = base.join("results");
@@ -174,12 +188,13 @@ pub fn build_question(
     };
 
     let repo_docs = repo_docs_section(&results);
+    let context_path = base.join("context").display().to_string();
 
     // Parse questions from JSON (array of strings keyed by agent name, or plain array)
     let questions = parse_questions_for_agent(questions_json, agent);
 
     // Determine round number
-    let round_num = next_round_number(&results, agent);
+    let round_num = round.unwrap_or_else(|| next_round_number(&results, agent));
 
     let prompt = interpolate(
         QUESTION_TEMPLATE,
@@ -188,6 +203,7 @@ pub fn build_question(
             ("{{pr_title}}", &pr_title),
             ("{{repo}}", &repo),
             ("{{repo_docs}}", &repo_docs),
+            ("{{context_path}}", &context_path),
             ("{{previous_review}}", &previous_review),
             ("{{questions}}", &questions),
         ],
@@ -217,6 +233,19 @@ fn repo_docs_section(results: &Path) -> String {
 /// Returns file contents as a String, or empty string if file doesn't exist.
 fn read_if_exists(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_default()
+}
+
+fn resolved_ticket_id(results: &Path, meta: &serde_json::Value) -> String {
+    let saved = read_if_exists(&results.join("ticket-id.txt"));
+    if !saved.trim().is_empty() {
+        return saved.trim().to_string();
+    }
+
+    let title = str_field(meta, "title");
+    let body = str_field(meta, "body");
+    let branch = str_field(meta, "headRefName");
+    crate::pr::detect_ticket(&format!("{title} {body} {branch}"))
+        .unwrap_or_else(|| "none".to_string())
 }
 
 /// Capitalizes the first ASCII letter of a string.
@@ -281,6 +310,9 @@ fn collect_reviews(results: &Path) -> String {
         let path = results.join(format!("{agent}-review.md"));
         if path.exists() {
             if let Ok(content) = std::fs::read_to_string(&path) {
+                if content.trim().is_empty() {
+                    continue;
+                }
                 out.push_str(&format!("### {} Review\n\n", capitalize(agent)));
                 out.push_str(&content);
                 out.push_str("\n\n---\n\n");
@@ -293,10 +325,13 @@ fn collect_reviews(results: &Path) -> String {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
-            if name_str.ends_with("-review.md") {
+            if name_str.ends_with("-review.md") && name_str != "previous-review.md" {
                 let agent_name = name_str.trim_end_matches("-review.md");
                 if !known_agents.contains(&agent_name) {
                     if let Ok(content) = std::fs::read_to_string(entry.path()) {
+                        if content.trim().is_empty() {
+                            continue;
+                        }
                         out.push_str(&format!("### {} Review\n\n", capitalize(agent_name)));
                         out.push_str(&content);
                         out.push_str("\n\n---\n\n");
@@ -584,6 +619,42 @@ mod tests {
     }
 
     #[test]
+    fn test_collect_reviews_excludes_previous_report() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("previous-review.md"),
+            "## Verdict\n\nREQUEST_CHANGES\n",
+        )
+        .unwrap();
+        let reviews = collect_reviews(dir.path());
+        assert!(reviews.contains("No agent reviews found"));
+        assert!(!reviews.contains("Previous Review"));
+    }
+
+    #[test]
+    fn test_collect_reviews_excludes_empty_output() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("codex-review.md"), "\n").unwrap();
+        std::fs::write(dir.path().join("opencode-review.md"), "APPROVE\n").unwrap();
+        let reviews = collect_reviews(dir.path());
+        assert!(!reviews.contains("Codex Review"));
+        assert!(reviews.contains("Opencode Review"));
+    }
+
+    #[test]
+    fn test_resolved_ticket_id_prefers_saved_context_value() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("ticket-id.txt"), "OVERRIDE-42\n")
+            .unwrap();
+        let meta = serde_json::json!({
+            "title": "Detected PROJ-1",
+            "body": "",
+            "headRefName": "feature/PROJ-1"
+        });
+        assert_eq!(resolved_ticket_id(dir.path(), &meta), "OVERRIDE-42");
+    }
+
+    #[test]
     fn test_build_review_writes_output() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
@@ -607,13 +678,20 @@ mod tests {
         std::fs::write(base.join("results/diff.txt"), "diff content").unwrap();
         std::fs::write(base.join("results/changed-files.txt"), "src/main.rs").unwrap();
 
-        build_review(base.to_str().unwrap(), None).unwrap();
+        build_review(
+            base.to_str().unwrap(),
+            Some(r#"["Check auth", "Verify rollback"]"#),
+        )
+        .unwrap();
 
         let out = std::fs::read_to_string(base.join("results/review-prompt.md")).unwrap();
         assert!(out.contains("Test PR"));
         assert!(out.contains("testuser"));
         assert!(out.contains("feat/test"));
         assert!(out.contains("diff content"));
+        assert!(out.contains("Check auth"));
+        let tasks = std::fs::read_to_string(base.join("results/reviewer-tasks.md")).unwrap();
+        assert!(tasks.contains("Verify rollback"));
     }
 
     #[test]
@@ -641,6 +719,11 @@ mod tests {
             "## Verdict\n\nAPPROVE\n",
         )
         .unwrap();
+        std::fs::write(
+            base.join("results/reviewer-tasks.md"),
+            "1. Check authorization boundaries",
+        )
+        .unwrap();
 
         build_arbiter(base.to_str().unwrap()).unwrap();
 
@@ -648,6 +731,7 @@ mod tests {
         assert!(out.contains("Arbiter Test"));
         assert!(out.contains("Claude Review"));
         assert!(out.contains("APPROVE"));
+        assert!(out.contains("Check authorization boundaries"));
     }
 
     #[test]
@@ -677,9 +761,9 @@ mod tests {
         .unwrap();
 
         let questions = r#"{"claude": ["Did you check line 42?"]}"#;
-        build_question(base.to_str().unwrap(), "claude", questions).unwrap();
+        build_question(base.to_str().unwrap(), "claude", questions, Some(2)).unwrap();
 
-        let out_path = base.join("results/round-1-claude-question.md");
+        let out_path = base.join("results/round-2-claude-question.md");
         assert!(out_path.exists());
         let out = std::fs::read_to_string(&out_path).unwrap();
         assert!(out.contains("Did you check line 42?"));

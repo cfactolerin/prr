@@ -1,0 +1,49 @@
+{
+  "name": "opencode-prr",
+  "version": "0.15.0",
+  "description": "OpenCode plugin for independent OpenCode and Codex pull request reviews",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    ".opencode/agents",
+    ".opencode/commands",
+    ".opencode/skills",
+    "bin/prr-darwin-universal",
+    "index.js",
+    "README.md"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64",
+    "x64"
+  ],
+  "scripts": {
+    "test": "node --test tests/plugin.test.js"
+  },
+  "keywords": [
+    "opencode",
+    "plugin",
+    "pull-request",
+    "code-review",
+    "codex"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cfactolerin/prr.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cfactolerin/prr/issues"
+  },
+  "homepage": "https://github.com/cfactolerin/prr#readme",
+  "author": "Cris Factolerin",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.18.31",
+    "yaml": "^2.8.1"
+  }
+}
