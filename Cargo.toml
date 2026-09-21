@@ -1,8 +1,8 @@
 [package]
 name = "prr"
-version = "0.14.1"
+version = "0.15.0"
 edition = "2021"
-description = "AI-powered PR review — Rust binary for the PRR Claude Code plugin"
+description = "AI-powered pull request review engine for PRR plugins"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

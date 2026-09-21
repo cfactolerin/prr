@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 pub const KNOWN_AGENTS: &[&str] = &["claude", "codex", "gemini", "opencode"];
@@ -162,8 +163,38 @@ impl Config {
             std::fs::create_dir_all(parent)?;
         }
         let text = serde_yaml::to_string(self)?;
-        std::fs::write(path, text)?;
+        let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+            options.mode(0o600);
+            let mut file = options.open(&temporary)?;
+            file.write_all(text.as_bytes())?;
+            file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+            file.sync_all()?;
+        }
+        #[cfg(not(unix))]
+        {
+            let mut file = options.open(&temporary)?;
+            file.write_all(text.as_bytes())?;
+            file.sync_all()?;
+        }
+        std::fs::rename(temporary, path)?;
         Ok(())
+    }
+
+    pub fn configure_for_opencode(&mut self, workspace: &str, clear_jira: bool) {
+        self.workspace_path = workspace.to_string();
+        self.agents = vec!["opencode".into(), "codex".into()];
+        self.codex_timeout = default_codex_timeout();
+        self.arbiter_rounds = default_arbiter_rounds();
+        if clear_jira {
+            self.jira_base_url.clear();
+            self.jira_email.clear();
+            self.jira_api_token.clear();
+        }
     }
 
     // ── agent helpers ──────────────────────────────────────────────────────
@@ -201,6 +232,48 @@ impl Config {
         }
         Ok(())
     }
+}
+
+pub fn runtime() -> Result<(), Box<dyn std::error::Error>> {
+    let configured = Config::config_path().exists();
+    let config = Config::load()?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "configured": configured,
+            "workspace_path": config.expanded_workspace_path(),
+            "codex_timeout": config.codex_timeout,
+            "arbiter_rounds": config.arbiter_rounds,
+            "jira_configured": !config.jira_base_url.is_empty()
+                && !config.jira_email.is_empty()
+                && !config.jira_api_token.is_empty(),
+        }))?
+    );
+    Ok(())
+}
+
+pub fn configure_opencode(
+    workspace: &str,
+    clear_jira: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if workspace.trim().is_empty() {
+        return Err("workspace must not be empty".into());
+    }
+    let mut config = Config::load()?;
+    config.configure_for_opencode(workspace, clear_jira);
+    std::fs::create_dir_all(config.expanded_workspace_path())?;
+    config.save()?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "config_path": Config::config_path(),
+            "workspace_path": config.expanded_workspace_path(),
+            "jira_configured": !config.jira_base_url.is_empty()
+                && !config.jira_email.is_empty()
+                && !config.jira_api_token.is_empty(),
+        }))?
+    );
+    Ok(())
 }
 
 // ── public dispatch functions used by main.rs ──────────────────────────────
@@ -322,5 +395,35 @@ mod tests {
         let loaded = Config::load_from_path(&path).unwrap();
         assert_eq!(loaded.jira_base_url, "https://test.atlassian.net/");
         assert_eq!(loaded.agents, vec!["claude"]);
+    }
+
+    #[test]
+    fn test_configure_for_opencode_preserves_or_clears_jira() {
+        let mut cfg = Config::default();
+        cfg.jira_base_url = "https://test.atlassian.net".into();
+        cfg.jira_email = "user@example.com".into();
+        cfg.jira_api_token = "secret".into();
+
+        cfg.configure_for_opencode("~/reviews", false);
+        assert_eq!(cfg.workspace_path, "~/reviews");
+        assert_eq!(cfg.agents, vec!["opencode", "codex"]);
+        assert_eq!(cfg.jira_api_token, "secret");
+
+        cfg.configure_for_opencode("~/reviews", true);
+        assert!(cfg.jira_base_url.is_empty());
+        assert!(cfg.jira_email.is_empty());
+        assert!(cfg.jira_api_token.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_save_restricts_config_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yml");
+        Config::default().save_to_path(&path).unwrap();
+
+        assert_eq!(std::fs::metadata(path).unwrap().permissions().mode() & 0o777, 0o600);
     }
 }

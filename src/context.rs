@@ -153,6 +153,10 @@ pub fn run(
         round_dir.join("results/pr-metadata.json"),
         serde_json::to_string_pretty(&pr_data)?,
     )?;
+    std::fs::write(
+        round_dir.join("results/ticket-id.txt"),
+        ticket_id.as_deref().unwrap_or("none"),
+    )?;
     if !repo_docs.rendered.is_empty() {
         std::fs::write(round_dir.join("results/repo-docs.md"), &repo_docs.rendered)?;
     }
@@ -179,7 +183,7 @@ fn fetch_pr_metadata(pr_ref: &pr::PrRef) -> Result<Value, Box<dyn std::error::Er
         .args([
             "pr", "view", &pr_ref.number.to_string(),
             "--repo", &pr_ref.gh_repo(),
-            "--json", "number,title,body,headRefName,baseRefName,author,files,url,commits",
+            "--json", "number,title,body,headRefName,headRefOid,baseRefName,author,files,url,commits",
         ])
         .env("NO_COLOR", "1")
         .output()?;
@@ -265,7 +269,7 @@ fn gather_repo_docs(repo_dir: &std::path::Path, changed_files: &str) -> RepoDocs
 
     for filename in &["CLAUDE.md", "AGENTS.md", "README.md"] {
         let path = repo_dir.join(filename);
-        if !path.exists() {
+        if !safe_repo_file(repo_dir, &path) {
             continue;
         }
         if let Ok(content) = std::fs::read_to_string(&path) {
@@ -287,7 +291,11 @@ fn gather_repo_docs(repo_dir: &std::path::Path, changed_files: &str) -> RepoDocs
 
     let mut guides = Vec::new();
     for guide in found {
-        let links = std::fs::read_to_string(repo_dir.join(&guide))
+        let path = repo_dir.join(&guide);
+        if !safe_repo_file(repo_dir, &path) {
+            continue;
+        }
+        let links = std::fs::read_to_string(path)
             .map(|c| local_links(&c))
             .unwrap_or_default();
         if links.is_empty() {
@@ -325,6 +333,19 @@ fn gather_repo_docs(repo_dir: &std::path::Path, changed_files: &str) -> RepoDocs
     RepoDocs { rendered, root_files, guide_count: guides.len(), covering_count, excluded }
 }
 
+fn safe_repo_file(repo_root: &std::path::Path, path: &std::path::Path) -> bool {
+    let Ok(metadata) = std::fs::symlink_metadata(path) else {
+        return false;
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return false;
+    }
+    let (Ok(root), Ok(candidate)) = (repo_root.canonicalize(), path.canonicalize()) else {
+        return false;
+    };
+    candidate.starts_with(root)
+}
+
 /// Prepended to every rendered doc set, and so to every prompt carrying one.
 const STAY_IN_THE_CLONE: &str = "\
 ### Reading these docs
@@ -354,7 +375,13 @@ fn collect_area_guides(
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
         let path = entry.path();
-        if path.is_dir() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_dir() {
             if name.starts_with('.') || SKIPPED_DIRS.contains(&name.as_str()) {
                 continue;
             }
@@ -453,6 +480,26 @@ mod tests {
 
         assert!(docs.rendered.contains("`app/AGENTS.md`"));
         assert_eq!(docs.guide_count, 1, "vendored and build trees are skipped");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skips_symlinked_repo_docs_and_directories() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(&repo).unwrap();
+        write(&outside, "CLAUDE.md", "host secret");
+        symlink(outside.join("CLAUDE.md"), repo.join("README.md")).unwrap();
+        symlink(&outside, repo.join("linked")).unwrap();
+
+        let docs = gather_repo_docs(&repo, "");
+
+        assert!(!docs.rendered.contains("host secret"));
+        assert!(docs.root_files.is_empty());
+        assert_eq!(docs.guide_count, 0);
     }
 
     #[test]
