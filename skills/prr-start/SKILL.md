@@ -105,7 +105,7 @@ Phases 7 and 8 (line comment review, posting to GitHub) are interactive flows th
 
 **Update task 3 to in_progress.**
 
-1. Present the full context manifest to the user. Include **every row** from the manifest table exactly as generated (including the PRR version row). Format it clearly.
+1. Present the full context manifest to the user. Include **every field** exactly as generated (including the PRR version). Format it clearly.
 2. Ask the user:
    > Context gathered. You can:
    > - Say **"go"** to start the review

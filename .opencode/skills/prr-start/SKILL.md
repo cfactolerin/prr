@@ -76,7 +76,7 @@ If context gathering fails, show the relevant stderr and use **Retry context** a
 
 ## Phase 3: User Context Review
 
-Present the full context manifest, preserving every generated table row, including the PRR version row. Then use the question tool:
+Present the full context manifest, preserving every generated field, including the PRR version. Then use the question tool:
 
 **Question:** What should the reviewers do with this context?
 

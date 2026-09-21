@@ -86,15 +86,18 @@ pub fn run(
     };
 
     // Write context manifest
-    let mut manifest = String::from("# Context Manifest\n\n");
-    manifest.push_str("| Field | Value |\n|-------|-------|\n");
-    manifest.push_str(&format!("| **PRR** | v{} |\n", env!("CARGO_PKG_VERSION")));
-    manifest.push_str(&format!("| **PR** | {} |\n", pr_url));
-    manifest.push_str(&format!("| **Title** | {} |\n", pr_title));
-    manifest.push_str(&format!("| **Author** | {} |\n", pr_author));
-    manifest.push_str(&format!("| **Branch** | `{head_branch}` -> `{base_branch}` |\n"));
-    manifest.push_str(&format!("| **Ticket** | {} |\n", ticket_id.as_deref().unwrap_or("none")));
-    manifest.push_str(&format!("| **Round** | r{round_num} |\n"));
+    let version = format!("v{}", env!("CARGO_PKG_VERSION"));
+    let branch = format!("`{head_branch}` -> `{base_branch}`");
+    let round_label = format!("r{round_num}");
+    let mut manifest = manifest_header(&[
+        ("PRR", &version),
+        ("PR", pr_url),
+        ("Title", pr_title),
+        ("Author", pr_author),
+        ("Branch", &branch),
+        ("Ticket", ticket_id.as_deref().unwrap_or("none")),
+        ("Round", &round_label),
+    ]);
     manifest.push_str("\n## Gathered Context\n\n");
     manifest.push_str(&format!("- Repo cloned: `{}`\n", repo_dir.display()));
     manifest.push_str(&format!("- Changed files: {}\n", changed.lines().count()));
@@ -176,6 +179,16 @@ pub fn run(
     println!("{}", round_dir.display());
 
     Ok(())
+}
+
+/// Bullets rather than a markdown table: the OpenCode TUI prints the pipes
+/// literally and wraps long cells mid-word.
+fn manifest_header(fields: &[(&str, &str)]) -> String {
+    let mut header = String::from("# Context Manifest\n\n");
+    for (label, value) in fields {
+        header.push_str(&format!("- **{label}**: {value}\n"));
+    }
+    header
 }
 
 fn fetch_pr_metadata(pr_ref: &pr::PrRef) -> Result<Value, Box<dyn std::error::Error>> {
@@ -422,6 +435,17 @@ mod tests {
             .lines()
             .find(|l| l.contains(needle))
             .unwrap_or_else(|| panic!("no line mentioning {needle} in:\n{rendered}"))
+    }
+
+    #[test]
+    fn manifest_header_carries_no_table_markup() {
+        let header = manifest_header(&[("PRR", "v1.2.3"), ("Title", "Share the guard")]);
+
+        assert_eq!(
+            header,
+            "# Context Manifest\n\n- **PRR**: v1.2.3\n- **Title**: Share the guard\n"
+        );
+        assert!(!header.contains('|'));
     }
 
     #[test]
