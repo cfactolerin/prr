@@ -78,8 +78,8 @@ test("does not replace user command or agent overrides", async () => {
 
 test("rejects Codex paths outside a PRR round", async () => {
   const hooks = await PrrPlugin()
-  assert.throws(
-    () => hooks.tool.prr_codex.execute({
+  await assert.rejects(
+    hooks.tool.prr_codex.execute({
       promptPath: "/tmp/prompt.md",
       repoPath: "/tmp/repo",
       outputPath: "/tmp/review.md",
@@ -148,27 +148,27 @@ fs.writeFileSync(process.argv[index + 1], JSON.stringify({
   try {
     const hooks = await PrrPlugin()
     const orchestrator = { agent: "prr-orchestrator", sessionID: "orchestrator-session" }
-    hooks.tool.prr_bind_round.execute({ roundPath: round }, orchestrator)
-    const opencodeCapability = hooks.tool.prr_capability.execute(
+    await hooks.tool.prr_bind_round.execute({ roundPath: round }, orchestrator)
+    const opencodeCapability = await hooks.tool.prr_capability.execute(
       { roundPath: round, role: "opencode" },
       orchestrator,
     )
-    const codexCapability = hooks.tool.prr_capability.execute(
+    const codexCapability = await hooks.tool.prr_capability.execute(
       { roundPath: round, role: "codex" },
       orchestrator,
     )
-    const code = hooks.tool.prr_read.execute(
+    const code = await hooks.tool.prr_read.execute(
       { capability: opencodeCapability, filePath: join(repo, "code.js") },
       { agent: "prr-opencode-reviewer", sessionID: "reviewer-session" },
     )
     assert.match(code, /const answer = 42/)
-    const requirement = hooks.tool.prr_read.execute(
+    const requirement = await hooks.tool.prr_read.execute(
       { capability: opencodeCapability, filePath: join(contextDirectory, "requirement.txt") },
       { agent: "prr-opencode-reviewer", sessionID: "reviewer-session" },
     )
     assert.match(requirement, /must preserve compatibility/)
-    assert.throws(
-      () => hooks.tool.prr_read.execute(
+    await assert.rejects(
+      hooks.tool.prr_read.execute(
         { capability: opencodeCapability, filePath: join(repo, "code.js") },
         { agent: "prr-opencode-reviewer", sessionID: "other-reviewer-session" },
       ),
@@ -177,15 +177,15 @@ fs.writeFileSync(process.argv[index + 1], JSON.stringify({
     const otherRepo = join(workspace, "acme-repo-pr-1", "r2", "repo")
     mkdirSync(otherRepo, { recursive: true })
     writeFileSync(join(otherRepo, "code.js"), "const other = true\n")
-    assert.throws(
-      () => hooks.tool.prr_read.execute(
+    await assert.rejects(
+      hooks.tool.prr_read.execute(
         { capability: opencodeCapability, filePath: join(otherRepo, "code.js") },
         { agent: "prr-opencode-reviewer", sessionID: "reviewer-session" },
       ),
       /Invalid PRR round capability/,
     )
-    assert.throws(
-      () => hooks.tool.prr_read.execute(
+    await assert.rejects(
+      hooks.tool.prr_read.execute(
         { capability: opencodeCapability, filePath: join(repo, "leak") },
         { agent: "prr-opencode-reviewer", sessionID: "reviewer-session" },
       ),
@@ -193,8 +193,8 @@ fs.writeFileSync(process.argv[index + 1], JSON.stringify({
     )
     const siblingRepo = join(workspace, "..", "r1", "repo")
     mkdirSync(siblingRepo, { recursive: true })
-    assert.throws(
-      () => hooks.tool.prr_codex.execute({
+    await assert.rejects(
+      hooks.tool.prr_codex.execute({
         capability: codexCapability,
         promptPath: prompt,
         repoPath: siblingRepo,
@@ -204,18 +204,18 @@ fs.writeFileSync(process.argv[index + 1], JSON.stringify({
       /configured PRR workspace/,
     )
     const copied = join(round, "results", "reviewers", "opencode", "copied-prompt.md")
-    hooks.tool.prr_artifact.execute(
+    await hooks.tool.prr_artifact.execute(
       { operation: "copy", sourcePath: prompt, targetPath: copied },
       orchestrator,
     )
     assert.equal(readFileSync(copied, "utf8"), "Review this change.")
     const nativeReview = join(round, "results", "reviewers", "opencode", "review.md")
-    hooks.tool.prr_write.execute(
+    await hooks.tool.prr_write.execute(
       { capability: opencodeCapability, filePath: nativeReview, content: "No findings." },
       { agent: "prr-opencode-reviewer", sessionID: "reviewer-session" },
     )
     assert.equal(readFileSync(nativeReview, "utf8"), "No findings.")
-    hooks.tool.prr_artifact.execute(
+    await hooks.tool.prr_artifact.execute(
       { operation: "remove", targetPath: copied },
       orchestrator,
     )
@@ -274,4 +274,32 @@ fs.writeFileSync(process.argv[index + 1], JSON.stringify({
     }
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+test("tool executors settle as promises instead of returning or throwing synchronously", async () => {
+  const hooks = await PrrPlugin()
+  const orchestrator = { agent: "prr-orchestrator", sessionID: "unbound-session" }
+  const missing = join(tmpdir(), "prr-missing-round", "r1")
+  const failingCalls = {
+    prr_bind_round: { roundPath: missing },
+    prr_capability: { roundPath: missing, role: "opencode" },
+    prr_read: { filePath: join(missing, "results", "review.md") },
+    prr_write: { filePath: join(missing, "results", "review.md"), content: "x" },
+    prr_artifact: { operation: "remove", targetPath: join(missing, "results", "review.md") },
+    prr_post_review: { owner: "acme", repo: "repo", number: 1, payloadPath: join(missing, "results", "r.json") },
+    prr_codex: {
+      capability: "invalid",
+      promptPath: join(missing, "results", "prompt.md"),
+      repoPath: join(missing, "repo"),
+      outputPath: join(missing, "results", "review.md"),
+      timeoutSeconds: 30,
+    },
+  }
+
+  for (const [name, args] of Object.entries(failingCalls)) {
+    const settled = hooks.tool[name].execute(args, orchestrator)
+    assert.equal(typeof settled?.then, "function", `${name} must return a promise`)
+    await assert.rejects(settled)
+  }
+  assert.equal(hooks.tool.prr_codex_health.execute.constructor.name, "AsyncFunction")
 })

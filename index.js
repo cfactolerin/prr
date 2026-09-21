@@ -191,7 +191,7 @@ function codexPolicyArgs(repo, additionalPaths = []) {
   ]
 }
 
-function runCodex({ capability, promptPath, repoPath, outputPath, timeoutSeconds }, context) {
+async function runCodex({ capability, promptPath, repoPath, outputPath, timeoutSeconds }, context) {
   const workspace = configuredWorkspace()
   const paths = codexPaths(workspace, promptPath, repoPath, outputPath)
   const round = dirname(paths.repo)
@@ -284,7 +284,7 @@ function requireBoundRound(context, round) {
   if (bound !== round) throw new Error("PRR session is not bound to this round")
 }
 
-function runPrrBindRound({ roundPath: path }, context) {
+async function runPrrBindRound({ roundPath: path }, context) {
   if (context?.agent !== "prr-orchestrator") throw new Error("Only the PRR orchestrator may bind a round")
   const workspace = configuredWorkspace()
   const round = roundRoot(workspace, path)
@@ -300,7 +300,7 @@ function runPrrBindRound({ roundPath: path }, context) {
   return `Bound PRR session to ${round}`
 }
 
-function runPrrCapability({ roundPath: path, role }, context) {
+async function runPrrCapability({ roundPath: path, role }, context) {
   if (context?.agent !== "prr-orchestrator") throw new Error("Only the PRR orchestrator may issue capabilities")
   const round = roundRoot(configuredWorkspace(), path)
   requireBoundRound(context, round)
@@ -325,7 +325,7 @@ function requireCapability(token, context, round, role) {
   capability.sessionID ??= sessionID
 }
 
-function runPrrRead({ capability, filePath, offset = 1, limit = 2000 }, context) {
+async function runPrrRead({ capability, filePath, offset = 1, limit = 2000 }, context) {
   const workspace = configuredWorkspace()
   const { target, round } = roundPath(workspace, filePath)
   const allowed = {
@@ -364,7 +364,7 @@ function runPrrRead({ capability, filePath, offset = 1, limit = 2000 }, context)
     .join("\n")
 }
 
-function runPrrWrite({ capability, filePath, content }, context) {
+async function runPrrWrite({ capability, filePath, content }, context) {
   if (Buffer.byteLength(content, "utf8") > 2 * 1024 * 1024) throw new Error("PRR write exceeds 2 MiB")
   const workspace = configuredWorkspace()
   const location = roundLocation(workspace, filePath)
@@ -398,7 +398,7 @@ function artifactOutput(results, path) {
   return output
 }
 
-function runPrrArtifact({ operation, sourcePath, targetPath }, context) {
+async function runPrrArtifact({ operation, sourcePath, targetPath }, context) {
   if (context?.agent !== "prr-orchestrator") throw new Error("Only the PRR orchestrator may move artifacts")
   const workspace = configuredWorkspace()
   const selectedPath = operation === "copy" ? sourcePath : targetPath
@@ -504,7 +504,7 @@ async function runPrrPostReview({ owner, repo, number, payloadPath }, context) {
   })
 }
 
-function runCodexHealth(_args, context) {
+async function runCodexHealth(_args, context) {
   const repo = realpathSync(mkdtempSync(join(tmpdir(), "prr-codex-health-")))
   const args = [
     "-a", "never", "exec",
@@ -568,6 +568,8 @@ export default async function PrrPlugin(input = {}) {
       output.env.PRR_BIN = binary
       output.env.PRR_PLUGIN_ROOT = packageRoot
     },
+    // OpenCode passes each executor to Effect's promise combinator, which calls .then()
+    // on the return value, so a synchronous return or throw breaks the tool call.
     tool: {
       prr_bind_round: tool({
         description: "Bind the current PRR orchestrator session to one review round.",
