@@ -71,6 +71,14 @@ You are the arbiter. Your job is to synthesize the agent reviews above into a de
 - Note anything one reviewer caught that the other missed.
 - Check every finding that rests on a convention or on domain behaviour against the repo's own
   guides. Drop the ones a guide contradicts, and say so in your reasoning.
+- Treat agreement as a claim to verify, not as evidence by itself. For each changed production
+  behavior, check whether the reviews traced direct callers and downstream consumers through the
+  final observable sink. Pay special attention to errors, logs, serialized output, API responses,
+  retries, state transitions, and shared helpers, where unchanged code may impose limits or
+  contracts that the diff now relies on.
+- Check whether the reviews considered the language/runtime semantics and the repository's
+  configured lint, formatting, testing, and design conventions. A review that says "no findings"
+  without evidence of these checks is incomplete, even when both agents agree.
 
 **Step 2 — Decide: ask questions or finalize.**
 
@@ -79,6 +87,11 @@ You MUST ask questions when any of the following are true:
 - An agent claims a bug, security issue, or logic error that no other agent mentions
 - An agent dismisses a concern raised by another agent without clear justification
 - A finding lacks specific evidence (no file path, no line number, no concrete explanation)
+- Neither review shows that a changed production behavior was traced through its direct callers
+  and final consumer or sink.
+- A changed error, diagnostic, serialized value, API response, retry path, or state transition
+  has no verified check for downstream limits, contracts, or boundary behavior.
+- Neither review shows that applicable language/runtime and repository-guideline checks were made.
 
 When you have questions, output ONLY a JSON object. Each key is an agent name, each value is a list of specific questions. Ask agents to cite exact file paths and line numbers in their answers:
 
@@ -97,7 +110,8 @@ When you have questions, output ONLY a JSON object. Each key is an agent name, e
 Replace the example keys with the exact agent names shown in the review headings. Include
 only agents that produced a review.
 
-Do not pad with unnecessary questions, but do not skip questions to avoid extra rounds. Getting the review right matters more than speed.
+Do not pad with unnecessary questions, but do not skip boundary or language-guideline questions to
+avoid extra rounds. Getting the review right matters more than speed.
 
 **Keep every question answerable inside the cloned repo.**
 

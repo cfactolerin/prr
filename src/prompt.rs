@@ -813,4 +813,14 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_templates_require_boundary_and_language_checks() {
+        assert!(REVIEW_TEMPLATE.contains("direct callers and important downstream consumers"));
+        assert!(REVIEW_TEMPLATE.contains("final boundary audit"));
+        assert!(REVIEW_TEMPLATE.contains("language, runtime"));
+        assert!(ARBITER_TEMPLATE.contains("Treat agreement as a claim to verify"));
+        assert!(ARBITER_TEMPLATE.contains("final consumer or sink"));
+        assert!(ARBITER_TEMPLATE.contains("language/runtime"));
+    }
 }
