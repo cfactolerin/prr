@@ -491,6 +491,10 @@ Use these exact strings for the verdict (no emojis — they don't render in the 
    > - Ask me to read code, check git blame, run tests in the repo at `<REPO_PATH>`
    > - Say **"re-review"** to run another round with additional guidance
    > - Say **"continue"** or **"comments"** to proceed to line comment review
+   > - Say **"post"** to skip the line comment review and go to posting
+
+   When the report holds no findings, drop the "continue" line and lead with "post" — the
+   one-at-a-time walk has nothing to show.
 
 4. Enter an interactive loop using AskUserQuestion:
    - If the user asks a question: investigate using the repo at `<REPO_PATH>`. Read files, run git commands, grep for patterns, etc. Present findings and ask if they have more questions.
@@ -498,6 +502,9 @@ Use these exact strings for the verdict (no emojis — they don't render in the 
      - **Important:** Always use `git -C <REPO_PATH> <command>` instead of `cd <REPO_PATH> && git <command>` to avoid security prompts.
    - If the user says "re-review": run `prr context "$ARGUMENTS" --workspace <workspace_path>` again (this creates rN+1), then re-run Phases 4-5 with the new round dir. Include any guidance the user provides.
    - If the user says "continue", "next", "comments", "done", or similar: exit the loop and proceed to Phase 7.
+   - If the user says "post" or similar: exit the loop, run Step 7a to parse and verify the
+     report, mark every parsed finding accepted, and skip the rest of Phase 7. With findings,
+     show the final confirmation first; with none, go straight to Phase 8.
 
 **Update task 6 to completed.**
 
@@ -553,6 +560,8 @@ CommentState {
 ```
 
 Initialize every entry with `status = Pending`. New findings the user adds in Step 7d are appended with `status = Accepted`. The list survives across 7b / 7c / 7d and is consumed by Phase 8.
+
+When `findings` is empty, skip 7b and 7c and go to the final confirmation, offering `add` as well as `yes`.
 
 ### Step 7b — Diff-anchored findings (inline-postable)
 
@@ -711,7 +720,9 @@ Show the final list (accepted + edited entries from both 7b and 7c):
 ---
 ```
 
-Confirm: "Ready to post? [yes / edit more]"
+With nothing accepted, say the review posts with no inline comments instead of showing an empty list.
+
+Confirm: "Ready to post? [yes / edit more / add]". Drop `edit more` when no finding was ever parsed or added.
 
 ## Phase 8: Post to GitHub
 
