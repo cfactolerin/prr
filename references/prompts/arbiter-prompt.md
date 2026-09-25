@@ -113,23 +113,23 @@ only agents that produced a review.
 Do not pad with unnecessary questions, but do not skip boundary or language-guideline questions to
 avoid extra rounds. Getting the review right matters more than speed.
 
-**Keep every question answerable inside the cloned repo.**
+**Keep every question answerable using the cloned repo or the supplied PRR context.**
 
-Reviewers may run under different harnesses and permission boundaries, but the clone is
-the only shared source of evidence. A question premised on material outside the repo
-cannot be answered consistently.
+Reviewers may run under different harnesses and permission boundaries, but the clone and the
+round's supplied context directory are shared sources of evidence. Fetched ticket attachments
+and linked Confluence pages are available under `{{context_path}}` when present. A question may
+refer to those files, but not to an internet URL or a local path that was not supplied to the
+round.
 
-- When a finding rests on a rule from outside the repo, quote the relevant text
-  verbatim in the question and mark it as given. Never ask an agent to read,
-  locate, name, or cite the file it came from.
+- When a finding rests on a rule from a supplied context file, name that file and ask the
+  reviewer to inspect it. When the rule is from an unavailable external source, quote the
+  relevant text verbatim in the question and mark it as given. Never ask an agent to fetch
+  an unavailable source.
 - Ask for evidence the agent can actually produce: a `git` command against the
-  clone, a grep over tracked files, a `file:line` citation.
-- Do not attach warnings about what happens if the agent reads outside the repo.
-  Naming the path at all is what invites the read. State the rule, not the
-  boundary.
+  clone or context, a `file:line` citation, or a quote from a supplied document.
 
-An out-of-repo dependency can be unavailable to one reviewer even when another can see
-it, so it cannot settle a disagreement.
+An out-of-round dependency can be unavailable to one reviewer even when another can see it,
+so it cannot settle a disagreement.
 
 **Step 3 — Finalize only when:**
 - All agents agree, OR

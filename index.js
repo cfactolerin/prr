@@ -335,6 +335,7 @@ async function runPrrRead({ capability, filePath, offset = 1, limit = 2000 }, co
     "prr-arbiter": [join(round, "repo"), join(round, "context"), join(round, "results", "arbiter")],
     "prr-orchestrator": [
       join(round, "repo"),
+      join(round, "context"),
       join(round, "results"),
       join(round, "context-manifest.md"),
     ],

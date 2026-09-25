@@ -167,6 +167,11 @@ fs.writeFileSync(process.argv[index + 1], JSON.stringify({
       { agent: "prr-opencode-reviewer", sessionID: "reviewer-session" },
     )
     assert.match(requirement, /must preserve compatibility/)
+    const orchestratorRequirement = await hooks.tool.prr_read.execute(
+      { filePath: join(contextDirectory, "requirement.txt") },
+      orchestrator,
+    )
+    assert.match(orchestratorRequirement, /must preserve compatibility/)
     await assert.rejects(
       hooks.tool.prr_read.execute(
         { capability: opencodeCapability, filePath: join(repo, "code.js") },

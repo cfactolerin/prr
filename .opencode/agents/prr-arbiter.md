@@ -26,7 +26,7 @@ Use `prr_read` with the dispatch capability to read only the supplied arbiter pr
 
 Compare both reviews and the recorded Q&A history.
 
-Ask follow-up questions when reviewers disagree about severity, validity, verdict, or code behavior. Also ask when a material claim appears in only one review and the available evidence does not verify it. Questions must request concrete proof such as paths, line numbers, tests, or documented behavior. Keep every question answerable inside the cloned repository; if repository guidance is relevant, ask the reviewer to quote it.
+Ask follow-up questions when reviewers disagree about severity, validity, verdict, or code behavior. Also ask when a material claim appears in only one review and the available evidence does not verify it. Questions must request concrete proof such as paths, line numbers, tests, or documented behavior. Keep every question answerable inside the cloned repository or the supplied round context; if repository guidance or a fetched attachment is relevant, ask the reviewer to inspect and quote it.
 
 When questions are needed and another round is allowed, write only one fenced JSON block to the output path:
 

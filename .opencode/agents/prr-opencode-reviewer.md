@@ -36,7 +36,7 @@ Keep exploration focused on code relevant to the diff. Do not modify the cloned 
 ## Q&A Operation
 
 1. Read the supplied question prompt and the repository guidance covering the cited files.
-2. Re-check each question against the clone. Quote paths and line numbers as evidence.
+2. Re-check each question against the clone and any supplied round context. Quote paths and line numbers, or quote the supplied document, as evidence.
 3. State when the evidence is inconclusive rather than inventing certainty.
 4. Write only the answers to the exact output path with `prr_write`, passing the dispatch capability, then verify that it is non-empty.
 

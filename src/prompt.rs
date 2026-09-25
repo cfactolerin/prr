@@ -552,12 +552,15 @@ mod tests {
         assert_eq!(repo_from_url("https://github.com/a/b"), "a/b");
     }
 
-    /// The CLI reviewers are confined to the clone, so a question premised on
-    /// anything outside it comes back as an empty answer, not an error.
+    /// Reviewer follow-up questions may use the clone and supplied round context,
+    /// but not unavailable external sources.
     #[test]
-    fn test_arbiter_template_confines_questions_to_repo() {
-        assert!(ARBITER_TEMPLATE.contains("Keep every question answerable inside the cloned repo."));
-        assert!(ARBITER_TEMPLATE.contains("quote the relevant text"));
+    fn test_arbiter_template_limits_questions_to_supplied_evidence() {
+        assert!(ARBITER_TEMPLATE.contains(
+            "Keep every question answerable using the cloned repo or the supplied PRR context."
+        ));
+        assert!(ARBITER_TEMPLATE.contains("Fetched ticket attachments"));
+        assert!(ARBITER_TEMPLATE.contains("Never ask an agent to fetch"));
     }
 
     #[test]
