@@ -39,7 +39,7 @@ PRR runs Codex with user configuration, hooks, rules, apps, web search, and suba
 
 ## Install For OpenCode
 
-Add `opencode-prr` to the `plugin` array in `~/.config/opencode/opencode.json`:
+The same package works with OpenCode 1.18.29 or newer and with OpenCode 2. Add `opencode-prr` to `~/.config/opencode/opencode.json`, using the `plugin` array on OpenCode 1:
 
 ```json
 {
@@ -48,7 +48,16 @@ Add `opencode-prr` to the `plugin` array in `~/.config/opencode/opencode.json`:
 }
 ```
 
-Preserve any existing settings and plugin entries in that file. OpenCode installs npm plugins automatically with Bun when it starts.
+OpenCode 2 renamed that array to `plugins`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["opencode-prr"]
+}
+```
+
+Preserve any existing settings and plugin entries in that file. OpenCode installs npm plugins automatically when it starts.
 
 Quit and restart OpenCode after changing the configuration. Then run:
 
@@ -94,7 +103,7 @@ The OpenCode reviewer and arbiter inherit the model selected in the current Open
 2. **Independent review:** a native OpenCode subagent and Codex CLI receive the same prompt in separate contexts. Neither receives the other's output.
 3. **Arbitration:** a separate OpenCode subagent compares both reviews and may ask either reviewer for path, line, test, or documentation evidence.
 4. **Interactive review:** PRR presents each finding individually so it can be accepted, edited, challenged, or rejected.
-5. **GitHub posting:** PRR builds a review only from the accepted findings and posts it through `gh api` after explicit confirmation.
+5. **GitHub posting:** PRR builds a review only from the accepted findings and posts it with `prr post-review` after explicit confirmation and OpenCode's approval prompt for that command.
 
 ## Configuration And Data
 
@@ -131,7 +140,7 @@ OpenCode resolves npm plugins when it starts. Restart OpenCode to load an update
 
 ## Uninstall From OpenCode
 
-Remove `opencode-prr` from the `plugin` array in `~/.config/opencode/opencode.json`, then restart OpenCode.
+Remove `opencode-prr` from the `plugin` (OpenCode 1) or `plugins` (OpenCode 2) array in `~/.config/opencode/opencode.json`, then restart OpenCode.
 
 To also remove PRR configuration and cached review data:
 

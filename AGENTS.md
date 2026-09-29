@@ -30,7 +30,11 @@ prr/
 `-- README.md
 ```
 
-The OpenCode npm plugin registers commands and agents from `.opencode/`, adds the packaged skills directory, and injects `PRR_BIN` into shell environments. OpenCode assets must use quoted `"$PRR_BIN"`; Claude Code assets continue to use `${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal`.
+The OpenCode npm plugin registers commands and agents from `.opencode/`, adds the packaged skills directory, and injects `PRR_BIN` into shell environments. `index.js` default-exports one object that serves both OpenCode generations: OpenCode 1 (1.18.29+) calls `server()` and applies the V1 `config` hook, while OpenCode 2 calls `setup(ctx)`, which registers the same assets through domain transforms and converts V1 agent permissions to V2 rules (`bash` becomes `shell`, `task` becomes `subagent`).
+
+OpenCode 2 does not evaluate permissions for plugin tools and gives plugins no way to raise an approval prompt. Each PRR tool therefore checks the calling agent's own rule itself, and any action that needs user approval must go through a shell command with an `ask` rule. That is why GitHub posting is `"$PRR_BIN" post-review`, not a plugin tool.
+
+OpenCode assets must use quoted `"$PRR_BIN"`; Claude Code assets continue to use `${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal`.
 
 ## OpenCode Architecture
 
@@ -54,6 +58,7 @@ Do not replace the native reviewer with a nested `opencode run`. Keep reviewer a
 | `prompt --arbiter <dir>` | Assemble reviews and Q&A history into `results/arbiter-prompt.md` |
 | `prompt --question <dir> --agent <name> --questions-file <path> [--round <N>]` | Write a reviewer question prompt; inline `--questions` remains for Claude compatibility |
 | `parse-report <path>` | Parse a final report into structured JSON |
+| `post-review <pr> --payload <path>` | Validate a round's review payload against its clone and the live PR head, then post it through `gh api` |
 | `cleanup --workspace <path>` | Remove workspace entries for closed or merged PRs |
 | `cleanup-open-code` | Clean the configured OpenCode workspace |
 | `config runtime` | Print non-secret OpenCode runtime settings as JSON |

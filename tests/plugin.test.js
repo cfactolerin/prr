@@ -5,8 +5,41 @@ import { join } from "node:path"
 import { test } from "node:test"
 import PrrPlugin from "../index.js"
 
+function fakeV2Context({ agents = [], sessionAgent = "build" } = {}) {
+  const registered = { hooks: {}, tools: [], agents: new Map(agents.map((agent) => [agent.id, agent])), skills: [], commands: [] }
+  const calls = []
+  const ctx = {
+    shell: { hook: async (name, callback) => { registered.hooks[name] = callback } },
+    tool: { transform: async (callback) => callback({ add: (definition) => registered.tools.push(definition) }) },
+    agent: {
+      transform: async (callback) => callback({
+        list: () => [...registered.agents.values()],
+        get: (id) => registered.agents.get(id),
+        update: (id, update) => {
+          const agent = registered.agents.get(id) ?? { id, name: id, mode: "primary", hidden: false, permissions: [] }
+          registered.agents.set(id, agent)
+          update(agent)
+        },
+      }),
+    },
+    skill: {
+      transform: async (callback) => callback({
+        get: (id) => registered.skills.find((skill) => skill.id === id),
+        add: (skill) => registered.skills.push(skill),
+      }),
+    },
+    command: { transform: async (callback) => callback({ add: (command) => registered.commands.push(command) }) },
+    session: {
+      get: async () => ({ agent: sessionAgent }),
+      switchAgent: async (input) => { calls.push(["switchAgent", input]) },
+      prompt: async (input) => { calls.push(["prompt", input]) },
+    },
+  }
+  return { ctx, registered, calls }
+}
+
 test("registers PRR commands, agents, skills, and binary environment", async () => {
-  const hooks = await PrrPlugin()
+  const hooks = await PrrPlugin.server()
   const config = {}
 
   hooks.config(config)
@@ -46,13 +79,13 @@ test("registers PRR commands, agents, skills, and binary environment", async () 
   assert.equal(typeof hooks.tool.prr_artifact.execute, "function")
   assert.equal(typeof hooks.tool.prr_bind_round.execute, "function")
   assert.equal(typeof hooks.tool.prr_capability.execute, "function")
-  assert.equal(typeof hooks.tool.prr_post_review.execute, "function")
   assert.equal(typeof hooks.tool.prr_read.execute, "function")
   assert.equal(typeof hooks.tool.prr_write.execute, "function")
   assert.equal(config.permission.prr_codex, "deny")
   assert.equal(config.permission.prr_read, "deny")
   assert.equal(config.agent["prr-orchestrator"].permission.bash["*"], "deny")
-  assert.equal(config.agent["prr-orchestrator"].permission.prr_post_review, "ask")
+  assert.equal(config.agent["prr-orchestrator"].permission.prr_post_review, undefined)
+  assert.equal(config.agent["prr-orchestrator"].permission.bash['"$PRR_BIN" post-review * --payload *'], "ask")
   assert.equal(config.agent["prr-orchestrator"].permission.prr_codex, "deny")
 
   const output = { env: {} }
@@ -61,7 +94,7 @@ test("registers PRR commands, agents, skills, and binary environment", async () 
 })
 
 test("does not replace user command or agent overrides", async () => {
-  const hooks = await PrrPlugin()
+  const hooks = await PrrPlugin.server()
   const config = {
     command: { "prr-start": { template: "custom" } },
     agent: { "prr-arbiter": { description: "custom" } },
@@ -77,7 +110,7 @@ test("does not replace user command or agent overrides", async () => {
 })
 
 test("rejects Codex paths outside a PRR round", async () => {
-  const hooks = await PrrPlugin()
+  const hooks = await PrrPlugin.server()
   await assert.rejects(
     hooks.tool.prr_codex.execute({
       promptPath: "/tmp/prompt.md",
@@ -146,7 +179,7 @@ fs.writeFileSync(process.argv[index + 1], JSON.stringify({
   process.env.PRR_TEST_SECRET = "must-not-leak"
 
   try {
-    const hooks = await PrrPlugin()
+    const hooks = await PrrPlugin.server()
     const orchestrator = { agent: "prr-orchestrator", sessionID: "orchestrator-session" }
     await hooks.tool.prr_bind_round.execute({ roundPath: round }, orchestrator)
     const opencodeCapability = await hooks.tool.prr_capability.execute(
@@ -224,15 +257,6 @@ fs.writeFileSync(process.argv[index + 1], JSON.stringify({
       { operation: "remove", targetPath: copied },
       orchestrator,
     )
-    const invalidPayload = join(round, "results", "invalid-review.json")
-    writeFileSync(invalidPayload, JSON.stringify({ event: "DELETE_REPO", body: "no" }))
-    await assert.rejects(
-      hooks.tool.prr_post_review.execute(
-        { owner: "acme", repo: "repo", number: 1, payloadPath: invalidPayload },
-        orchestrator,
-      ),
-      /invalid shape/,
-    )
     await hooks.tool.prr_codex_health.execute({}, { worktree: repo })
     await hooks.tool.prr_codex.execute({
       capability: codexCapability,
@@ -282,7 +306,7 @@ fs.writeFileSync(process.argv[index + 1], JSON.stringify({
 })
 
 test("tool executors settle as promises instead of returning or throwing synchronously", async () => {
-  const hooks = await PrrPlugin()
+  const hooks = await PrrPlugin.server()
   const orchestrator = { agent: "prr-orchestrator", sessionID: "unbound-session" }
   const missing = join(tmpdir(), "prr-missing-round", "r1")
   const failingCalls = {
@@ -291,7 +315,6 @@ test("tool executors settle as promises instead of returning or throwing synchro
     prr_read: { filePath: join(missing, "results", "review.md") },
     prr_write: { filePath: join(missing, "results", "review.md"), content: "x" },
     prr_artifact: { operation: "remove", targetPath: join(missing, "results", "review.md") },
-    prr_post_review: { owner: "acme", repo: "repo", number: 1, payloadPath: join(missing, "results", "r.json") },
     prr_codex: {
       capability: "invalid",
       promptPath: join(missing, "results", "prompt.md"),
@@ -307,4 +330,85 @@ test("tool executors settle as promises instead of returning or throwing synchro
     await assert.rejects(settled)
   }
   assert.equal(hooks.tool.prr_codex_health.execute.constructor.name, "AsyncFunction")
+})
+
+test("exports one definition that OpenCode V1 and V2 both accept", () => {
+  assert.equal(PrrPlugin.id, "opencode-prr")
+  assert.equal(typeof PrrPlugin.server, "function")
+  assert.equal(typeof PrrPlugin.setup, "function")
+})
+
+test("V2 setup registers PRR tools, agents, skills, commands, and binary environment", async () => {
+  const { ctx, registered } = fakeV2Context({
+    agents: [{ id: "build", name: "build", mode: "primary", hidden: false, permissions: [] }],
+  })
+
+  await PrrPlugin.setup(ctx)
+
+  assert.deepEqual(registered.tools.map((item) => item.name).sort(), [
+    "prr_artifact", "prr_bind_round", "prr_capability", "prr_codex", "prr_codex_health", "prr_read", "prr_write",
+  ])
+  for (const item of registered.tools) assert.equal(item.options.codemode, false)
+  const read = registered.tools.find((item) => item.name === "prr_read")
+  assert.deepEqual(read.input.required, ["filePath"])
+  assert.equal(read.input.properties.limit.maximum, 2000)
+
+  assert.deepEqual([...registered.agents.keys()].sort(), [
+    "build", "prr-arbiter", "prr-codex-reviewer", "prr-opencode-reviewer", "prr-orchestrator", "prr-setup-orchestrator",
+  ])
+  const build = registered.agents.get("build")
+  assert.ok(build.permissions.some((rule) => rule.action === "prr_read" && rule.effect === "deny"))
+
+  const orchestrator = registered.agents.get("prr-orchestrator")
+  assert.equal(orchestrator.mode, "primary")
+  assert.match(orchestrator.system, /PRR/)
+  assert.deepEqual(orchestrator.permissions[0], { action: "*", resource: "*", effect: "deny" })
+  assert.ok(orchestrator.permissions.some((rule) => rule.action === "subagent" && rule.resource === "prr-arbiter"))
+  assert.ok(orchestrator.permissions.some((rule) => rule.action === "shell"
+    && rule.resource === '"$PRR_BIN" post-review * --payload *' && rule.effect === "ask"))
+  assert.ok(orchestrator.permissions.every((rule) => rule.action !== "bash" && rule.action !== "task"))
+  const codexReviewer = registered.agents.get("prr-codex-reviewer")
+  assert.equal(codexReviewer.hidden, true)
+  assert.ok(codexReviewer.permissions.some((rule) => rule.action === "external_directory"
+    && !rule.resource.startsWith("~") && rule.resource.endsWith("/.prr/workspace/*/r*/repo/**")))
+
+  assert.deepEqual(registered.skills.map((skill) => skill.id).sort(), ["prr-cleanup", "prr-setup", "prr-start"])
+  assert.match(registered.skills.find((skill) => skill.id === "prr-start").path, /skills\/prr-start\/SKILL\.md$/)
+  assert.deepEqual(registered.commands.map((command) => command.name).sort(), ["prr-cleanup", "prr-setup", "prr-start"])
+
+  const event = { env: {} }
+  registered.hooks["create.before"](event)
+  assert.match(event.env.PRR_BIN, /bin\/prr-darwin-universal$/)
+})
+
+test("V2 commands switch to the PRR agent and forward arguments", async () => {
+  const { ctx, registered, calls } = fakeV2Context()
+  await PrrPlugin.setup(ctx)
+
+  const start = registered.commands.find((command) => command.name === "prr-start")
+  await start.execute({ sessionID: "session-1", prompt: { text: "acme/repo#1" }, delivery: "queue" })
+
+  assert.deepEqual(calls[0], ["switchAgent", { sessionID: "session-1", agent: "prr-orchestrator" }])
+  assert.equal(calls[1][0], "prompt")
+  assert.equal(calls[1][1].sessionID, "session-1")
+  assert.equal(calls[1][1].delivery, "queue")
+  assert.match(calls[1][1].text, /exactly as `acme\/repo#1`/)
+})
+
+test("V2 tools refuse agents whose PRR rules do not allow them", async () => {
+  const { ctx, registered } = fakeV2Context()
+  await PrrPlugin.setup(ctx)
+  const health = registered.tools.find((item) => item.name === "prr_codex_health")
+  const codex = registered.tools.find((item) => item.name === "prr_codex")
+  const signal = new AbortController().signal
+
+  await assert.rejects(health.execute({}, { agent: "build", sessionID: "s", signal }), /not allowed for build/)
+  await assert.rejects(
+    codex.execute({}, { agent: "prr-orchestrator", sessionID: "s", signal }),
+    /not allowed for prr-orchestrator/,
+  )
+  const bind = registered.tools.find((item) => item.name === "prr_bind_round")
+  await assert.rejects(
+    bind.execute({ roundPath: join(tmpdir(), "prr-missing-round", "r1") }, { agent: "prr-orchestrator", sessionID: "s", signal }),
+  )
 })

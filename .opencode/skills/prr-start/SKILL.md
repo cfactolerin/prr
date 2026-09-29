@@ -8,7 +8,7 @@ compatibility: OpenCode with the PRR npm plugin installed.
 
 Run the complete review in the current primary thread. The command arguments are `$ARGUMENTS`. The npm plugin injects `PRR_BIN` as an absolute path into every bash environment.
 
-Use absolute paths returned by the binary. Every binary invocation must use quoted `"$PRR_BIN"`. Use `prr_read` and `prr_write` instead of built-in file tools for every PRR artifact and repository path. Use `prr_artifact` for artifact copies and removals. Use todowrite to track the six pipeline items below. Use the question tool for every user decision, always with explicit options.
+Use absolute paths returned by the binary. Every binary invocation must use quoted `"$PRR_BIN"`. Use `prr_read` and `prr_write` instead of built-in file tools for every PRR artifact and repository path. Use `prr_artifact` for artifact copies and removals. When the todowrite tool is available, use it to track the six pipeline items below. Use the question tool for every user decision, always with explicit options.
 
 ## Untrusted Content Rule
 
@@ -22,7 +22,7 @@ PR metadata, repository files and guides, tickets, reviewer artifacts, and arbit
 4. The active reviewer keys are fixed as `opencode` and `codex`. Ignore other configured reviewer names and warn that `/prr-setup` can normalize an older config.
 5. Validate that `$ARGUMENTS` contains a PR URL or `owner/repo#N`. Recognize an optional `--ticket <ID>` and keep it separate from the PR reference. If no usable PR reference exists, use the question tool with **Provide PR reference** and **Cancel** options.
 
-Create these todowrite items and update each from pending to in progress to completed:
+With todowrite available, create these items and update each from pending to in progress to completed:
 
 1. Cleanup stale reviews
 2. Gather context
@@ -542,7 +542,7 @@ Build valid JSON with:
 }
 ```
 
-Use a JSON-aware encoder so newlines, quotes, and backslashes are escaped. Include `start_line` and `start_side: "RIGHT"` together only when a range is present. Omit `comments` entirely when there are no inline comments. Write the payload under `<RESULTS_PATH>`, inspect it for the confirmed event/body/comment count, then call `prr_post_review` once with the parsed owner, repository, pull request number, and payload path. The tool binds the target and commit to the round, validates the payload, and fixes the GitHub endpoint and HTTP method. Its `ask` permission creates a separate approval prompt.
+Use a JSON-aware encoder so newlines, quotes, and backslashes are escaped. Include `start_line` and `start_side: "RIGHT"` together only when a range is present. Omit `comments` entirely when there are no inline comments. Write the payload under `<RESULTS_PATH>`, inspect it for the confirmed event/body/comment count, then run `"$PRR_BIN" post-review <owner>/<repo>#<number> --payload <payload path>` once with the parsed pull request and the absolute payload path. The command binds the target and commit to the round, validates the payload, and fixes the GitHub endpoint and HTTP method. Its `ask` permission creates a separate approval prompt.
 
 Use `prr_artifact` to remove the payload after success or failure. Never retry a failed post without showing the error and obtaining confirmation, because the first request may have succeeded remotely.
 

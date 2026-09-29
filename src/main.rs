@@ -11,6 +11,7 @@ mod prompt;
 mod report;
 mod cleanup;
 mod opencode;
+mod review;
 
 #[derive(Parser)]
 #[command(name = "prr", about = "PRR — AI-powered PR review tool")]
@@ -86,6 +87,14 @@ enum Commands {
     },
     /// Clean up the configured OpenCode workspace
     CleanupOpenCode,
+    /// Post a validated review payload from a PRR round to GitHub
+    PostReview {
+        /// PR URL or owner/repo#N
+        pr: String,
+        /// Path to the review payload JSON inside the round's results directory
+        #[arg(long)]
+        payload: String,
+    },
     /// Read or update OpenCode runtime configuration without exposing secrets
     Config {
         #[command(subcommand)]
@@ -188,6 +197,10 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Commands::CleanupOpenCode => {
             let workspace = config::Config::load()?.expanded_workspace_path();
             cleanup::run(&workspace.to_string_lossy())
+        }
+        Commands::PostReview { pr, payload } => {
+            let workspace = config::Config::load()?.expanded_workspace_path();
+            review::run(&workspace, &pr, &payload)
         }
         Commands::Config { action } => match action {
             ConfigAction::Runtime => config::runtime(),

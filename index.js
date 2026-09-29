@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process"
+import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import {
   accessSync,
@@ -57,9 +57,14 @@ function configuredWorkspace() {
   }
 }
 
+const prrCommandNames = ["prr-setup", "prr-start", "prr-cleanup"]
+const prrAgentNames = [
+  "prr-setup-orchestrator", "prr-orchestrator", "prr-opencode-reviewer", "prr-codex-reviewer", "prr-arbiter",
+]
+
 function registerCommands(config) {
   config.command ??= {}
-  for (const name of ["prr-setup", "prr-start", "prr-cleanup"]) {
+  for (const name of prrCommandNames) {
     if (config.command[name]) continue
     const { metadata, body } = readMarkdown(`commands/${name}.md`)
     config.command[name] = { ...metadata, template: body }
@@ -85,7 +90,7 @@ function allowWorkspace(agent, workspace, name) {
 function registerAgents(config) {
   config.agent ??= {}
   const workspace = configuredWorkspace()
-  for (const name of ["prr-setup-orchestrator", "prr-orchestrator", "prr-opencode-reviewer", "prr-codex-reviewer", "prr-arbiter"]) {
+  for (const name of prrAgentNames) {
     if (config.agent[name]) continue
     const { metadata, body } = readMarkdown(`agents/${name}.md`)
     const agent = { ...metadata, prompt: body }
@@ -105,7 +110,7 @@ function registerToolDefaults(config) {
   config.permission ??= {}
   for (const name of [
     "prr_artifact", "prr_bind_round", "prr_capability", "prr_codex", "prr_codex_health",
-    "prr_post_review", "prr_read", "prr_write",
+    "prr_read", "prr_write",
   ]) {
     if (config.permission[name] === undefined) config.permission[name] = "deny"
   }
@@ -427,84 +432,6 @@ async function runPrrArtifact({ operation, sourcePath, targetPath }, context) {
   return `Copied ${source.target} to ${target}`
 }
 
-async function runPrrPostReview({ owner, repo, number, payloadPath }, context) {
-  if (context?.agent !== "prr-orchestrator") throw new Error("Only the PRR orchestrator may post reviews")
-  if (!/^[A-Za-z0-9_.-]+$/.test(owner) || !/^[A-Za-z0-9_.-]+$/.test(repo) || !Number.isInteger(number) || number < 1) {
-    throw new Error("Invalid GitHub pull request reference")
-  }
-  const workspace = configuredWorkspace()
-  const payloadFile = roundPath(workspace, payloadPath)
-  requireBoundRound(context, payloadFile.round)
-  if (payloadFile.parts[2] !== "results" || !statSync(payloadFile.target).isFile()) {
-    throw new Error("Review payload must be a file in a PRR round results directory")
-  }
-  if (statSync(payloadFile.target).size > 1024 * 1024) throw new Error("Review payload exceeds 1 MiB")
-  const prInfo = JSON.parse(readFileSync(join(dirname(payloadFile.round), "pr-info.json"), "utf8"))
-  if (prInfo.owner !== owner || prInfo.repo !== repo || prInfo.number !== number) {
-    throw new Error("GitHub target does not match the PRR round")
-  }
-  const payload = JSON.parse(readFileSync(payloadFile.target, "utf8"))
-  const payloadKeys = Object.keys(payload)
-  if (payloadKeys.some((key) => !["commit_id", "event", "body", "comments"].includes(key))
-    || !["APPROVE", "COMMENT", "REQUEST_CHANGES"].includes(payload.event)
-    || typeof payload.body !== "string"
-    || !/^[0-9a-f]{40}$/i.test(payload.commit_id)
-    || (payload.comments !== undefined && !Array.isArray(payload.comments))) {
-    throw new Error("Review payload has an invalid shape")
-  }
-  for (const comment of payload.comments ?? []) {
-    const keys = Object.keys(comment ?? {})
-    if (keys.some((key) => !["path", "line", "start_line", "side", "start_side", "body"].includes(key))
-      || typeof comment?.path !== "string" || comment.path.startsWith("/") || comment.path.split("/").includes("..")
-      || !Number.isInteger(comment.line) || comment.line < 1
-      || (comment.start_line !== undefined && (!Number.isInteger(comment.start_line) || comment.start_line < 1))
-      || comment.side !== "RIGHT"
-      || (comment.start_line !== undefined && comment.start_side !== "RIGHT")
-      || (comment.start_line === undefined && comment.start_side !== undefined)
-      || typeof comment.body !== "string") {
-      throw new Error("Review payload contains an invalid inline comment")
-    }
-  }
-
-  const clonedRepo = realpathSync(join(payloadFile.round, "repo"))
-  const reviewedHead = execFileSync(executablePath("git"), ["-C", clonedRepo, "rev-parse", "HEAD"], {
-    encoding: "utf8",
-    env: process.env,
-    timeout: 30_000,
-  }).trim()
-  if (!/^[0-9a-f]{40}$/i.test(reviewedHead) || payload.commit_id !== reviewedHead) {
-    throw new Error("Review payload commit does not match the PRR clone")
-  }
-
-  const gh = executablePath("gh")
-  const currentHead = execFileSync(gh, [
-    "pr", "view", number.toString(), "--repo", `${owner}/${repo}`,
-    "--json", "headRefOid", "--jq", ".headRefOid",
-  ], { encoding: "utf8", env: process.env, timeout: 30_000 }).trim()
-  if (currentHead !== reviewedHead) {
-    throw new Error("Pull request head changed after this review; start a new PRR round before posting")
-  }
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn(gh, [
-      "api", `repos/${owner}/${repo}/pulls/${number}/reviews`,
-      "--method", "POST", "--input", payloadFile.target,
-    ], {
-      env: process.env,
-      signal: context.abort,
-      stdio: ["ignore", "pipe", "pipe"],
-    })
-    let stdout = ""
-    let stderr = ""
-    child.stdout.on("data", (chunk) => { stdout = (stdout + chunk).slice(-65_536) })
-    child.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-65_536) })
-    child.on("error", reject)
-    child.on("close", (code) => {
-      if (code !== 0) reject(new Error(`GitHub review failed: ${stderr.trim()}`))
-      else resolvePromise(stdout.trim() || "GitHub review posted")
-    })
-  })
-}
-
 async function runCodexHealth(_args, context) {
   const repo = realpathSync(mkdtempSync(join(tmpdir(), "prr-codex-health-")))
   const args = [
@@ -553,10 +480,94 @@ async function runCodexHealth(_args, context) {
   }).finally(() => rmSync(repo, { recursive: true, force: true }))
 }
 
-export default async function PrrPlugin(input = {}) {
+const arg = {
+  string: ({ optional = false } = {}) => ({ type: "string", optional }),
+  enum: (values) => ({ type: "string", enum: values, optional: false }),
+  positiveInt: ({ max, optional = false } = {}) => ({ type: "integer", max, optional }),
+}
+
+const toolDefinitions = {
+  prr_bind_round: {
+    description: "Bind the current PRR orchestrator session to one review round.",
+    args: { roundPath: arg.string() },
+    execute: runPrrBindRound,
+  },
+  prr_capability: {
+    description: "Issue a role-specific capability for the orchestrator's bound PRR round.",
+    args: { roundPath: arg.string(), role: arg.enum(["opencode", "codex", "arbiter"]) },
+    execute: runPrrCapability,
+  },
+  prr_read: {
+    description: "Read a file or directory through PRR role and canonical-path restrictions.",
+    args: {
+      capability: arg.string({ optional: true }),
+      filePath: arg.string(),
+      offset: arg.positiveInt({ optional: true }),
+      limit: arg.positiveInt({ max: 2000, optional: true }),
+    },
+    execute: runPrrRead,
+  },
+  prr_write: {
+    description: "Write a PRR artifact through round and role capability restrictions.",
+    args: { capability: arg.string({ optional: true }), filePath: arg.string(), content: arg.string() },
+    execute: runPrrWrite,
+  },
+  prr_artifact: {
+    description: "Copy or remove files within one PRR round's results directory.",
+    args: {
+      operation: arg.enum(["copy", "remove"]),
+      sourcePath: arg.string({ optional: true }),
+      targetPath: arg.string({ optional: true }),
+    },
+    execute: runPrrArtifact,
+  },
+  prr_codex_health: {
+    description: "Check Codex authentication and isolated execution without exposing process secrets.",
+    args: {},
+    execute: runCodexHealth,
+  },
+  prr_codex: {
+    description: "Run an isolated Codex PR review using validated PRR workspace paths.",
+    args: {
+      capability: arg.string(),
+      promptPath: arg.string(),
+      repoPath: arg.string(),
+      outputPath: arg.string(),
+      timeoutSeconds: arg.positiveInt(),
+    },
+    execute: runCodex,
+  },
+}
+
+function zodArgs(args) {
+  return Object.fromEntries(Object.entries(args).map(([name, spec]) => {
+    let schema = spec.enum ? tool.schema.enum(spec.enum)
+      : spec.type === "integer" ? tool.schema.number().int().positive()
+        : tool.schema.string()
+    if (spec.max !== undefined) schema = schema.max(spec.max)
+    return [name, spec.optional ? schema.optional() : schema]
+  }))
+}
+
+function jsonSchemaArgs(args) {
+  const properties = Object.fromEntries(Object.entries(args).map(([name, spec]) => [name, {
+    type: spec.type,
+    ...spec.enum ? { enum: spec.enum } : {},
+    ...spec.type === "integer" ? { minimum: 1 } : {},
+    ...spec.max !== undefined ? { maximum: spec.max } : {},
+  }]))
+  const required = Object.entries(args).filter(([, spec]) => !spec.optional).map(([name]) => name)
+  return { type: "object", properties, required, additionalProperties: false }
+}
+
+function requireBinary() {
   if (!existsSync(binary)) {
     throw new Error(`PRR binary is missing from the plugin package: ${binary}`)
   }
+}
+
+async function server() {
+  requireBinary()
 
   return {
     config(config) {
@@ -571,74 +582,144 @@ export default async function PrrPlugin(input = {}) {
     },
     // OpenCode passes each executor to Effect's promise combinator, which calls .then()
     // on the return value, so a synchronous return or throw breaks the tool call.
-    tool: {
-      prr_bind_round: tool({
-        description: "Bind the current PRR orchestrator session to one review round.",
-        args: { roundPath: tool.schema.string() },
-        execute: runPrrBindRound,
-      }),
-      prr_capability: tool({
-        description: "Issue a role-specific capability for the orchestrator's bound PRR round.",
-        args: {
-          roundPath: tool.schema.string(),
-          role: tool.schema.enum(["opencode", "codex", "arbiter"]),
-        },
-        execute: runPrrCapability,
-      }),
-      prr_read: tool({
-        description: "Read a file or directory through PRR role and canonical-path restrictions.",
-        args: {
-          capability: tool.schema.string().optional(),
-          filePath: tool.schema.string(),
-          offset: tool.schema.number().int().positive().optional(),
-          limit: tool.schema.number().int().positive().max(2000).optional(),
-        },
-        execute: runPrrRead,
-      }),
-      prr_write: tool({
-        description: "Write a PRR artifact through round and role capability restrictions.",
-        args: {
-          capability: tool.schema.string().optional(),
-          filePath: tool.schema.string(),
-          content: tool.schema.string(),
-        },
-        execute: runPrrWrite,
-      }),
-      prr_artifact: tool({
-        description: "Copy or remove files within one PRR round's results directory.",
-        args: {
-          operation: tool.schema.enum(["copy", "remove"]),
-          sourcePath: tool.schema.string().optional(),
-          targetPath: tool.schema.string().optional(),
-        },
-        execute: runPrrArtifact,
-      }),
-      prr_post_review: tool({
-        description: "Post one validated review to a specific GitHub pull request after permission approval.",
-        args: {
-          owner: tool.schema.string(),
-          repo: tool.schema.string(),
-          number: tool.schema.number().int().positive(),
-          payloadPath: tool.schema.string(),
-        },
-        execute: runPrrPostReview,
-      }),
-      prr_codex_health: tool({
-        description: "Check Codex authentication and isolated execution without exposing process secrets.",
-        args: {},
-        execute: runCodexHealth,
-      }),
-      prr_codex: tool({
-        description: "Run an isolated Codex PR review using validated PRR workspace paths.",
-        args: {
-          capability: tool.schema.string(),
-          promptPath: tool.schema.string(),
-          repoPath: tool.schema.string(),
-          outputPath: tool.schema.string(),
-          timeoutSeconds: tool.schema.number().int().positive(),
-        },
-        execute: runCodex,
-      }),
-    },
+    tool: Object.fromEntries(Object.entries(toolDefinitions).map(([name, definition]) => [name, tool({
+      description: definition.description,
+      args: zodArgs(definition.args),
+      execute: definition.execute,
+    })])),
   }
 }
+
+// OpenCode V2 renamed these V1 permission actions; mirrors its own V1 config migration.
+function v2Action(action) {
+  if (action === "write" || action === "patch") return "edit"
+  if (action === "task") return "subagent"
+  if (action === "bash") return "shell"
+  return action
+}
+
+function expandHome(resource) {
+  if (resource === "~") return homedir()
+  return resource.startsWith("~/") ? join(homedir(), resource.slice(2)) : resource
+}
+
+function v2Permissions(permission = {}) {
+  return Object.entries(permission).flatMap(([key, rule]) => {
+    const action = v2Action(key)
+    const pathAction = ["external_directory", "read", "edit"].includes(action)
+    if (typeof rule === "string") return [{ action, resource: "*", effect: rule }]
+    return Object.entries(rule).map(([resource, effect]) => ({
+      action,
+      resource: pathAction ? expandHome(resource) : resource,
+      effect,
+    }))
+  })
+}
+
+function v2Agents() {
+  const workspace = configuredWorkspace()
+  return prrAgentNames.map((name) => {
+    const { metadata, body } = readMarkdown(`agents/${name}.md`)
+    const agent = { ...metadata, prompt: body }
+    allowWorkspace(agent, workspace, name)
+    return { name, agent, permissions: v2Permissions(agent.permission) }
+  })
+}
+
+function v2Skills() {
+  const root = join(assetRoot, "skills")
+  return readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => {
+    const { metadata, body } = readMarkdown(`skills/${entry.name}/SKILL.md`)
+    return {
+      id: metadata.name ?? entry.name,
+      name: metadata.name ?? entry.name,
+      description: metadata.description,
+      path: join(root, entry.name, "SKILL.md"),
+      content: body,
+    }
+  })
+}
+
+// V2 does not evaluate permissions for plugin tools, so each tool enforces the calling
+// agent's own rule for it and refuses agents that PRR does not define.
+function toolAllowed(permissions, name) {
+  const rule = permissions?.findLast((item) => item.action === "*" || item.action === name)
+  return rule?.effect === "allow"
+}
+
+async function setup(ctx) {
+  requireBinary()
+  const agents = v2Agents()
+  const agentPermissions = new Map(agents.map(({ name, permissions }) => [name, permissions]))
+  const skills = v2Skills()
+  const commands = prrCommandNames.map((name) => ({ name, ...readMarkdown(`commands/${name}.md`) }))
+  const toolDenials = Object.keys(toolDefinitions).map((action) => ({ action, resource: "*", effect: "deny" }))
+
+  await ctx.shell.hook("create.before", (event) => {
+    event.env.PRR_BIN = binary
+    event.env.PRR_PLUGIN_ROOT = packageRoot
+  })
+
+  await ctx.tool.transform((editor) => {
+    for (const [name, definition] of Object.entries(toolDefinitions)) {
+      editor.add({
+        name,
+        description: definition.description,
+        input: jsonSchemaArgs(definition.args),
+        options: { codemode: false },
+        execute: async (input, context) => {
+          if (!toolAllowed(agentPermissions.get(context.agent), name)) {
+            throw new Error(`${name} is not allowed for ${context.agent ?? "this agent"}`)
+          }
+          const content = await definition.execute(input, { ...context, abort: context.signal })
+          return { content }
+        },
+      })
+    }
+  })
+
+  await ctx.agent.transform((editor) => {
+    for (const existing of editor.list()) {
+      if (!agentPermissions.has(existing.id)) editor.update(existing.id, (agent) => agent.permissions.push(...toolDenials))
+    }
+    for (const { name, agent: definition, permissions } of agents) {
+      if (editor.get(name)) continue
+      editor.update(name, (agent) => {
+        agent.name = name
+        agent.system = definition.prompt
+        agent.mode = definition.mode ?? "all"
+        agent.hidden = definition.hidden === true
+        if (definition.description !== undefined) agent.description = definition.description
+        agent.permissions.push(...permissions)
+      })
+    }
+  })
+
+  await ctx.skill.transform((editor) => {
+    for (const skill of skills) if (!editor.get(skill.id)) editor.add(skill)
+  })
+
+  await ctx.command.transform((editor) => {
+    for (const { name, metadata, body } of commands) {
+      editor.add({
+        name,
+        description: metadata.description,
+        execute: async ({ sessionID, prompt, delivery }) => {
+          if (metadata.agent) {
+            const session = await ctx.session.get({ sessionID })
+            if (session.agent !== metadata.agent) await ctx.session.switchAgent({ sessionID, agent: metadata.agent })
+          }
+          await ctx.session.prompt({
+            ...prompt,
+            sessionID,
+            text: body.replaceAll("$ARGUMENTS", prompt.text),
+            delivery,
+          })
+        },
+      })
+    }
+  })
+}
+
+// OpenCode V1 (1.18.29+) calls server(); OpenCode V2 validates { id, setup } and calls setup().
+export default { id: "opencode-prr", server, setup }
