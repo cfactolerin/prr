@@ -104,6 +104,10 @@ Every commit bumps the version, rebuilds the binary, and keeps all metadata sync
 
 Binary-affecting changes under `src/`, `references/prompts/`, or Rust dependency metadata bump the minor version and reset the patch. OpenCode, Claude, agent, skill, and documentation-only changes bump the patch version. Rebuild the binary for every version bump, including documentation-only changes.
 
+## Publishing
+
+Every version pushed to `main` is also published to npm, because OpenCode installs `opencode-prr` from the registry rather than from git. After pushing, run `npm pack --dry-run --json` to confirm the runtime assets, then `npm publish`. A pushed version that is not on npm leaves OpenCode users on the previous release.
+
 ## Conventions
 
 - Rust edition: 2021.
