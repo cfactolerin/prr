@@ -87,6 +87,12 @@ test("registers PRR commands, agents, skills, and binary environment", async () 
   assert.equal(config.agent["prr-orchestrator"].permission.prr_post_review, undefined)
   assert.equal(config.agent["prr-orchestrator"].permission.bash['"$PRR_BIN" post-review * --payload *'], "ask")
   assert.equal(config.agent["prr-orchestrator"].permission.prr_codex, "deny")
+  const setupBash = config.agent["prr-setup-orchestrator"].permission.bash
+  assert.equal(setupBash["bash -lc 'command -v gh'"], "allow")
+  assert.equal(setupBash["bash -lc 'command -v git'"], "allow")
+  assert.equal(setupBash["bash -lc 'command -v codex'"], "allow")
+  assert.equal(setupBash["bash -lc 'gh auth status'"], "allow")
+  assert.equal(setupBash["bash -lc 'codex login status'"], "allow")
 
   const output = { env: {} }
   hooks["shell.env"]({}, output)
@@ -373,6 +379,11 @@ test("V2 setup registers PRR tools, agents, skills, commands, and binary environ
   assert.ok(orchestrator.permissions.some((rule) => rule.action === "shell"
     && rule.resource === '"$PRR_BIN" post-review * --payload *' && rule.effect === "ask"))
   assert.ok(orchestrator.permissions.every((rule) => rule.action !== "bash" && rule.action !== "task"))
+  const setup = registered.agents.get("prr-setup-orchestrator")
+  assert.ok(setup.permissions.some((rule) => rule.action === "shell"
+    && rule.resource === "bash -lc 'command -v gh'" && rule.effect === "allow"))
+  assert.ok(setup.permissions.some((rule) => rule.action === "shell"
+    && rule.resource === "bash -lc 'codex login status'" && rule.effect === "allow"))
   const codexReviewer = registered.agents.get("prr-codex-reviewer")
   assert.equal(codexReviewer.hidden, true)
   assert.ok(codexReviewer.permissions.some((rule) => rule.action === "external_directory"

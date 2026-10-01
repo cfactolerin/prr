@@ -16,6 +16,13 @@ permission:
     "command -v codex": allow
     "gh auth status": allow
     "codex login status": allow
+    'bash -lc ''"$PRR_BIN" config runtime''': allow
+    'bash -lc ''"$PRR_BIN" config configure-open-code --workspace *''': allow
+    'bash -lc ''command -v gh''': allow
+    'bash -lc ''command -v git''': allow
+    'bash -lc ''command -v codex''': allow
+    'bash -lc ''gh auth status''': allow
+    'bash -lc ''codex login status''': allow
   prr_codex_health: allow
 ---
 

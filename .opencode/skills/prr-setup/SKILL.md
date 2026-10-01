@@ -31,6 +31,10 @@ Preserve the current workspace and whether Jira is configured as choices. If no 
 
 Use bash to check each executable separately with `command -v`:
 
+Run each command exactly as written. Do not wrap it in `bash -lc`, `env`, a
+pipeline, or a compound shell command; the setup agent deliberately allows
+only these specific commands.
+
 - `gh`
 - `git`
 - `codex`
