@@ -152,8 +152,13 @@ test("Codex wrapper validates paths and strips process secrets", async () => {
   symlinkSync(join(root, "secret"), join(repo, "leak"))
 
   const fakeCodex = join(bin, "codex")
-  writeFileSync(fakeCodex, `#!${process.execPath}
+  const fakeCodexTarget = join(bin, "codex-target")
+  writeFileSync(fakeCodexTarget, `#!${process.execPath}
 const fs = require("node:fs")
+if (process.argv[1] !== fs.realpathSync(process.argv[1])) {
+  process.stderr.write("Codex must be launched from its resolved executable path\\n")
+  process.exit(42)
+}
 const index = process.argv.indexOf("--output-last-message")
 if (index === -1) {
   process.stdout.write("HELLO\\n")
@@ -165,7 +170,8 @@ fs.writeFileSync(process.argv[index + 1], JSON.stringify({
   secret: process.env.PRR_TEST_SECRET || null,
 }))
 `)
-  chmodSync(fakeCodex, 0o755)
+  symlinkSync(fakeCodexTarget, fakeCodex)
+  chmodSync(fakeCodexTarget, 0o755)
 
   const previous = {
     CODEX_HOME: process.env.CODEX_HOME,

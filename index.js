@@ -174,11 +174,11 @@ function executablePath(name) {
 function codexExecutablePaths() {
   const command = executablePath("codex")
   const real = realpathSync(command)
-  return { command, allowed: [...new Set([dirname(command), command, dirname(real), real])] }
+  return { command, executable: real, allowed: [...new Set([dirname(command), command, dirname(real), real])] }
 }
 
-function codexPolicyArgs(repo, additionalPaths = []) {
-  const allowed = [repo, ...additionalPaths, ...codexExecutablePaths().allowed]
+function codexPolicyArgs(repo, additionalPaths = [], executablePaths = codexExecutablePaths()) {
+  const allowed = [repo, ...additionalPaths, ...executablePaths.allowed]
     .map((path) => `"${path.replaceAll('"', '\\"')}"="read"`)
     .join(",")
   const filesystem = `{":root"="deny",":minimal"="read",${allowed}}`
@@ -199,6 +199,7 @@ function codexPolicyArgs(repo, additionalPaths = []) {
 async function runCodex({ capability, promptPath, repoPath, outputPath, timeoutSeconds }, context) {
   const workspace = configuredWorkspace()
   const paths = codexPaths(workspace, promptPath, repoPath, outputPath)
+  const executablePaths = codexExecutablePaths()
   const round = dirname(paths.repo)
   requireCapability(capability, context, round, "codex")
   const contextPath = realpathSync(join(round, "context"))
@@ -208,13 +209,13 @@ async function runCodex({ capability, promptPath, repoPath, outputPath, timeoutS
     "--ignore-user-config", "--ignore-rules",
     "--disable", "hooks", "--disable", "apps", "--disable", "multi_agent",
     "--strict-config", "-C", paths.repo,
-    ...codexPolicyArgs(paths.repo, [contextPath]),
+    ...codexPolicyArgs(paths.repo, [contextPath], executablePaths),
     "--ephemeral", "--color", "never",
     "--output-last-message", paths.output, "-",
   ]
 
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(codexExecutablePaths().command, args, {
+    const child = spawn(executablePaths.executable, args, {
       cwd: paths.repo,
       env: codexEnvironment(),
       timeout,
@@ -434,17 +435,18 @@ async function runPrrArtifact({ operation, sourcePath, targetPath }, context) {
 
 async function runCodexHealth(_args, context) {
   const repo = realpathSync(mkdtempSync(join(tmpdir(), "prr-codex-health-")))
+  const executablePaths = codexExecutablePaths()
   const args = [
     "-a", "never", "exec",
     "--ignore-user-config", "--ignore-rules",
     "--disable", "hooks", "--disable", "apps", "--disable", "multi_agent",
     "--strict-config", "--skip-git-repo-check", "-C", repo,
-    ...codexPolicyArgs(repo),
+    ...codexPolicyArgs(repo, [], executablePaths),
     "--ephemeral", "--color", "never", "-",
   ]
 
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(codexExecutablePaths().command, args, {
+    const child = spawn(executablePaths.executable, args, {
       cwd: repo,
       env: codexEnvironment(),
       timeout: 30_000,
