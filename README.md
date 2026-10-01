@@ -85,7 +85,7 @@ To override automatic ticket detection:
 /prr-start owner/repo#42 --ticket PROJ-123
 ```
 
-PRR gathers the context and shows it before dispatching either reviewer. You can add focus areas, investigate the final findings, edit or reject proposed comments, and choose whether to approve, comment, request changes, or post nothing.
+PRR gathers the context and shows it before dispatching either reviewer. You can add focus areas, ask the session to consult another OpenCode agent for additional context at any point, investigate the final findings, edit or reject proposed comments, and choose whether to approve, comment, request changes, or post nothing. User-requested context agents run in the foreground, so their answers remain in the active session context.
 
 ## OpenCode Commands
 

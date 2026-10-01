@@ -84,6 +84,17 @@ test("registers PRR commands, agents, skills, and binary environment", async () 
   assert.equal(config.permission.prr_codex, "deny")
   assert.equal(config.permission.prr_read, "deny")
   assert.equal(config.agent["prr-orchestrator"].permission.bash["*"], "deny")
+  assert.equal(config.agent["prr-orchestrator"].permission.task["*"], "allow")
+  assert.equal(
+    config.agent["prr-orchestrator"].permission.bash['"$PRR_BIN" parse-report "*/results/final-report.md" --diff "*/results/diff.txt"'],
+    "allow",
+  )
+  assert.equal(
+    config.agent["prr-orchestrator"].permission.bash['"$PRR_BIN" parse-report */results/final-report.md --diff */results/diff.txt'],
+    "allow",
+  )
+  assert.equal(config.agent["prr-orchestrator"].permission.bash['printf \'%s\\n\' "$PRR_BIN" && "$PRR_BIN" config runtime'], "allow")
+  assert.equal(config.agent["prr-orchestrator"].permission.bash['echo "$PRR_BIN"; "$PRR_BIN" config runtime'], "allow")
   assert.equal(config.agent["prr-orchestrator"].permission.prr_post_review, undefined)
   assert.equal(config.agent["prr-orchestrator"].permission.bash['"$PRR_BIN" post-review * --payload *'], "ask")
   assert.equal(config.agent["prr-orchestrator"].permission.prr_codex, "deny")
@@ -375,9 +386,21 @@ test("V2 setup registers PRR tools, agents, skills, commands, and binary environ
   assert.equal(orchestrator.mode, "primary")
   assert.match(orchestrator.system, /PRR/)
   assert.deepEqual(orchestrator.permissions[0], { action: "*", resource: "*", effect: "deny" })
+  assert.ok(orchestrator.permissions.some((rule) => rule.action === "subagent"
+    && rule.resource === "*" && rule.effect === "allow"))
   assert.ok(orchestrator.permissions.some((rule) => rule.action === "subagent" && rule.resource === "prr-arbiter"))
   assert.ok(orchestrator.permissions.some((rule) => rule.action === "shell"
     && rule.resource === '"$PRR_BIN" post-review * --payload *' && rule.effect === "ask"))
+  assert.ok(orchestrator.permissions.some((rule) => rule.action === "shell"
+    && rule.resource === '"$PRR_BIN" parse-report "*/results/final-report.md" --diff "*/results/diff.txt"'
+    && rule.effect === "allow"))
+  assert.ok(orchestrator.permissions.some((rule) => rule.action === "shell"
+    && rule.resource === '"$PRR_BIN" parse-report */results/final-report.md --diff */results/diff.txt'
+    && rule.effect === "allow"))
+  assert.ok(orchestrator.permissions.some((rule) => rule.action === "shell"
+    && rule.resource === 'printf \'%s\\n\' "$PRR_BIN" && "$PRR_BIN" config runtime' && rule.effect === "allow"))
+  assert.ok(orchestrator.permissions.some((rule) => rule.action === "shell"
+    && rule.resource === 'echo "$PRR_BIN"; "$PRR_BIN" config runtime' && rule.effect === "allow"))
   assert.ok(orchestrator.permissions.every((rule) => rule.action !== "bash" && rule.action !== "task"))
   const setup = registered.agents.get("prr-setup-orchestrator")
   assert.ok(setup.permissions.some((rule) => rule.action === "shell"
