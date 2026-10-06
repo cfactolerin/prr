@@ -76,6 +76,8 @@ You are the arbiter. Your job is to synthesize the agent reviews above into a de
   final observable sink. Pay special attention to errors, logs, serialized output, API responses,
   retries, state transitions, and shared helpers, where unchanged code may impose limits or
   contracts that the diff now relies on.
+- Check every finding's `Origin` against the diff. A reviewer who files a fault in unchanged
+  code as `introduced`, or one the diff wrote as `pre-existing`, has the label wrong; correct it.
 - Check whether the reviews considered the language/runtime semantics and the repository's
   configured lint, formatting, testing, and design conventions. A review that says "no findings"
   without evidence of these checks is incomplete, even when both agents agree.
@@ -83,7 +85,7 @@ You are the arbiter. Your job is to synthesize the agent reviews above into a de
 **Step 2 — Decide: ask questions or finalize.**
 
 You MUST ask questions when any of the following are true:
-- Agents disagree on severity, verdict, or whether something is a real issue
+- Agents disagree on severity, verdict, origin, or whether something is a real issue
 - An agent claims a bug, security issue, or logic error that no other agent mentions
 - An agent dismisses a concern raised by another agent without clear justification
 - A finding lacks specific evidence (no file path, no line number, no concrete explanation)
@@ -141,6 +143,30 @@ When ready, output the final report below.
 ---
 
 ## Findings Format
+
+### `Origin` — introduced or pre-existing
+
+Each finding also carries an `Origin` label. It tells the reviewer whether
+this PR created the problem or ran into one the base branch already had.
+
+- `introduced` — the faulty logic is on a `+` line of the diff, or the diff
+  changed the behaviour that now fails.
+- `pre-existing` — the faulty logic is in code the diff did not add or
+  change, and the base branch already behaved this way. Fixing it means
+  changing that older code.
+
+Decide by where the fault lives, not by the Location. A finding anchored on
+a new call site is still `pre-existing` when the defect sits in an unchanged
+helper the call relies on. Origin is also independent of Trigger: an
+`Acceptance Criteria` finding is `pre-existing` when the ticket needs older
+code fixed.
+
+Mark a finding `pre-existing` only when you can name the unchanged code at
+fault and the diff shows it untouched. When unsure, use `introduced`.
+
+A pre-existing finding never justifies `REQUEST_CHANGES` on its own. The
+reviewer decides whether to raise it with the author or leave it for a
+follow-up, because asking for the fix widens the PR beyond its ticket.
 
 ### `Why this matters` — labelled slots
 
@@ -242,7 +268,8 @@ When you are ready to finalize, output the following markdown structure **exactl
 
 APPROVE | REQUEST_CHANGES | COMMENT
 
-(One paragraph explaining the overall verdict.)
+(One paragraph explaining the overall verdict. Base it on introduced findings. When the only
+blocking findings are pre-existing, the verdict is `COMMENT`, not `REQUEST_CHANGES`.)
 
 ### Confidence
 
@@ -266,7 +293,7 @@ HIGH | MEDIUM | LOW
 
 ### Findings
 
-Every finding carries a `Trigger` (pick exactly one from the closed list: Acceptance Criteria, Code Change, Code Quality, Logic Bug, Security, Performance, Missing Test, Missing Doc / Error Handling), an `Anchor` (`diff` if on a diff line, `reference` if on unchanged code, `none` for cross-cutting), and the five required fields below.
+Every finding carries a `Trigger` (pick exactly one from the closed list: Acceptance Criteria, Code Change, Code Quality, Logic Bug, Security, Performance, Missing Test, Missing Doc / Error Handling), an `Anchor` (`diff` if on a diff line, `reference` if on unchanged code, `none` for cross-cutting), an `Origin` (`introduced` or `pre-existing`, per the rules above), and the five required fields below.
 
 The scope rule: a finding may appear only if it is caused/exposed by the diff or required by the ticket AC. Drop everything else.
 
@@ -276,6 +303,7 @@ The scope rule: a finding may appear only if it is caused/exposed by the diff or
 
 - **Severity:** HIGH | MED | LOW
 - **Anchor:** diff | reference | none
+- **Origin:** introduced | pre-existing
 - **Location:** `path/to/file:line` (omit only when Anchor is `none`)
 - **Why this matters:**
   - **Previous behavior:** What the code did before this diff. One or two
@@ -303,6 +331,7 @@ The scope rule: a finding may appear only if it is caused/exposed by the diff or
 
 - **Severity:** ...
 - **Anchor:** ...
+- **Origin:** ...
 - **Location:** ...
 - **Why this matters:**
   - **What this adds:** ...
@@ -320,8 +349,11 @@ The scope rule: a finding may appear only if it is caused/exposed by the diff or
 
 ### Review Action
 
-- [ ] Author: address all HIGH severity items before merge
-- [ ] Author: address MED severity items or document rationale
+- [ ] Author: address all introduced HIGH severity items before merge
+- [ ] Author: address introduced MED severity items or document rationale
+- [ ] Reviewer: decide whether each pre-existing item goes to the author or a follow-up ticket
 - [ ] Reviewer: re-review after changes
-- [ ] Merge when: all HIGH items resolved
+- [ ] Merge when: all introduced HIGH items resolved
+
+(Drop the pre-existing line when no finding is pre-existing.)
 ```

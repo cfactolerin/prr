@@ -10,6 +10,15 @@ pub enum Anchor {
     None,
 }
 
+/// Whether the diff introduced the problem or the base branch already had
+/// it. Pre-existing findings stay reportable but must not block the merge.
+#[derive(Debug, Serialize, PartialEq, Clone, Copy)]
+#[serde(rename_all = "kebab-case")]
+pub enum Origin {
+    Introduced,
+    PreExisting,
+}
+
 #[derive(Debug, Serialize)]
 pub struct Finding {
     pub id: String,
@@ -17,6 +26,7 @@ pub struct Finding {
     pub trigger: String,
     pub severity: String,
     pub anchor: Anchor,
+    pub origin: Origin,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -251,6 +261,7 @@ fn synthesize_findings_from_legacy(legacy: &[LineComment]) -> Vec<Finding> {
             trigger: "Code Change".into(),
             severity: "MED".into(),
             anchor: Anchor::Diff,
+            origin: Origin::Introduced,
             location: Some(format!("{}:{}", lc.path, lc.line)),
             path: Some(lc.path.clone()),
             line: Some(lc.line),
@@ -465,6 +476,14 @@ fn parse_finding_bullets(block: &str) -> std::collections::HashMap<String, Strin
 fn dedent(line: &str, width: usize) -> String {
     let leading = line.len() - line.trim_start_matches(' ').len();
     line[leading.min(width)..].to_string()
+}
+
+fn parse_origin(s: &str) -> Option<Origin> {
+    match s.trim().to_lowercase().as_str() {
+        "introduced" => Some(Origin::Introduced),
+        "pre-existing" => Some(Origin::PreExisting),
+        _ => None,
+    }
 }
 
 fn parse_anchor(s: &str) -> Option<Anchor> {
@@ -690,6 +709,24 @@ pub fn parse_findings_section(content: &str) -> Vec<Finding> {
                     continue;
                 }
             };
+            // Defaulting to Introduced keeps reports written before Origin
+            // existed parseable, and errs toward treating a finding as blocking.
+            let origin = match bullets.get("origin") {
+                Some(raw) => parse_origin(raw).unwrap_or_else(|| {
+                    eprintln!(
+                        "warning: finding {} has unknown Origin '{}'; treating it as introduced",
+                        &caps[1], raw
+                    );
+                    Origin::Introduced
+                }),
+                None => {
+                    eprintln!(
+                        "warning: finding {} has no Origin; treating it as introduced",
+                        &caps[1]
+                    );
+                    Origin::Introduced
+                }
+            };
             let location = bullets.get("location")
                 .map(|s| s.trim().trim_matches('`').to_string());
             let why = bullets.get("why this matters").cloned().unwrap_or_default();
@@ -707,6 +744,7 @@ pub fn parse_findings_section(content: &str) -> Vec<Finding> {
                 trigger,
                 severity,
                 anchor,
+                origin,
                 location,
                 path,
                 line,
@@ -1293,6 +1331,7 @@ REQUEST_CHANGES
             trigger: "Code Change".into(),
             severity: "HIGH".into(),
             anchor: Anchor::Diff,
+            origin: Origin::Introduced,
             location: Some("src/main.rs:42".into()),
             path: Some("src/main.rs".into()),
             line: Some(42),
@@ -1305,6 +1344,51 @@ REQUEST_CHANGES
         let json = serde_json::to_string(&finding).unwrap();
         assert!(json.contains("\"anchor\":\"diff\""), "json was: {json}");
         assert!(!json.contains("from_legacy"), "from_legacy must not be in JSON");
+    }
+
+    fn finding_with_origin(origin_bullet: &str) -> String {
+        format!(
+            "## Findings\n\n### Trigger: Logic Bug\n\n#### F-01 — Title\n\n\
+             - **Severity:** HIGH\n- **Anchor:** none\n{origin_bullet}\
+             - **Why this matters:** w\n- **Suggested fix:** f\n\
+             - **Suggested comment:** c\n"
+        )
+    }
+
+    #[test]
+    fn test_origin_pre_existing() {
+        let findings = parse_findings_section(&finding_with_origin("- **Origin:** pre-existing\n"));
+        assert_eq!(findings[0].origin, Origin::PreExisting);
+        let json = serde_json::to_string(&findings[0]).unwrap();
+        assert!(json.contains("\"origin\":\"pre-existing\""), "json was: {json}");
+    }
+
+    #[test]
+    fn test_origin_introduced() {
+        let findings = parse_findings_section(&finding_with_origin("- **Origin:** Introduced\n"));
+        assert_eq!(findings[0].origin, Origin::Introduced);
+        let json = serde_json::to_string(&findings[0]).unwrap();
+        assert!(json.contains("\"origin\":\"introduced\""), "json was: {json}");
+    }
+
+    #[test]
+    fn test_origin_missing_defaults_to_introduced() {
+        let findings = parse_findings_section(&finding_with_origin(""));
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].origin, Origin::Introduced);
+    }
+
+    #[test]
+    fn test_origin_unknown_defaults_to_introduced() {
+        let findings = parse_findings_section(&finding_with_origin("- **Origin:** legacy\n"));
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].origin, Origin::Introduced);
+    }
+
+    #[test]
+    fn test_legacy_line_comments_are_introduced() {
+        let report = parse_report("## Line Comments\n\n- `lib/foo.rb:42` — Single line\n");
+        assert_eq!(report.findings[0].origin, Origin::Introduced);
     }
 
     // ── Validation tests ──────────────────────────────────────────────────
@@ -1623,6 +1707,7 @@ REQUEST_CHANGES
             trigger: "Logic Bug".into(),
             severity: "HIGH".into(),
             anchor: Anchor::None,
+            origin: Origin::Introduced,
             location: None,
             path: None,
             line: None,
@@ -1649,6 +1734,7 @@ REQUEST_CHANGES
             trigger: "Logic Bug".into(),
             severity: "HIGH".into(),
             anchor: Anchor::None,
+            origin: Origin::Introduced,
             location: None,
             path: None,
             line: None,

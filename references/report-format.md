@@ -23,6 +23,7 @@ Each finding carries:
 - **Trigger** — one of: `Acceptance Criteria`, `Code Change`, `Code Quality`, `Logic Bug`, `Security`, `Performance`, `Missing Test`, `Missing Doc / Error Handling`.
 - **Severity** — HIGH | MED | LOW.
 - **Anchor** — `diff` (postable as inline comment), `reference` (anchored on unchanged code, report-only), or `none` (cross-cutting, no anchor).
+- **Origin** — `introduced` (the diff wrote the faulty logic) or `pre-existing` (the fault is in unchanged code the base branch already had). Pre-existing findings never justify `REQUEST_CHANGES` on their own; the reviewer decides whether to raise them or leave them for a follow-up.
 - **Location** — `path:line` or `path:start-end`. Required when Anchor is `diff` or `reference`; omitted when `none`.
 - **Why this matters** — labelled sub-bullets, two slots (see below).
 - **Suggested fix** — what to change and why that change rather than another. Read by the reviewer.
@@ -59,6 +60,7 @@ Example finding (per-agent):
 
 - **Severity:** MED
 - **Anchor:** diff
+- **Origin:** introduced
 - **Location:** `lib/resources/asset.rb:97`
 - **Why this matters:**
   - **What this adds:** `RightsClaimParser#call` runs unconditionally in

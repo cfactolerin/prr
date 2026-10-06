@@ -477,8 +477,14 @@ Search the output for a fenced JSON code block (` ```json `) whose content is an
 2. item 2
 3. ...
 
+## Pre-existing (not caused by this PR)
+1. item 1
+...
+
 ---
 ```
+
+Put a finding whose `origin` is `pre-existing` under **Pre-existing** only, never under **Key Findings** or **Low-Severity Items**. Omit the heading when there are none.
 
 Use these exact strings for the verdict (no emojis — they don't render in the terminal):
 - APPROVE → `[APPROVE]`
@@ -532,6 +538,7 @@ This outputs JSON to stdout. Parse it. The structure is:
       "trigger": "Acceptance Criteria",
       "severity": "HIGH",
       "anchor": "diff",
+      "origin": "introduced",
       "location": "path/to/file:line",
       "path": "path/to/file",
       "line": 42,
@@ -547,7 +554,7 @@ This outputs JSON to stdout. Parse it. The structure is:
 }
 ```
 
-`anchor` is one of `"diff"`, `"reference"`, `"none"`. `location`, `path`, `line`, `start_line` are null when the anchor is `"none"`. The parser may have emitted stderr warnings (e.g., downgraded mislabels, malformed findings, unreadable diff) — surface those to the user before the interactive review.
+`anchor` is one of `"diff"`, `"reference"`, `"none"`. `origin` is `"introduced"` or `"pre-existing"`; a pre-existing finding's fault sits in code the base branch already had. `location`, `path`, `line`, `start_line` are null when the anchor is `"none"`. The parser may have emitted stderr warnings (e.g., downgraded mislabels, malformed findings, unreadable diff) — surface those to the user before the interactive review.
 
 Maintain an in-memory list of `CommentState` entries, one per `Finding`:
 
@@ -576,6 +583,8 @@ For each finding, present in **two parts**: rich context as regular text, then a
 ```
 ## Comment N/M — <Trigger> — <title> (<Severity>)
 
+<PRE_EXISTING_NOTE>
+
 📄 [path#L<line>](url) (lines start–end)
 
 <code context in a language-specific fenced block; target line marked with # <-->
@@ -599,6 +608,8 @@ Print both verbatim — do not re-wrap them, re-indent them, collapse them
 onto one line, or prefix them with an inline `**<label>:**`.
 `suggested_comment` may span several paragraphs; quote every line,
 including the blank ones.
+
+Replace `<PRE_EXISTING_NOTE>` with `> **Pre-existing.** This predates the PR. Asking for a fix widens its scope; consider a follow-up ticket instead.` when the finding's `origin` is `pre-existing`, and drop the line otherwise. The note informs the user's decision; Accept, Reject, and Edit work the same for both origins.
 
 `N/M` counts only diff-anchored findings. Code context is read from `<ROUND_DIR>/repo/<path>`, ~5 lines before/after the target line, language-hinted fence (e.g., ` ```ruby `), target line marked with a trailing `# <--` comment. The clickable link uses the `url` field if present, else plain text `path#L<line>`.
 
@@ -638,6 +649,8 @@ After diff-anchored findings, walk `findings` where `anchor` is `"reference"` or
 
 (Report-only — won't be posted as an inline comment; will be summarized in the review body.)
 
+<PRE_EXISTING_NOTE, as in 7b>
+
 📄 <path:line if anchor == reference; else "(no anchor line)">
 
 **Why this matters**
@@ -675,8 +688,9 @@ Triggered by `add`/`new`/`+` at any point in 7b or 7c. Collect:
 1. **Trigger** — AskUserQuestion with the 8 options (Acceptance Criteria, Code Change, Code Quality, Logic Bug, Security, Performance, Missing Test, Missing Doc / Error Handling).
 2. **Severity** — AskUserQuestion: HIGH / MED / LOW.
 3. **Anchor** — AskUserQuestion: "Is this anchored on a changed line, on existing code, or no specific line?" → `diff` / `reference` / `none`.
-4. If Anchor ≠ `none`: ask for `path:line`. Validate against `<ROUND_DIR>/results/diff.txt` — if the user picked `diff` but the line isn't in the diff, ask whether to downgrade to `reference`.
-5. Draft `Why this matters` as labelled sub-bullets, indented two spaces. Two slots, both required — pick slot 1 by what the diff did to the code the finding is about, and slot 2 by the Trigger chosen in step 1.
+4. **Origin** — AskUserQuestion: "Did this PR introduce the problem, or was it already on the base branch?" → `introduced` / `pre-existing`.
+5. If Anchor ≠ `none`: ask for `path:line`. Validate against `<ROUND_DIR>/results/diff.txt` — if the user picked `diff` but the line isn't in the diff, ask whether to downgrade to `reference`.
+6. Draft `Why this matters` as labelled sub-bullets, indented two spaces. Two slots, both required — pick slot 1 by what the diff did to the code the finding is about, and slot 2 by the Trigger chosen in step 1.
 
    | Situation | Slot 1 label(s) |
    |---|---|
@@ -696,7 +710,7 @@ Triggered by `add`/`new`/`+` at any point in 7b or 7c. Collect:
    sentence, a blank line between paragraphs, citations at the end of a
    sentence. `Suggested comment` is a problem paragraph, a blank line, then
    a paragraph starting `Fix:`. Bullets only for genuinely parallel items.
-6. Append a synthetic CommentState with `status = Accepted` and continue the review.
+7. Append a synthetic CommentState with `status = Accepted` and continue the review.
 
 ### After Phase 7
 
@@ -717,6 +731,8 @@ Show the final list (accepted + edited entries from both 7b and 7c):
 1. `path:line` (or no anchor) — <Trigger> — <one-line summary>
 ...
 
+Tag each pre-existing entry `(pre-existing)`.
+
 ---
 ```
 
@@ -733,9 +749,13 @@ Do NOT use the arbiter's original `review_body` directly. Regenerate based on th
 The body is short by design. Never open with a paragraph assessing the PR, and
 never enumerate every inline comment — the inline comments carry themselves.
 
-1. Partition Accepted + Edited entries into two groups:
-   - `inline = findings with anchor == "diff"`
-   - `other  = findings with anchor == "reference" or "none"`
+1. Partition Accepted + Edited entries into three groups:
+   - `inline      = findings with anchor == "diff" and origin == "introduced"`
+   - `other       = findings with anchor == "reference" or "none" and origin == "introduced"`
+   - `preexisting = findings with origin == "pre-existing"`, any anchor
+
+   Pre-existing `diff` findings still post as inline comments. They are counted
+   only in `preexisting`, so they never land in the "need fixing before merge" list.
 2. Normalize each finding's severity before counting: `CRITICAL` counts as HIGH,
    `MEDIUM` counts as MED.
 3. Build the main body from the action.
@@ -781,9 +801,21 @@ never enumerate every inline comment — the inline comments carry themselves.
    - ...
    ```
 
+5. Append the pre-existing group when `preexisting` is non-empty, in every case
+   including APPROVE.
+
+   ```
+   **Pre-existing issues (P)** — not caused by this PR:
+
+   These were already on the base branch. Fixing them here is optional; a follow-up ticket works too.
+
+   - `path:line` (or "(no anchor)") — <Trigger> — <one-line summary of suggested_comment or overridden_body>
+   - ...
+   ```
+
 Match singular and plural to the counts. Save the result as `REVIEW_BODY`.
 
-The GitHub payload (Step 8e) builds `comments[]` from the `inline` group only — the `other` group is captured in the review body and never sent as inline comments.
+The GitHub payload (Step 8e) builds `comments[]` from the `inline` group plus the `diff`-anchored members of `preexisting`. Everything else is captured in the review body and never sent as inline comments.
 
 ### Step 8b: Present review for confirmation
 
@@ -799,6 +831,9 @@ Present the review body and action as rich text output, then use a two-step AskU
 **Review body:**
 > <REVIEW_BODY>
 ```
+
+When `review_action` is Request Changes but no accepted HIGH or MED finding is
+introduced, suggest Comment instead and say that only pre-existing issues remain.
 
 #### Step 1 — Pick action
 
@@ -904,6 +939,8 @@ Build a JSON payload:
   ]
 }
 ```
+
+For a pre-existing finding, start `<comment_body>` with `**Pre-existing:** this predates the PR, so fixing it here is optional.` followed by a blank line, unless the user's edited text already says so.
 
 For each comment: if `start_line` is present in the parsed JSON, include it in the payload (GitHub highlights the range). If `start_line` is absent, omit it (single-line comment).
 

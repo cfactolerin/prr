@@ -46,4 +46,6 @@ Every review finding must be caused or exposed by the diff, or required by a tic
 
 Use `Anchor: diff` only for a changed line that can accept an inline GitHub comment. Use `Anchor: reference` for unchanged code that is relevant because the ticket requires it or the diff relies on it. Use `Anchor: none` only for a cross-cutting issue with no specific line. Include `Location` for `diff` and `reference`; omit it for `none`.
 
+Set `Origin: pre-existing` when the faulty logic sits in code the diff left untouched, even if the finding anchors on a new call site. Otherwise use `Origin: introduced`.
+
 Flag real defects and material omissions, not preference-only style points. Preserve the prompt's trigger vocabulary and finding structure exactly.

@@ -49,6 +49,7 @@ Produce the final report when the reviews agree, prior answers provide enough ev
 - Preserve only findings caused or exposed by the diff, or required by the ticket Acceptance Criteria.
 - Drop unrelated issues in unchanged code.
 - Keep `diff`, `reference`, and `none` anchors honest so only changed lines become inline comments.
+- Keep `Origin` honest so a fault the base branch already had never drives `REQUEST_CHANGES`.
 - Preserve the closed trigger vocabulary, required finding fields, severity, and prose structure from the prompt.
 - Never weaken a finding solely to manufacture consensus.
 

@@ -110,6 +110,30 @@ Each finding also carries an `Anchor` label:
 - `reference` — Location is on an unchanged line (the AC requires fixing it, or the diff relies on it). Won't be posted inline.
 - `none` — Cross-cutting finding with no single anchor line (e.g., "no integration test for X"). Won't be posted inline.
 
+### `Origin` — introduced or pre-existing
+
+Each finding also carries an `Origin` label. It tells the reviewer whether
+this PR created the problem or ran into one the base branch already had.
+
+- `introduced` — the faulty logic is on a `+` line of the diff, or the diff
+  changed the behaviour that now fails.
+- `pre-existing` — the faulty logic is in code the diff did not add or
+  change, and the base branch already behaved this way. Fixing it means
+  changing that older code.
+
+Decide by where the fault lives, not by the Location. A finding anchored on
+a new call site is still `pre-existing` when the defect sits in an unchanged
+helper the call relies on. Origin is also independent of Trigger: an
+`Acceptance Criteria` finding is `pre-existing` when the ticket needs older
+code fixed.
+
+Mark a finding `pre-existing` only when you can name the unchanged code at
+fault and the diff shows it untouched. When unsure, use `introduced`.
+
+A pre-existing finding never justifies `REQUEST_CHANGES` on its own. The
+reviewer decides whether to raise it with the author or leave it for a
+follow-up, because asking for the fix widens the PR beyond its ticket.
+
 ### `Why this matters` — labelled slots
 
 Write `Why this matters` as a block of labelled sub-bullets, never as one
@@ -212,6 +236,7 @@ HIGH | MEDIUM | LOW — one sentence explaining your confidence level.
 
 - **Severity:** HIGH | MED | LOW
 - **Anchor:** diff | reference | none
+- **Origin:** introduced | pre-existing
 - **Location:** `path/to/file:line` or `path/to/file:start-end`
   (omit only when Anchor is `none`)
 - **Why this matters:**
@@ -240,6 +265,7 @@ HIGH | MEDIUM | LOW — one sentence explaining your confidence level.
 
 - **Severity:** ...
 - **Anchor:** ...
+- **Origin:** ...
 - **Location:** ...
 - **Why this matters:**
   - **What this adds:** ...

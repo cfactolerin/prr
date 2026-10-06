@@ -136,7 +136,7 @@ PRR findings use one of eight triggers:
 | New behavior lacks docs or error handling | `Missing Doc / Error Handling` |
 | Suspicious change that fits no other trigger | `Code Change` |
 
-Every finding requires `Severity`, `Anchor`, `Why this matters`, `Suggested fix`, and `Suggested comment`. `Location` is required for `diff` and `reference` anchors and omitted for `none`. The authoritative shape is `references/report-format.md`.
+Every finding requires `Severity`, `Anchor`, `Origin`, `Why this matters`, `Suggested fix`, and `Suggested comment`. `Location` is required for `diff` and `reference` anchors and omitted for `none`. The authoritative shape is `references/report-format.md`.
 
 `Why this matters`, `Suggested fix`, and `Suggested comment` use short prose with the claim first. The prompt templates under `references/prompts/` contain the complete writing rules and must remain synchronized.
 
@@ -147,6 +147,8 @@ Anchor semantics:
 - `none` is cross-cutting and appears only in the review body.
 
 A finding is in scope only when the diff causes or exposes it, or ticket acceptance criteria require it.
+
+`Origin` is `introduced` when the diff wrote the faulty logic and `pre-existing` when the fault is in unchanged code the base branch already had. Pre-existing findings stay in the report so the reviewer can decide whether to raise them, but they never drive `REQUEST_CHANGES`, never appear in the review body's "fix before merge" list, and post with a note that the issue predates the PR. `parse-report` treats a missing or unknown Origin as `introduced`.
 
 ## Changing OpenCode Assets
 

@@ -306,8 +306,13 @@ Read `final-report.md` and present:
 ## Low-Severity Items
 1. <item>
 
+## Pre-existing (not caused by this PR)
+1. <item>
+
 ---
 ```
+
+Put a finding whose `Origin` is `pre-existing` under **Pre-existing** only, never under **Key Findings** or **Low-Severity Items**. Omit the heading when there are none.
 
 Use only `[APPROVE]`, `[REQUEST_CHANGES]`, or `[COMMENT]` for the verdict.
 
@@ -344,7 +349,7 @@ Run:
 "$PRR_BIN" parse-report "<RESULTS_PATH>/final-report.md" --diff "<RESULTS_PATH>/diff.txt"
 ```
 
-Capture stdout as parsed JSON and surface all stderr warnings before review. The JSON includes `verdict`, `confidence`, `findings`, `line_comments`, `review_action`, and `review_body`. Each finding includes its id, title, trigger, severity, anchor, optional location/path/line/start_line, why-it-matters text, suggested fix, and suggested comment.
+Capture stdout as parsed JSON and surface all stderr warnings before review. The JSON includes `verdict`, `confidence`, `findings`, `line_comments`, `review_action`, and `review_body`. Each finding includes its id, title, trigger, severity, anchor, origin (`introduced` or `pre-existing`), optional location/path/line/start_line, why-it-matters text, suggested fix, and suggested comment.
 
 Maintain an in-memory state for every finding:
 
@@ -365,6 +370,8 @@ Walk only `anchor == "diff"` findings strictly one at a time. For each, first pr
 ````markdown
 ## Comment N/M - <Trigger> - <title> (<Severity>)
 
+<PRE_EXISTING_NOTE>
+
 [path#L<line>](url) (lines <start>-<end>)
 
 ```<language>
@@ -384,6 +391,8 @@ Walk only `anchor == "diff"` findings strictly one at a time. For each, first pr
 > <quote every line, including blank lines>
 ````
 
+Replace `<PRE_EXISTING_NOTE>` with `> **Pre-existing.** This predates the PR. Asking for a fix widens its scope; consider a follow-up ticket instead.` when the finding's origin is `pre-existing`, and drop the line otherwise.
+
 Use the parsed URL when present; otherwise show plain `path#Lline`. Read context from `<REPO_PATH>/<path>`. Do not rewrap, flatten, or relabel the why-it-matters and suggested-fix values.
 
 Then make exactly one question-tool call about that finding with options:
@@ -397,6 +406,8 @@ Then make exactly one question-tool call about that finding with options:
 Never present or decide multiple findings together. A custom response is an investigation request, not permission to advance. Keep the finding pending while you inspect `<REPO_PATH>` and, when relevant, `<CONTEXT_PATH>` with `prr_read`; consult applicable area guides before deciding a domain dispute. Treat user-supplied claims as hypotheses until the code, guide, or supplied context supports them. Present the evidence and any revised finding text, then ask about the same finding again. Never direct the user to **Finish findings** merely because they challenged a finding. Advance only after Accept, Reject, or Edit.
 
 Set status accordingly. Edited findings store the exact approved replacement in `overridden_body`.
+
+The pre-existing note is information for the user, not a reason to steer the decision. Accept, Reject, and Edit work the same for both origins.
 
 ### 7c. Reference and Unanchored Findings
 
@@ -413,8 +424,9 @@ Collect each field with a separate question-tool call and explicit choices:
 1. Trigger: `Acceptance Criteria`, `Code Change`, `Code Quality`, `Logic Bug`, `Security`, `Performance`, `Missing Test`, or `Missing Doc / Error Handling`.
 2. Severity: `HIGH`, `MED`, or `LOW`.
 3. Anchor: **Changed line** (`diff`), **Existing line** (`reference`), or **No specific line** (`none`).
-4. For a line anchor, collect `path:line`. Validate `diff` against `<RESULTS_PATH>/diff.txt`; if it is not changed, offer **Use reference anchor**, **Choose another line**, or **Cancel finding**.
-5. Draft all required prose with the user and ask **Accept draft**, **Edit draft**, or **Cancel finding**.
+4. Origin: **Introduced by this PR** (`introduced`) or **Already on the base branch** (`pre-existing`).
+5. For a line anchor, collect `path:line`. Validate `diff` against `<RESULTS_PATH>/diff.txt`; if it is not changed, offer **Use reference anchor**, **Choose another line**, or **Cancel finding**.
+6. Draft all required prose with the user and ask **Accept draft**, **Edit draft**, or **Cancel finding**.
 
 `Why this matters` must have two indented labelled slots. Choose orientation by what the change did:
 
@@ -432,7 +444,7 @@ Append the accepted synthetic finding and return to the prior position.
 
 ### 7e. Final Findings Confirmation
 
-List all Accepted and Edited entries, split into inline and report-only groups. Include location, trigger, and one-line summary. With nothing to list, say the review posts with no inline comments. Then use the question tool with:
+List all Accepted and Edited entries, split into inline and report-only groups. Include location, trigger, one-line summary, and a `(pre-existing)` tag where it applies. With nothing to list, say the review posts with no inline comments. Then use the question tool with:
 
 - **Continue to posting** - proceed.
 - **Review more findings** - return to the one-at-a-time walk.
@@ -447,8 +459,11 @@ Omit **Review more findings** when no finding was ever parsed or added, since th
 
 Do not use the arbiter's original review body. Partition Accepted and Edited findings:
 
-- `inline`: anchor `diff`
-- `other`: anchor `reference` or `none`
+- `inline`: anchor `diff`, origin `introduced`
+- `other`: anchor `reference` or `none`, origin `introduced`
+- `preexisting`: origin `pre-existing`, any anchor
+
+Pre-existing `diff` findings still post as inline comments. They are counted only in `preexisting`, so they never land in the "need fixing before merge" list.
 
 Normalize `CRITICAL` to HIGH and `MEDIUM` to MED for counts.
 
@@ -481,11 +496,21 @@ Always append every report-only finding, regardless of severity or action:
 - `path:line` or `(no anchor)` - <Trigger> - <one-line summary>
 ```
 
-Match singular/plural and store the result as `REVIEW_BODY`. Only `inline` may become GitHub inline comments.
+Then append every pre-existing finding:
+
+```markdown
+**Pre-existing issues (P) - not caused by this PR:**
+
+These were already on the base branch. Fixing them here is optional; a follow-up ticket works too.
+
+- `path:line` or `(no anchor)` - <Trigger> - <one-line summary>
+```
+
+Omit either appended section when it is empty. Match singular/plural and store the result as `REVIEW_BODY`. Only `inline` and the `diff`-anchored members of `preexisting` may become GitHub inline comments.
 
 ### 8b. Confirm Action and Body
 
-Show the suggested action and generated body. Then use the question tool:
+Show the suggested action and generated body. When the report's verdict is REQUEST_CHANGES but no accepted HIGH or MED finding is introduced, suggest **Comment only** instead and say why. Then use the question tool:
 
 **Question:** Post review?
 
@@ -547,6 +572,8 @@ Build valid JSON with:
   ]
 }
 ```
+
+For a pre-existing inline finding, start the comment body with `**Pre-existing:** this predates the PR, so fixing it here is optional.` followed by a blank line, unless the user's edited text already says so.
 
 Use a JSON-aware encoder so newlines, quotes, and backslashes are escaped. Include `start_line` and `start_side: "RIGHT"` together only when a range is present. Omit `comments` entirely when there are no inline comments. Write the payload under `<RESULTS_PATH>`, inspect it for the confirmed event/body/comment count, then run `"$PRR_BIN" post-review <owner>/<repo>#<number> --payload <payload path>` once with the parsed pull request and the absolute payload path. The command binds the target and commit to the round, validates the payload, and fixes the GitHub endpoint and HTTP method. Its `ask` permission creates a separate approval prompt.
 
