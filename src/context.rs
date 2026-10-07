@@ -244,6 +244,20 @@ const LOCAL_ROOTS: &[&str] = &["/Users/", "/home/"];
 const LINK_TERMINATORS: &[char] =
     &[' ', '\t', '\n', '\r', '`', '\'', '"', '(', ')', '[', ']', '{', '}', '<', '>', ',', ';'];
 
+const PATTERN_CHARS: &[char] = &['|', '*', '?', '\\', '^', '$'];
+
+/// Stand-in names docs use for "some developer's" home directory.
+const PLACEHOLDER_USERS: &[&str] = &[
+    "alice", "bob", "carol", "dave", "eve", "jane", "john", "jdoe", "me", "name", "someone",
+    "user", "username", "you", "yourname",
+];
+
+fn is_placeholder_home(link: &str) -> bool {
+    link.split('/')
+        .nth(2)
+        .is_some_and(|user| PLACEHOLDER_USERS.contains(&user.to_ascii_lowercase().as_str()))
+}
+
 /// Machine-local absolute paths in `content`, deduplicated, in document order.
 ///
 /// Reviewers run against a fresh clone, so a doc pointing at the author's own
@@ -266,6 +280,11 @@ fn local_links(content: &str) -> Vec<String> {
         // A bare home root is prose ("your home directory"); a path below one
         // is a pointer an agent will try to follow.
         if link.matches('/').count() < 3 {
+            continue;
+        }
+        // A doc that forbids local paths has to quote them: as a grep
+        // pattern, or as a made-up checkout. Neither is a pointer.
+        if link.contains(PATTERN_CHARS) || is_placeholder_home(link) {
             continue;
         }
         if !links.iter().any(|l| l == link) {
@@ -599,6 +618,40 @@ mod tests {
 
         assert!(docs.rendered.contains("`lib/CLAUDE.md`"));
         assert!(docs.excluded.is_empty(), "only paths under a user home are machine-local");
+    }
+
+    #[test]
+    fn keeps_docs_that_quote_local_paths_to_forbid_them() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        write(
+            repo,
+            "AGENTS.md",
+            "A checkout directory like `/Users/alice/fuga/git/xml_generator` means nothing.\n\n\
+             ```bash\n\
+             grep -rn -E '/Users/|/home/[a-z]|~/|[A-Z]:\\\\' --include=AGENTS.md .\n\
+             ```\n",
+        );
+
+        let docs = gather_repo_docs(repo, "");
+
+        assert!(docs.excluded.is_empty(), "got {:?}", docs.excluded.first().map(|d| &d.links));
+        assert_eq!(docs.root_files, vec!["AGENTS.md"]);
+    }
+
+    #[test]
+    fn still_drops_real_local_links_beside_quoted_examples() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        write(
+            repo,
+            "AGENTS.md",
+            "Never write `/Users/you/git/gem`. The gem lives in `/Users/cris/fuga/git/gem`.",
+        );
+
+        let docs = gather_repo_docs(repo, "");
+
+        assert_eq!(docs.excluded[0].links, vec!["/Users/cris/fuga/git/gem"]);
     }
 
     #[test]
