@@ -12,7 +12,7 @@ The OpenCode plugin uses:
 
 The OpenCode plugin currently supports macOS on Apple Silicon and Intel.
 
-- [OpenCode](https://opencode.ai)
+- [OpenCode 2](https://opencode.ai) for the installation commands below
 - [Codex CLI](https://github.com/openai/codex) 0.155.0 or newer
 - [GitHub CLI](https://cli.github.com/)
 - `git`
@@ -37,33 +37,93 @@ PRR runs Codex with user configuration, hooks, rules, apps, web search, and suba
 
 ## Install For OpenCode
 
-The same package works with OpenCode 1.18.29 or newer and with OpenCode 2. Add `opencode-prr` to `~/.config/opencode/opencode.json`, using the `plugin` array on OpenCode 1:
+Install PRR directly from GitHub without an npm account, npm publication, manual clone, or Rust toolchain. The repository includes the plugin assets and a universal macOS binary. OpenCode installs its JavaScript dependencies automatically from the npm registry, so registry access is still needed, but an npm login is not.
+
+### 1. Check Prerequisites
+
+Install the tools listed under [Requirements](#requirements), authenticate `gh` and Codex, and select a working model in OpenCode for the native reviewer and arbiter. Confirm the executables are available in your terminal:
+
+```bash
+opencode --version
+git --version
+gh auth status
+codex --version
+codex login status
+```
+
+If the PRR repository is private, your Git credentials must have access to it. GitHub CLI authentication alone does not configure SSH access. Use one of the authenticated installation options in the next step if needed; never put a token in a plugin URL or OpenCode configuration.
+
+### 2. Install From GitHub
+
+Run this in your terminal from any directory to install PRR globally from the `main` branch:
+
+```bash
+opencode plugin add 'github:cfactolerin/prr#main'
+opencode plugin list
+```
+
+For a private repository, choose **one** of these alternatives instead of the shortcut above.
+
+**SSH:** configure your GitHub SSH key, verify repository access, then install:
+
+```bash
+git ls-remote git@github.com:cfactolerin/prr.git HEAD
+opencode plugin add 'git+ssh://git@github.com/cfactolerin/prr.git#main'
+```
+
+**HTTPS:** use your GitHub CLI login as Git's credential helper:
+
+```bash
+gh auth setup-git
+git ls-remote https://github.com/cfactolerin/prr.git HEAD
+opencode plugin add 'git+https://github.com/cfactolerin/prr.git#main'
+```
+
+These commands install the same plugin. Do not register several URLs for PRR or keep an older `opencode-prr` npm entry alongside the GitHub entry. Remove the old entry from its configuration file when switching installation methods.
+
+### Manual Configuration Alternative
+
+Instead of `opencode plugin add`, add the GitHub package to `~/.config/opencode/opencode.json` or `opencode.jsonc` for every project:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-prr"]
+  "plugins": ["github:cfactolerin/prr#main"]
 }
 ```
 
-OpenCode 2 renamed that array to `plugins`:
+Preserve existing settings and unrelated plugin entries. For a private repository, use the SSH or HTTPS package specification above as the array entry. To install only for one project, put the same `plugins` entry in that project's `opencode.json(c)` instead of the global file.
 
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugins": ["opencode-prr"]
-}
+### 3. Load The Plugin
+
+OpenCode watches configuration changes and installs missing packages in the background. Restart the service to ensure the plugin is loaded, then open OpenCode:
+
+```bash
+opencode service restart
+opencode
 ```
 
-Preserve any existing settings and plugin entries in that file. OpenCode installs npm plugins automatically when it starts.
+### 4. Configure PRR
 
-Quit and restart OpenCode after changing the configuration. Then run:
+Inside OpenCode, run:
 
 ```text
 /prr-setup
 ```
 
-Setup verifies `gh`, `git`, and Codex, then configures the review workspace. Existing Jira settings can be preserved or removed; new credentials must be added outside the model session.
+Setup verifies `gh`, `git`, and Codex, then configures the review workspace. It defaults to `~/.prr/workspace` and stores settings in `~/.prr/config.yml`.
+
+Jira is optional. Setup can preserve or remove existing Jira settings. Add new credentials outside the model session.
+
+After setup succeeds, use [Start A Review](#start-a-review). PRR supplies its own binary path; you do not need to install `prr` separately or set `PRR_BIN` yourself.
+
+### Installation Troubleshooting
+
+- **`opencode plugin add` is unavailable:** the CLI instructions require OpenCode 2. Upgrade OpenCode before following this guide. The plugin also retains compatibility with OpenCode 1.18.29+, but its configuration differs.
+- **Repository not found or permission denied:** verify the matching `git ls-remote` command succeeds with an account or SSH key that can access the repository. Use the explicit SSH or HTTPS installation URL rather than the hosted shortcut.
+- **`/prr-setup` is missing:** check `opencode plugin list`, ensure there is only one PRR entry, and run `opencode service restart`. Check that your current project's configuration has not disabled the plugin.
+
+See the [OpenCode plugin guide](https://opencode.ai/v2/docs/plugins) for package installation and configuration details.
 
 ## Start A Review
 
@@ -136,19 +196,39 @@ Jira tokens are stored as plaintext in `~/.prr/config.yml`, which PRR writes wit
 
 ## Updating
 
-OpenCode resolves npm plugins when it starts. Restart OpenCode to load an updated `opencode-prr` release. Pin a version in the plugin entry when you need reproducible installations:
+To update a GitHub installation tracking `main`, run:
+
+```bash
+opencode plugin check
+opencode plugin update 'github:cfactolerin/prr#main'
+opencode service restart
+```
+
+If you installed with SSH or HTTPS, replace the update target with the exact package entry shown by `opencode plugin list`. Startup checks can report new commits without installing them; restarting alone does not update the cached package.
+
+For a reproducible installation, replace `main` in the configured entry with a full 40-character Git commit SHA:
 
 ```json
 {
-  "plugin": ["opencode-prr@0.15.0"]
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["github:cfactolerin/prr#<full-40-character-commit-sha>"]
 }
 ```
 
+Replace the placeholder with an actual commit from this repository. Exact commit pins are skipped by `opencode plugin update`; change the SHA in your configuration when you want a newer revision. Existing PRR settings and review workspaces are preserved across updates.
+
 ## Uninstall From OpenCode
 
-Remove `opencode-prr` from the `plugin` (OpenCode 1) or `plugins` (OpenCode 2) array in `~/.config/opencode/opencode.json`, then restart OpenCode.
+Remove the global GitHub installation with:
 
-To also remove PRR configuration and cached review data:
+```bash
+opencode plugin remove 'github:cfactolerin/prr#main'
+opencode service restart
+```
+
+For SSH, HTTPS, or a pinned revision, use the exact configured package entry instead. If you added PRR manually or in project configuration, remove its entry from the corresponding `plugins` array. Removing the plugin leaves your PRR configuration and review workspaces intact.
+
+To also permanently delete PRR configuration, optional Jira credentials, clones, and saved reviews:
 
 ```bash
 rm -rf ~/.prr
@@ -172,4 +252,4 @@ rustup target add x86_64-apple-darwin aarch64-apple-darwin
 ./scripts/build-universal.sh
 ```
 
-The npm package includes the OpenCode Markdown assets and `bin/prr-darwin-universal`, so users do not need this repository or a Rust toolchain.
+The plugin package includes the OpenCode Markdown assets and `bin/prr-darwin-universal`, so users do not need a manual checkout or a Rust toolchain.

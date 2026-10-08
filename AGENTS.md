@@ -4,7 +4,7 @@
 
 PRR performs independent AI pull request reviews and synthesizes their findings into a report that can be posted to GitHub. The repository ships an OpenCode integration over a Rust engine:
 
-- **OpenCode plugin** (`index.js`, `package.json`, `.opencode/`) - the primary distribution. OpenCode orchestrates a native review and arbitration while Codex supplies an independent second review.
+- **OpenCode plugin** (`index.js`, `package.json`, `.opencode/`) - distributed directly from GitHub. OpenCode orchestrates a native review and arbitration while Codex supplies an independent second review.
 - **Rust binary** (`src/`) - config management, PR resolution, cloning, Jira and Confluence fetching, prompt assembly, report parsing, and cleanup.
 
 The Claude Code distribution is no longer maintained or packaged. Its metadata remains in Git history; legacy definitions under `skills/` and `agents/` remain in the working tree.
@@ -24,13 +24,13 @@ prr/
 |-- references/
 |   `-- prompts/               # Templates compiled into the Rust binary
 |-- src/                       # Rust source
-|-- index.js                   # OpenCode npm plugin entry point
-|-- package.json               # OpenCode npm package metadata
+|-- index.js                   # OpenCode plugin entry point
+|-- package.json               # OpenCode package metadata
 |-- Cargo.toml
 `-- README.md
 ```
 
-The OpenCode npm plugin registers commands and agents from `.opencode/`, adds the packaged skills directory, and injects `PRR_BIN` into shell environments. `index.js` default-exports one object that serves both OpenCode generations: OpenCode 1 (1.18.29+) calls `server()` and applies the V1 `config` hook, while OpenCode 2 calls `setup(ctx)`, which registers the same assets through domain transforms and converts V1 agent permissions to V2 rules (`bash` becomes `shell`, `task` becomes `subagent`).
+The OpenCode plugin registers commands and agents from `.opencode/`, adds the packaged skills directory, and injects `PRR_BIN` into shell environments. `index.js` default-exports one object that serves both OpenCode generations: OpenCode 1 (1.18.29+) calls `server()` and applies the V1 `config` hook, while OpenCode 2 calls `setup(ctx)`, which registers the same assets through domain transforms and converts V1 agent permissions to V2 rules (`bash` becomes `shell`, `task` becomes `subagent`).
 
 OpenCode 2 does not evaluate permissions for plugin tools and gives plugins no way to raise an approval prompt. Each PRR tool therefore checks the calling agent's own rule itself, and any action that needs user approval must go through a shell command with an `ask` rule. That is why GitHub posting is `"$PRR_BIN" post-review`, not a plugin tool.
 
@@ -102,9 +102,11 @@ Every commit bumps the version, rebuilds the binary, and keeps all metadata sync
 
 Binary-affecting changes under `src/`, `references/prompts/`, or Rust dependency metadata bump the minor version and reset the patch. Plugin metadata, agent, skill, and documentation-only changes bump the patch version. Rebuild the binary for every version bump, including documentation-only changes.
 
-## Publishing
+## Distribution
 
-Every version pushed to `main` is also published to npm, because OpenCode installs `opencode-prr` from the registry rather than from git. After pushing, run `npm pack --dry-run --json` to confirm the runtime assets, then `npm publish`. A pushed version that is not on npm leaves OpenCode users on the previous release.
+The supported installation is `opencode plugin add 'github:cfactolerin/prr#main'`. Private repositories can use explicit SSH or HTTPS Git package specifications with existing Git credentials. Keep the packaged assets and rebuilt universal binary committed with each version so GitHub installations need no Rust toolchain.
+
+Run `npm pack --dry-run --json` to confirm runtime assets before releasing. Pushing to `main` makes the revision available to GitHub installations; users install it with `opencode plugin update` using their configured package target. npm publication is optional and must only be performed when explicitly requested.
 
 ## Conventions
 
@@ -155,6 +157,6 @@ When changing an OpenCode command, skill, or agent:
 1. Keep command entry points in `.opencode/commands/` thin.
 2. Put workflow behavior in `.opencode/skills/`.
 3. Put isolated reviewer behavior and permissions in `.opencode/agents/`.
-4. Keep the npm registration lists in `index.js` synchronized with added or removed assets.
+4. Keep the registration lists in `index.js` synchronized with added or removed assets.
 5. Run `npm test` and inspect `npm pack --dry-run --json` to confirm every runtime asset is packaged.
 6. Test from a packed installation when changing module-relative paths or binary discovery.
