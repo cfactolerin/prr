@@ -8,8 +8,6 @@ The OpenCode plugin uses:
 - Codex CLI as an independent second review harness, using `gpt-6-sol` by default.
 - OpenCode's active model in a separate arbiter context for synthesis and follow-up questions.
 
-The existing Claude Code plugin remains available during the OpenCode migration.
-
 ## Requirements
 
 The OpenCode plugin currently supports macOS on Apple Silicon and Intel.
@@ -95,11 +93,11 @@ PRR gathers the context and shows it before dispatching either reviewer. You can
 | `/prr-start <pr>` | Run native OpenCode and Codex reviews, arbitration, findings review, and optional posting |
 | `/prr-cleanup` | Remove review workspaces whose pull requests are closed or merged |
 
-The OpenCode reviewer and arbiter inherit the model selected in the current OpenCode session. PRR does not require an Anthropic model or a separate model setting.
+The OpenCode reviewer and arbiter inherit the model selected in the current OpenCode session and need no separate model setting.
 
 ## How It Works
 
-1. **Context gathering:** the Rust engine clones the pull request, computes the diff, fetches linked Jira and Confluence context, and indexes repository guidance such as `AGENTS.md`, `CLAUDE.md`, and `README.md`.
+1. **Context gathering:** the Rust engine clones the pull request, computes the diff, fetches linked Jira and Confluence context, and indexes repository guidance such as `AGENTS.md` and `README.md`.
 2. **Independent review:** a native OpenCode subagent and Codex CLI receive the same prompt in separate contexts. Neither receives the other's output.
 3. **Arbitration:** a separate OpenCode subagent compares both reviews and may ask either reviewer for path, line, test, or documentation evidence.
 4. **Interactive review:** PRR presents each finding individually so it can be accepted, edited, challenged, or rejected.
@@ -155,17 +153,6 @@ To also remove PRR configuration and cached review data:
 ```bash
 rm -rf ~/.prr
 ```
-
-## Claude Code Compatibility
-
-The previous Claude Code distribution is retained during migration. Install it inside Claude Code with:
-
-```text
-/plugin marketplace add cfactolerin/prr
-/plugin install prr@cfactolerin-prr
-```
-
-Its commands remain namespaced as `/prr:setup`, `/prr:start`, `/prr:add-agent`, `/prr:delete-agent`, and `/prr:cleanup`.
 
 ## Development
 

@@ -2,11 +2,12 @@
 
 ## Project Overview
 
-PRR performs independent AI pull request reviews and synthesizes their findings into a report that can be posted to GitHub. The repository ships two host integrations over one Rust engine:
+PRR performs independent AI pull request reviews and synthesizes their findings into a report that can be posted to GitHub. The repository ships an OpenCode integration over a Rust engine:
 
 - **OpenCode plugin** (`index.js`, `package.json`, `.opencode/`) - the primary distribution. OpenCode orchestrates a native review and arbitration while Codex supplies an independent second review.
-- **Claude Code plugin** (`.claude-plugin/`, `skills/`, `agents/`) - the existing compatibility distribution.
 - **Rust binary** (`src/`) - config management, PR resolution, cloning, Jira and Confluence fetching, prompt assembly, report parsing, and cleanup.
+
+The Claude Code distribution is no longer maintained or packaged. Its metadata remains in Git history; legacy definitions under `skills/` and `agents/` remain in the working tree.
 
 ## Repository Structure
 
@@ -16,9 +17,8 @@ prr/
 |   |-- commands/              # OpenCode slash-command entry points
 |   |-- skills/                # OpenCode orchestration instructions
 |   `-- agents/                # Restricted setup/review orchestrators and isolated roles
-|-- .claude-plugin/            # Claude Code package metadata
-|-- agents/                    # Claude Code agent definitions
-|-- skills/                    # Claude Code skills
+|-- agents/                    # Retained legacy agent definitions
+|-- skills/                    # Retained legacy skills
 |-- bin/
 |   `-- prr-darwin-universal   # Committed universal macOS binary
 |-- references/
@@ -34,7 +34,7 @@ The OpenCode npm plugin registers commands and agents from `.opencode/`, adds th
 
 OpenCode 2 does not evaluate permissions for plugin tools and gives plugins no way to raise an approval prompt. Each PRR tool therefore checks the calling agent's own rule itself, and any action that needs user approval must go through a shell command with an `ask` rule. That is why GitHub posting is `"$PRR_BIN" post-review`, not a plugin tool.
 
-OpenCode assets must use quoted `"$PRR_BIN"`; Claude Code assets continue to use `${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal`.
+OpenCode assets must use quoted `"$PRR_BIN"`; retained legacy assets use `${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal`.
 
 ## OpenCode Architecture
 
@@ -46,7 +46,7 @@ The OpenCode workflow has a restricted setup agent plus two review harnesses and
 4. `prr-codex-reviewer` invokes Codex CLI for an independent review.
 5. `prr-arbiter` uses the active host model in a separate context to compare reviews and request evidence.
 
-Do not replace the native reviewer with a nested `opencode run`. Keep reviewer and arbiter contexts separate. The OpenCode distribution uses reviewer keys `opencode` and `codex`; the older Claude distribution retains its configurable reviewer list.
+Do not replace the native reviewer with a nested `opencode run`. Keep reviewer and arbiter contexts separate. The OpenCode distribution uses reviewer keys `opencode` and `codex`; legacy configuration still supports a configurable reviewer list.
 
 ## Rust Binary Subcommands
 
@@ -56,7 +56,7 @@ Do not replace the native reviewer with a nested `opencode run`. Keep reviewer a
 | `context-open-code <pr>` | Gather context in the configured OpenCode workspace |
 | `prompt --review <dir>` | Write `results/review-prompt.md` |
 | `prompt --arbiter <dir>` | Assemble reviews and Q&A history into `results/arbiter-prompt.md` |
-| `prompt --question <dir> --agent <name> --questions-file <path> [--round <N>]` | Write a reviewer question prompt; inline `--questions` remains for Claude compatibility |
+| `prompt --question <dir> --agent <name> --questions-file <path> [--round <N>]` | Write a reviewer question prompt; inline `--questions` remains for legacy compatibility |
 | `parse-report <path>` | Parse a final report into structured JSON |
 | `post-review <pr> --payload <path>` | Validate a round's review payload against its clone and the live PR head, then post it through `gh api` |
 | `cleanup --workspace <path>` | Remove workspace entries for closed or merged PRs |
@@ -64,7 +64,7 @@ Do not replace the native reviewer with a nested `opencode run`. Keep reviewer a
 | `config runtime` | Print non-secret OpenCode runtime settings as JSON |
 | `config configure-open-code --workspace <path> [--clear-jira]` | Apply fixed OpenCode settings without exposing preserved credentials |
 | `agents list/add/delete` | Manage the legacy configurable reviewer list |
-| `opencode check/set-model` | Manage the nested OpenCode reviewer used by the Claude distribution |
+| `opencode check/set-model` | Manage the legacy nested OpenCode reviewer |
 
 ## Build And Test
 
@@ -88,7 +88,7 @@ The build requires both Rust targets:
 rustup target add x86_64-apple-darwin aarch64-apple-darwin
 ```
 
-The committed binary lets users install either plugin without a Rust toolchain.
+The committed binary lets users install the OpenCode plugin without a Rust toolchain.
 
 ## Versioning
 
@@ -98,11 +98,9 @@ Every commit bumps the version, rebuilds the binary, and keeps all metadata sync
 2. `Cargo.lock`
 3. `package.json`
 4. `package-lock.json`
-5. `.claude-plugin/plugin.json`
-6. `.claude-plugin/marketplace.json`
-7. `bin/prr-darwin-universal`, through its compiled Cargo version
+5. `bin/prr-darwin-universal`, through its compiled Cargo version
 
-Binary-affecting changes under `src/`, `references/prompts/`, or Rust dependency metadata bump the minor version and reset the patch. OpenCode, Claude, agent, skill, and documentation-only changes bump the patch version. Rebuild the binary for every version bump, including documentation-only changes.
+Binary-affecting changes under `src/`, `references/prompts/`, or Rust dependency metadata bump the minor version and reset the patch. Plugin metadata, agent, skill, and documentation-only changes bump the patch version. Rebuild the binary for every version bump, including documentation-only changes.
 
 ## Publishing
 
