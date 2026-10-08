@@ -5,7 +5,7 @@ PRR runs two independent reviews of a GitHub pull request, compares their eviden
 The OpenCode plugin uses:
 
 - OpenCode's active model for a native review.
-- Codex CLI as an independent second review harness.
+- Codex CLI with GPT-6 Sol (`gpt-6-sol`) as an independent second review harness.
 - OpenCode's active model in a separate arbiter context for synthesis and follow-up questions.
 
 The existing Claude Code plugin remains available during the OpenCode migration.

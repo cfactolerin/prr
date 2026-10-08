@@ -25,6 +25,7 @@ import { parse } from "yaml"
 const packageRoot = dirname(fileURLToPath(import.meta.url))
 const assetRoot = join(packageRoot, ".opencode")
 const binary = join(packageRoot, "bin", "prr-darwin-universal")
+const codexModel = "gpt-6-sol"
 const sessionRounds = new Map()
 const capabilities = new Map()
 
@@ -206,6 +207,7 @@ async function runCodex({ capability, promptPath, repoPath, outputPath, timeoutS
   const timeout = Math.min(Math.max(timeoutSeconds, 30), 3600) * 1000
   const args = [
     "-a", "never", "exec",
+    "--model", codexModel,
     "--ignore-user-config", "--ignore-rules",
     "--disable", "hooks", "--disable", "apps", "--disable", "multi_agent",
     "--strict-config", "-C", paths.repo,
@@ -438,6 +440,7 @@ async function runCodexHealth(_args, context) {
   const executablePaths = codexExecutablePaths()
   const args = [
     "-a", "never", "exec",
+    "--model", codexModel,
     "--ignore-user-config", "--ignore-rules",
     "--disable", "hooks", "--disable", "apps", "--disable", "multi_agent",
     "--strict-config", "--skip-git-repo-check", "-C", repo,

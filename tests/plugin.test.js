@@ -139,7 +139,7 @@ test("rejects Codex paths outside a PRR round", async () => {
   )
 })
 
-test("Codex wrapper validates paths and strips process secrets", async () => {
+test("Codex wrapper pins the model, validates paths and strips process secrets", async () => {
   const root = mkdtempSync(join(tmpdir(), "prr-plugin-test-"))
   const home = join(root, "home")
   const workspace = join(home, ".prr", "workspace")
@@ -175,6 +175,11 @@ const fs = require("node:fs")
 if (process.argv[1] !== fs.realpathSync(process.argv[1])) {
   process.stderr.write("Codex must be launched from its resolved executable path\\n")
   process.exit(42)
+}
+const modelIndex = process.argv.indexOf("--model")
+if (modelIndex === -1 || process.argv[modelIndex + 1] !== "gpt-6-sol") {
+  process.stderr.write("Codex must use GPT-6 Sol for reviews and health checks\\n")
+  process.exit(43)
 }
 const index = process.argv.indexOf("--output-last-message")
 if (index === -1) {
@@ -291,6 +296,7 @@ fs.writeFileSync(process.argv[index + 1], JSON.stringify({
     const captured = JSON.parse(readFileSync(output, "utf8"))
     assert.equal(captured.secret, null)
     assert.equal(captured.codexHome, process.env.CODEX_HOME)
+    assert.equal(captured.args[captured.args.indexOf("--model") + 1], "gpt-6-sol")
     assert.ok(captured.args.includes("--ignore-user-config"))
     assert.ok(captured.args.some((arg) => arg.includes("shell_environment_policy.filters")))
     assert.ok(captured.args.some((arg) => arg.includes('PATH="/usr/bin:/bin:/usr/sbin:/sbin"')))
