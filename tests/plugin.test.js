@@ -139,7 +139,7 @@ test("rejects Codex paths outside a PRR round", async () => {
   )
 })
 
-test("Codex wrapper pins the model, validates paths and strips process secrets", async () => {
+test("Codex wrapper defaults the model, validates paths and strips process secrets", async () => {
   const root = mkdtempSync(join(tmpdir(), "prr-plugin-test-"))
   const home = join(root, "home")
   const workspace = join(home, ".prr", "workspace")
@@ -325,6 +325,78 @@ fs.writeFileSync(process.argv[index + 1], JSON.stringify({
         timeoutSeconds: 30,
       }, { agent: "prr-codex-reviewer", sessionID: "codex-session" }),
     )
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test("Codex reviews and health checks read the configured model on each call", async () => {
+  const root = mkdtempSync(join(tmpdir(), "prr-codex-model-test-"))
+  const home = join(root, "home")
+  const configPath = join(home, ".prr", "config.yml")
+  const round = join(home, ".prr", "workspace", "acme-repo-pr-2", "r1")
+  const repo = join(round, "repo")
+  const role = join(round, "results", "reviewers", "codex")
+  const prompt = join(role, "review-prompt.md")
+  const output = join(role, "review.md")
+  const capture = join(root, "model.txt")
+  const bin = join(root, "bin")
+  mkdirSync(repo, { recursive: true })
+  mkdirSync(role, { recursive: true })
+  mkdirSync(join(round, "context"), { recursive: true })
+  mkdirSync(bin, { recursive: true })
+  writeFileSync(prompt, "Review this change.")
+  const fakeCodex = join(bin, "codex")
+  writeFileSync(fakeCodex, `#!${process.execPath}
+const fs = require("node:fs")
+const model = process.argv[process.argv.indexOf("--model") + 1]
+fs.writeFileSync(${JSON.stringify(capture)}, model)
+const outputIndex = process.argv.indexOf("--output-last-message")
+if (outputIndex === -1) process.stdout.write("HELLO\\n")
+else fs.writeFileSync(process.argv[outputIndex + 1], model)
+`)
+  chmodSync(fakeCodex, 0o755)
+  const previous = { HOME: process.env.HOME, PATH: process.env.PATH }
+  process.env.HOME = home
+  process.env.PATH = bin
+
+  try {
+    const hooks = await PrrPlugin.server()
+    const orchestrator = { agent: "prr-orchestrator", sessionID: "model-orchestrator" }
+    await hooks.tool.prr_bind_round.execute({ roundPath: round }, orchestrator)
+    const capability = await hooks.tool.prr_capability.execute({ roundPath: round, role: "codex" }, orchestrator)
+    const review = () => hooks.tool.prr_codex.execute({
+      capability, promptPath: prompt, repoPath: repo, outputPath: output, timeoutSeconds: 30,
+    }, { agent: "prr-codex-reviewer", sessionID: "model-reviewer" })
+    const health = () => hooks.tool.prr_codex_health.execute({})
+
+    for (const [yaml, expected] of [
+      ["codex_timeout: 900", "gpt-6-sol"],
+      ["codex_model: custom-codex-model", "custom-codex-model"],
+      ["codex_model: ' another-model '", "another-model"],
+    ]) {
+      writeFileSync(configPath, yaml)
+      await health()
+      assert.equal(readFileSync(capture, "utf8"), expected)
+      await review()
+      assert.equal(readFileSync(output, "utf8"), expected)
+    }
+
+    for (const yaml of [
+      "codex_model: ''", "codex_model: '  '", "codex_model: null",
+      "codex_model: []", "codex_model: {}", "codex_model: 42",
+    ]) {
+      writeFileSync(configPath, yaml)
+      await assert.rejects(health(), /codex_model must be a non-empty string/)
+      await assert.rejects(review(), /codex_model must be a non-empty string/)
+    }
+    writeFileSync(configPath, "codex_model: [invalid yaml")
+    await assert.rejects(health(), /Could not read PRR configuration/)
+    await assert.rejects(review(), /Could not read PRR configuration/)
   } finally {
     for (const [name, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[name]

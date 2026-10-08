@@ -22,6 +22,22 @@ fn default_codex_timeout() -> u64 {
     900
 }
 
+fn default_codex_model() -> String {
+    "gpt-6-sol".into()
+}
+
+fn deserialize_codex_model<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::String(model) if !model.trim().is_empty() => {
+            Ok(model.trim().to_string())
+        }
+        _ => Err(serde::de::Error::custom("codex_model must be a non-empty string")),
+    }
+}
+
 fn default_gemini_timeout() -> u64 {
     300
 }
@@ -70,6 +86,9 @@ pub struct Config {
     #[serde(default = "default_codex_timeout")]
     pub codex_timeout: u64,
 
+    #[serde(default = "default_codex_model", deserialize_with = "deserialize_codex_model")]
+    pub codex_model: String,
+
     #[serde(default = "default_gemini_timeout")]
     pub gemini_timeout: u64,
 
@@ -108,6 +127,7 @@ impl Default for Config {
             agents: default_agents(),
             claude_timeout: default_claude_timeout(),
             codex_timeout: default_codex_timeout(),
+            codex_model: default_codex_model(),
             gemini_timeout: default_gemini_timeout(),
             opencode_timeout: default_opencode_timeout(),
             gemini_model: default_gemini_model(),
@@ -243,6 +263,7 @@ pub fn runtime() -> Result<(), Box<dyn std::error::Error>> {
             "configured": configured,
             "workspace_path": config.expanded_workspace_path(),
             "codex_timeout": config.codex_timeout,
+            "codex_model": config.codex_model,
             "arbiter_rounds": config.arbiter_rounds,
             "jira_configured": !config.jira_base_url.is_empty()
                 && !config.jira_email.is_empty()
@@ -320,11 +341,25 @@ mod tests {
         assert_eq!(cfg.agents, vec!["claude".to_string()]);
         assert_eq!(cfg.claude_timeout, 600);
         assert_eq!(cfg.codex_timeout, 900);
+        assert_eq!(cfg.codex_model, "gpt-6-sol");
         assert_eq!(cfg.gemini_timeout, 300);
         assert_eq!(cfg.opencode_timeout, 900);
         assert_eq!(cfg.gemini_model, "gemini-2.5-flash");
         assert_eq!(cfg.opencode_model, "openai/gpt-6-astra");
         assert_eq!(cfg.arbiter_rounds, 3);
+    }
+
+    #[test]
+    fn test_codex_model_override() {
+        let cfg: Config = serde_yaml::from_str("codex_model: ' custom-codex-model '").unwrap();
+        assert_eq!(cfg.codex_model, "custom-codex-model");
+    }
+
+    #[test]
+    fn test_codex_model_rejects_invalid_values() {
+        for value in ["''", "'  '", "null", "[]", "{}", "42"] {
+            assert!(serde_yaml::from_str::<Config>(&format!("codex_model: {value}")).is_err());
+        }
     }
 
     #[test]
@@ -343,6 +378,7 @@ mod tests {
         assert_eq!(cfg.agents, vec!["claude", "codex"]);
         assert_eq!(cfg.claude_timeout, 900);
         assert_eq!(cfg.codex_timeout, 900);
+        assert_eq!(cfg.codex_model, "gpt-6-sol");
     }
 
     #[test]
@@ -391,10 +427,12 @@ mod tests {
         let path = dir.path().join("config.yml");
         let mut cfg = Config::default();
         cfg.jira_base_url = "https://test.atlassian.net/".into();
+        cfg.codex_model = "custom-codex-model".into();
         cfg.save_to_path(&path).unwrap();
         let loaded = Config::load_from_path(&path).unwrap();
         assert_eq!(loaded.jira_base_url, "https://test.atlassian.net/");
         assert_eq!(loaded.agents, vec!["claude"]);
+        assert_eq!(loaded.codex_model, "custom-codex-model");
     }
 
     #[test]
@@ -403,16 +441,19 @@ mod tests {
         cfg.jira_base_url = "https://test.atlassian.net".into();
         cfg.jira_email = "user@example.com".into();
         cfg.jira_api_token = "secret".into();
+        cfg.codex_model = "custom-codex-model".into();
 
         cfg.configure_for_opencode("~/reviews", false);
         assert_eq!(cfg.workspace_path, "~/reviews");
         assert_eq!(cfg.agents, vec!["opencode", "codex"]);
         assert_eq!(cfg.jira_api_token, "secret");
+        assert_eq!(cfg.codex_model, "custom-codex-model");
 
         cfg.configure_for_opencode("~/reviews", true);
         assert!(cfg.jira_base_url.is_empty());
         assert!(cfg.jira_email.is_empty());
         assert!(cfg.jira_api_token.is_empty());
+        assert_eq!(cfg.codex_model, "custom-codex-model");
     }
 
     #[cfg(unix)]

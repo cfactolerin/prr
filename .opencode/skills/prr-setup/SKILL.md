@@ -21,6 +21,8 @@ Use these values for every OpenCode installation:
 
 Only the workspace and optional Jira fields are interactive. Do not offer different reviewers, models, timeouts, or arbitration rounds.
 
+`codex_model` defaults to `gpt-6-sol` and is configurable in `~/.prr/config.yml`. Preserve an existing choice during setup; do not overwrite it with the default.
+
 ## 1. Read Existing Settings
 
 Run `"$PRR_BIN" config runtime` and parse its JSON output. It exposes only non-secret runtime settings. Never read `~/.prr/config.yml` directly.
@@ -46,7 +48,7 @@ gh auth status
 codex login status
 ```
 
-Finally, call `prr_codex_health` with no arguments. It uses the same isolated permission profile as reviews, strips process secrets while preserving Codex authentication state, and rejects Codex versions that do not support the required policy.
+Finally, call `prr_codex_health` with no arguments. It uses the configured `codex_model` and the same isolated permission profile as reviews, strips process secrets while preserving Codex authentication state, and rejects Codex versions that do not support the required policy.
 
 Treat a nonzero exit, timeout, authentication error, or missing recognizable response as a failure. If any check fails, report the exact failing prerequisite and use the question tool with explicit options:
 
@@ -87,7 +89,7 @@ Add `--clear-jira` when the user selected **Skip Jira** or **Configure Jira late
 
 ## 6. Confirm
 
-Report the config path, selected workspace, fixed reviewers, Codex timeout, arbitration rounds, Jira status, and successful prerequisite checks.
+Report the config path, selected workspace, fixed reviewers, Codex model and timeout, arbitration rounds, Jira status, and successful prerequisite checks. Explain that `codex_model` can be changed in `~/.prr/config.yml` without restarting OpenCode.
 
 Repeat the plaintext-token warning when Jira is configured. Explain that review clones and artifacts are stored under the workspace.
 

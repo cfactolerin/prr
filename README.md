@@ -5,7 +5,7 @@ PRR runs two independent reviews of a GitHub pull request, compares their eviden
 The OpenCode plugin uses:
 
 - OpenCode's active model for a native review.
-- Codex CLI with GPT-6 Sol (`gpt-6-sol`) as an independent second review harness.
+- Codex CLI as an independent second review harness, using `gpt-6-sol` by default.
 - OpenCode's active model in a separate arbiter context for synthesis and follow-up questions.
 
 The existing Claude Code plugin remains available during the OpenCode migration.
@@ -125,6 +125,14 @@ arbiter_rounds: 3
 ```
 
 `workspace_path` is configurable. If setup selects a workspace outside `~/.prr/workspace`, restart OpenCode so the plugin can refresh the subagents' external-directory permissions.
+
+To choose the Codex model for OpenCode reviews, add or edit this setting in `~/.prr/config.yml`:
+
+```yaml
+codex_model: gpt-6-sol
+```
+
+Use a model ID supported by your Codex account. PRR reads the setting for each review, follow-up answer, and health check, so no restart is needed. Omitting it keeps `gpt-6-sol`; `/prr-setup` preserves an existing choice. PRR ignores Codex's own user configuration for isolated reviews, so set the model here rather than in `~/.codex/config.toml`.
 
 Jira tokens are stored as plaintext in `~/.prr/config.yml`, which PRR writes with owner-only permissions. Add or replace credentials in a local editor rather than through an OpenCode chat, and do not commit the file.
 

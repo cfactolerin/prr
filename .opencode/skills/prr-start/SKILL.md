@@ -24,7 +24,7 @@ Wait for the task result in the current primary thread and use that result in th
 
 1. Run exactly `"$PRR_BIN" config runtime` as one standalone shell command and parse its JSON output. Do not prepend `printf`, `echo`, `pwd`, `env`, or any other command; do not use `&&`, `;`, a pipe, `bash -lc`, or retry with a different form. Never read `~/.prr/config.yml`; it may contain credentials.
 2. If `configured` is false, tell the user to run `/prr-setup` and stop.
-3. Use the returned `workspace_path`, `codex_timeout`, and `arbiter_rounds`.
+3. Use the returned `workspace_path`, `codex_timeout`, and `arbiter_rounds`. The Codex tools read `codex_model` from PRR configuration themselves; do not pass or override it in reviewer dispatches.
 4. The active reviewer keys are fixed as `opencode` and `codex`. Ignore other configured reviewer names and warn that `/prr-setup` can normalize an older config.
 5. Validate that `$ARGUMENTS` contains a PR URL or `owner/repo#N`. Recognize an optional `--ticket <ID>` and keep it separate from the PR reference. If no usable PR reference exists, use the question tool with **Provide PR reference** and **Cancel** options.
 

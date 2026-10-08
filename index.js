@@ -25,7 +25,7 @@ import { parse } from "yaml"
 const packageRoot = dirname(fileURLToPath(import.meta.url))
 const assetRoot = join(packageRoot, ".opencode")
 const binary = join(packageRoot, "bin", "prr-darwin-universal")
-const codexModel = "gpt-6-sol"
+const defaultCodexModel = "gpt-6-sol"
 const sessionRounds = new Map()
 const capabilities = new Map()
 
@@ -56,6 +56,23 @@ function configuredWorkspace() {
   } catch {
     return canonicalPath(join(homedir(), ".prr", "workspace"))
   }
+}
+
+function configuredCodexModel() {
+  const configPath = join(homedir(), ".prr", "config.yml")
+  if (!existsSync(configPath)) return defaultCodexModel
+
+  let config
+  try {
+    config = parse(readFileSync(configPath, "utf8")) ?? {}
+  } catch {
+    throw new Error("Could not read PRR configuration from ~/.prr/config.yml")
+  }
+  if (config.codex_model === undefined) return defaultCodexModel
+  if (typeof config.codex_model !== "string" || config.codex_model.trim() === "") {
+    throw new Error("codex_model must be a non-empty string in ~/.prr/config.yml")
+  }
+  return config.codex_model.trim()
 }
 
 const prrCommandNames = ["prr-setup", "prr-start", "prr-cleanup"]
@@ -207,7 +224,7 @@ async function runCodex({ capability, promptPath, repoPath, outputPath, timeoutS
   const timeout = Math.min(Math.max(timeoutSeconds, 30), 3600) * 1000
   const args = [
     "-a", "never", "exec",
-    "--model", codexModel,
+    "--model", configuredCodexModel(),
     "--ignore-user-config", "--ignore-rules",
     "--disable", "hooks", "--disable", "apps", "--disable", "multi_agent",
     "--strict-config", "-C", paths.repo,
@@ -436,11 +453,12 @@ async function runPrrArtifact({ operation, sourcePath, targetPath }, context) {
 }
 
 async function runCodexHealth(_args, context) {
+  const model = configuredCodexModel()
   const repo = realpathSync(mkdtempSync(join(tmpdir(), "prr-codex-health-")))
   const executablePaths = codexExecutablePaths()
   const args = [
     "-a", "never", "exec",
-    "--model", codexModel,
+    "--model", model,
     "--ignore-user-config", "--ignore-rules",
     "--disable", "hooks", "--disable", "apps", "--disable", "multi_agent",
     "--strict-config", "--skip-git-repo-check", "-C", repo,
