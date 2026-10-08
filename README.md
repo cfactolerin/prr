@@ -113,7 +113,7 @@ Inside OpenCode, run:
 
 Setup verifies `gh`, `git`, and Codex, then configures the review workspace. It defaults to `~/.prr/workspace` and stores settings in `~/.prr/config.yml`.
 
-Jira is optional. Setup can preserve or remove existing Jira settings. Add new credentials outside the model session.
+Jira is optional. PRR uses a connected Atlassian MCP server first, with configured Jira API credentials as a fallback. Setup can preserve or remove existing Jira settings. Add new credentials outside the model session.
 
 After setup succeeds, use [Start A Review](#start-a-review). PRR supplies its own binary path; you do not need to install `prr` separately or set `PRR_BIN` yourself.
 
@@ -157,7 +157,7 @@ The OpenCode reviewer and arbiter inherit the model selected in the current Open
 
 ## How It Works
 
-1. **Context gathering:** the Rust engine clones the pull request, computes the diff, fetches linked Jira and Confluence context, and indexes repository guidance such as `AGENTS.md` and `README.md`.
+1. **Context gathering:** PRR clones the pull request, computes the diff, fetches linked Jira and Confluence context through Atlassian MCP or the Jira API fallback, and indexes repository guidance such as `AGENTS.md` and `README.md`.
 2. **Independent review:** a native OpenCode subagent and Codex CLI receive the same prompt in separate contexts. Neither receives the other's output.
 3. **Arbitration:** a separate OpenCode subagent compares both reviews and may ask either reviewer for path, line, test, or documentation evidence.
 4. **Interactive review:** PRR presents each finding individually so it can be accepted, edited, challenged, or rejected.
@@ -193,6 +193,16 @@ codex_model: gpt-6-sol
 Use a model ID supported by your Codex account. PRR reads the setting for each review, follow-up answer, and health check, so no restart is needed. Omitting it keeps `gpt-6-sol`; `/prr-setup` preserves an existing choice. PRR ignores Codex's own user configuration for isolated reviews, so set the model here rather than in `~/.codex/config.toml`.
 
 Jira tokens are stored as plaintext in `~/.prr/config.yml`, which PRR writes with owner-only permissions. Add or replace credentials in a local editor rather than through an OpenCode chat, and do not commit the file.
+
+### Atlassian Context
+
+On OpenCode 2, PRR detects connected MCP servers with `getAccessibleAtlassianResources` and `getJiraIssue` read tools. Linked pages use `getConfluenceContent` or `getConfluencePage`. Authenticate your Atlassian server through OpenCode's `/mcps` interface; PRR does not read or copy its OAuth credentials or invoke write tools.
+
+If you have access to multiple Atlassian sites, include the ticket's full URL in the PR title or description, or set `jira_base_url` in `~/.prr/config.yml`. PRR will not guess which site owns a ticket key.
+
+When MCP is unavailable, unsupported, or cannot fetch the ticket, PRR tries the existing `jira_base_url`, `jira_email`, and `jira_api_token` settings. Partial page reads and attachments also try this fallback without discarding fetched MCP context. MCP alone saves attachment metadata, not attachment files, and fetches up to 20 linked pages. Missing context is noted in the manifest shown before reviews begin. OpenCode 1 and standalone binary context commands retain the REST integration.
+
+Both reviewers and the arbiter consume the same saved context. They have no direct Atlassian MCP access.
 
 ## Updating
 

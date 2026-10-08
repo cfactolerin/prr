@@ -9,6 +9,15 @@ pub fn run(
     workspace_path: &str,
     ticket_override: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    run_with_atlassian(pr_input, workspace_path, ticket_override, false)
+}
+
+pub fn run_with_atlassian(
+    pr_input: &str,
+    workspace_path: &str,
+    ticket_override: Option<&str>,
+    defer_atlassian: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load()?;
     let pr_ref = pr::PrRef::parse(pr_input)?;
 
@@ -46,7 +55,7 @@ pub fn run(
 
     // Fetch Jira ticket if configured and ticket found
     let context_dir = round_dir.join("context");
-    if let Some(ref tid) = ticket_id {
+    if let Some(tid) = ticket_id.as_ref().filter(|_| !defer_atlassian) {
         if let Some(client) = jira::JiraClient::new(&config) {
             eprintln!("Fetching Jira ticket {tid}...");
             if let Err(e) = client.fetch_ticket(tid, &context_dir) {

@@ -54,11 +54,11 @@ Report what was removed and retained. If cleanup fails, show the relevant error 
 Run one of:
 
 ```bash
-"$PRR_BIN" context-open-code "<PR_REF>"
+"$PRR_BIN" context-open-code "<PR_REF>" --defer-atlassian
 ```
 
 ```bash
-"$PRR_BIN" context-open-code "<PR_REF>" --ticket "<TICKET_ID>"
+"$PRR_BIN" context-open-code "<PR_REF>" --ticket "<TICKET_ID>" --defer-atlassian
 ```
 
 Capture the last stdout line exactly as `ROUND_DIR`; it is the absolute round directory. Set:
@@ -72,6 +72,10 @@ Capture the last stdout line exactly as `ROUND_DIR`; it is the absolute round di
 - `ARBITER_DIR=<RESULTS_PATH>/arbiter`
 
 Immediately call `prr_bind_round` with `ROUND_DIR`, before reading any gathered content. Every later primary-thread PRR file tool call is restricted to this bound round.
+
+Then call `prr_atlassian_context` with `roundPath: ROUND_DIR` before reading the manifest or building any reviewer prompt. It checks connected MCP servers at runtime, uses only supported read-only Atlassian tools, saves the ticket and linked Confluence pages under `<CONTEXT_PATH>`, and updates the manifest. If MCP is unavailable or cannot fetch the ticket, it falls back to the configured Jira API token. Incomplete linked-page reads also try the token fallback; any remaining limitations are reported in the manifest. On OpenCode 1, this tool uses the REST fallback because the MCP execution bridge is unavailable.
+
+Never call Atlassian MCP tools directly or change MCP permissions. The plugin owns discovery, site selection, and bounded read-only calls; reviewers and the arbiter receive only the saved context. If no credentials can fetch a detected ticket, present that limitation rather than implying ticket acceptance criteria were reviewed. Treat a context-tool failure like other context failures and offer **Retry context** or **Abort review**.
 
 Reviewer tasks may access only the clone and their own directory. They must never receive the shared results directory or another role's artifact path. `prr_artifact` creates private artifact directories when it copies the prompts.
 

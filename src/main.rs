@@ -12,6 +12,7 @@ mod report;
 mod cleanup;
 mod opencode;
 mod review;
+mod atlassian;
 
 #[derive(Parser)]
 #[command(name = "prr", about = "PRR — AI-powered PR review tool")]
@@ -40,7 +41,12 @@ enum Commands {
         /// Jira ticket ID override
         #[arg(long)]
         ticket: Option<String>,
+        /// Let the OpenCode plugin try MCP before fetching Atlassian context
+        #[arg(long)]
+        defer_atlassian: bool,
     },
+    /// Import the round's Atlassian MCP snapshot, falling back to configured REST credentials
+    ContextAtlassian { round_dir: String },
     /// Assemble a prompt from gathered context
     Prompt {
         /// Prompt type: review, arbiter, question
@@ -157,10 +163,11 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Commands::Context { pr, workspace, ticket } => {
             context::run(&pr, &workspace, ticket.as_deref())
         }
-        Commands::ContextOpenCode { pr, ticket } => {
+        Commands::ContextOpenCode { pr, ticket, defer_atlassian } => {
             let workspace = config::Config::load()?.expanded_workspace_path();
-            context::run(&pr, &workspace.to_string_lossy(), ticket.as_deref())
+            context::run_with_atlassian(&pr, &workspace.to_string_lossy(), ticket.as_deref(), defer_atlassian)
         }
+        Commands::ContextAtlassian { round_dir } => atlassian::run(&round_dir),
         Commands::Prompt {
             review,
             arbiter,

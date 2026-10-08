@@ -21,6 +21,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { fileURLToPath } from "node:url"
 import { tool } from "@opencode-ai/plugin"
 import { parse } from "yaml"
+import { fetchAtlassianContext } from "./atlassian.js"
 
 const packageRoot = dirname(fileURLToPath(import.meta.url))
 const assetRoot = join(packageRoot, ".opencode")
@@ -28,6 +29,7 @@ const binary = join(packageRoot, "bin", "prr-darwin-universal")
 const defaultCodexModel = "gpt-6-sol"
 const sessionRounds = new Map()
 const capabilities = new Map()
+const atlassianResources = new Map()
 
 function canonicalPath(path) {
   const resolved = resolve(path)
@@ -127,7 +129,7 @@ function registerSkills(config) {
 function registerToolDefaults(config) {
   config.permission ??= {}
   for (const name of [
-    "prr_artifact", "prr_bind_round", "prr_capability", "prr_codex", "prr_codex_health",
+    "prr_artifact", "prr_atlassian_context", "prr_bind_round", "prr_capability", "prr_codex", "prr_codex_health",
     "prr_read", "prr_write",
   ]) {
     if (config.permission[name] === undefined) config.permission[name] = "deny"
@@ -452,6 +454,52 @@ async function runPrrArtifact({ operation, sourcePath, targetPath }, context) {
   return `Copied ${source.target} to ${target}`
 }
 
+async function runBinary(args, context) {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(binary, args, { signal: context?.abort, timeout: 120_000, stdio: ["ignore", "pipe", "pipe"] })
+    let stdout = ""
+    let stderr = ""
+    child.stdout.on("data", (chunk) => { stdout = (stdout + chunk).slice(-65_536) })
+    child.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-65_536) })
+    child.on("error", reject)
+    child.on("close", (code) => {
+      if (code === 0) resolvePromise(stdout)
+      else reject(new Error(stderr.trim() || "PRR context command failed"))
+    })
+  })
+}
+
+async function runPrrAtlassianContext({ roundPath: path }, context, host) {
+  if (context?.agent !== "prr-orchestrator") throw new Error("Only the PRR orchestrator may gather Atlassian context")
+  const round = roundRoot(configuredWorkspace(), path)
+  requireBoundRound(context, round)
+  if (existsSync(join(round, "results", "review-prompt.md"))) {
+    throw new Error("Atlassian context must be gathered before reviewer prompts are built")
+  }
+  const manifest = roundPath(configuredWorkspace(), join(round, "context-manifest.md"))
+  if (manifest.round !== round || statSync(manifest.target).size > 2 * 1024 * 1024) throw new Error("Invalid context manifest")
+  const saved = readFileSync(manifest.target, "utf8").split("\n## Atlassian Context\n")[1]
+  if (saved !== undefined) return saved.trim()
+  const results = realpathSync(join(round, "results"))
+  const read = (name) => {
+    const file = roundPath(configuredWorkspace(), join(results, name))
+    if (file.round !== round || !isWithin(results, file.target) || statSync(file.target).size > 2 * 1024 * 1024) {
+      throw new Error("Invalid Atlassian context input")
+    }
+    return readFileSync(file.target, "utf8")
+  }
+  const ticketId = read("ticket-id.txt").trim()
+  const metadata = JSON.parse(read("pr-metadata.json"))
+  const runtime = JSON.parse(await runBinary(["config", "runtime"], context))
+  const snapshot = await fetchAtlassianContext({
+    host, ticketId, metadata, baseUrl: runtime.jira_base_url,
+    context: { ...context, signal: context.abort }, resourceCache: atlassianResources,
+  })
+  const output = artifactOutput(results, join(results, "atlassian-context.json"))
+  writeFileSync(output, JSON.stringify(snapshot))
+  return runBinary(["context-atlassian", round], context)
+}
+
 async function runCodexHealth(_args, context) {
   const model = configuredCodexModel()
   const repo = realpathSync(mkdtempSync(join(tmpdir(), "prr-codex-health-")))
@@ -510,6 +558,11 @@ const arg = {
 }
 
 const toolDefinitions = {
+  prr_atlassian_context: {
+    description: "Gather the bound round's ticket and linked Confluence pages through read-only Atlassian MCP tools, falling back to Jira API credentials.",
+    args: { roundPath: arg.string() },
+    execute: runPrrAtlassianContext,
+  },
   prr_bind_round: {
     description: "Bind the current PRR orchestrator session to one review round.",
     args: { roundPath: arg.string() },
@@ -694,7 +747,7 @@ async function setup(ctx) {
           if (!toolAllowed(agentPermissions.get(context.agent), name)) {
             throw new Error(`${name} is not allowed for ${context.agent ?? "this agent"}`)
           }
-          const content = await definition.execute(input, { ...context, abort: context.signal })
+          const content = await definition.execute(input, { ...context, abort: context.signal }, ctx)
           return { content }
         },
       })

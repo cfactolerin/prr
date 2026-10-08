@@ -54,6 +54,7 @@ Do not replace the native reviewer with a nested `opencode run`. Keep reviewer a
 |---|---|
 | `context <pr> --workspace <path>` | Fetch PR metadata, clone the repo, fetch ticket context, and write a context manifest |
 | `context-open-code <pr>` | Gather context in the configured OpenCode workspace |
+| `context-atlassian <round>` | Import the saved MCP snapshot and supplement missing context with REST |
 | `prompt --review <dir>` | Write `results/review-prompt.md` |
 | `prompt --arbiter <dir>` | Assemble reviews and Q&A history into `results/arbiter-prompt.md` |
 | `prompt --question <dir> --agent <name> --questions-file <path> [--round <N>]` | Write a reviewer question prompt; inline `--questions` remains for legacy compatibility |
@@ -89,6 +90,8 @@ rustup target add x86_64-apple-darwin aarch64-apple-darwin
 ```
 
 The committed binary lets users install the OpenCode plugin without a Rust toolchain.
+
+OpenCode 2 context gathering uses `context-open-code --defer-atlassian`, then the bound-round `prr_atlassian_context` tool. The tool discovers connected MCP servers and invokes only supported Atlassian read tools. The Rust importer saves reviewer context and uses configured REST credentials when needed. Reviewers and the arbiter never receive direct MCP access. OpenCode 1 and standalone context commands retain REST fetching.
 
 ## Versioning
 

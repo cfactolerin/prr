@@ -254,6 +254,13 @@ impl Config {
     }
 }
 
+fn jira_site_url(base_url: &str) -> String {
+    reqwest::Url::parse(base_url).ok()
+        .filter(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some())
+        .map(|url| url.origin().ascii_serialization())
+        .unwrap_or_default()
+}
+
 pub fn runtime() -> Result<(), Box<dyn std::error::Error>> {
     let configured = Config::config_path().exists();
     let config = Config::load()?;
@@ -268,6 +275,7 @@ pub fn runtime() -> Result<(), Box<dyn std::error::Error>> {
             "jira_configured": !config.jira_base_url.is_empty()
                 && !config.jira_email.is_empty()
                 && !config.jira_api_token.is_empty(),
+            "jira_base_url": jira_site_url(&config.jira_base_url),
         }))?
     );
     Ok(())
@@ -332,6 +340,13 @@ pub fn agents_delete(name: &str) -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_jira_site_url_does_not_expose_embedded_credentials() {
+        assert_eq!(jira_site_url("https://user:secret@company.atlassian.net/path?token=secret#secret"), "https://company.atlassian.net");
+        assert_eq!(jira_site_url("not a URL"), "");
+        assert_eq!(jira_site_url("file:///local/path"), "");
+    }
     use std::io::Write;
     use tempfile::NamedTempFile;
 

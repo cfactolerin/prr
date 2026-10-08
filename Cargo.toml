@@ -1,6 +1,6 @@
 [package]
 name = "prr"
-version = "0.22.2"
+version = "0.23.0"
 edition = "2021"
 description = "AI-powered pull request review engine for PRR plugins"
 
@@ -15,8 +15,6 @@ base64 = "0.22"
 html2text = "0.12"
 shellexpand = "3"
 dirs = "5"
-
-[dev-dependencies]
 tempfile = "3"
 
 [profile.release]

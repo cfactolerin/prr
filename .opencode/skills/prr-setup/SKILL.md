@@ -69,6 +69,8 @@ For a custom path, expand `~` when creating or checking the directory, but store
 
 ## 4. Configure Jira
 
+During reviews, PRR tries connected Atlassian MCP tools first. Jira API credentials are an optional fallback, not required when MCP can fetch the ticket and linked pages. MCP authentication is managed by OpenCode; never request or copy its OAuth credentials.
+
 Use the question tool with these explicit options:
 
 - **Skip Jira** - omit all Jira fields.

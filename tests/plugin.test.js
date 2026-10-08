@@ -76,6 +76,7 @@ test("registers PRR commands, agents, skills, and binary environment", async () 
   assert.equal(config.agent["prr-codex-reviewer"].permission.prr_codex, "allow")
   assert.equal(typeof hooks.tool.prr_codex.execute, "function")
   assert.equal(typeof hooks.tool.prr_codex_health.execute, "function")
+  assert.equal(typeof hooks.tool.prr_atlassian_context.execute, "function")
   assert.equal(typeof hooks.tool.prr_artifact.execute, "function")
   assert.equal(typeof hooks.tool.prr_bind_round.execute, "function")
   assert.equal(typeof hooks.tool.prr_capability.execute, "function")
@@ -411,6 +412,7 @@ test("tool executors settle as promises instead of returning or throwing synchro
   const orchestrator = { agent: "prr-orchestrator", sessionID: "unbound-session" }
   const missing = join(tmpdir(), "prr-missing-round", "r1")
   const failingCalls = {
+    prr_atlassian_context: { roundPath: missing },
     prr_bind_round: { roundPath: missing },
     prr_capability: { roundPath: missing, role: "opencode" },
     prr_read: { filePath: join(missing, "results", "review.md") },
@@ -447,7 +449,7 @@ test("V2 setup registers PRR tools, agents, skills, commands, and binary environ
   await PrrPlugin.setup(ctx)
 
   assert.deepEqual(registered.tools.map((item) => item.name).sort(), [
-    "prr_artifact", "prr_bind_round", "prr_capability", "prr_codex", "prr_codex_health", "prr_read", "prr_write",
+    "prr_artifact", "prr_atlassian_context", "prr_bind_round", "prr_capability", "prr_codex", "prr_codex_health", "prr_read", "prr_write",
   ])
   for (const item of registered.tools) assert.equal(item.options.codemode, false)
   const read = registered.tools.find((item) => item.name === "prr_read")
@@ -529,4 +531,56 @@ test("V2 tools refuse agents whose PRR rules do not allow them", async () => {
   await assert.rejects(
     bind.execute({ roundPath: join(tmpdir(), "prr-missing-round", "r1") }, { agent: "prr-orchestrator", sessionID: "s", signal }),
   )
+  const atlassian = registered.tools.find((item) => item.name === "prr_atlassian_context")
+  for (const agent of ["build", "prr-opencode-reviewer", "prr-codex-reviewer", "prr-arbiter", "prr-setup-orchestrator"]) {
+    await assert.rejects(atlassian.execute({}, { agent, sessionID: "s", signal }), /not allowed/)
+  }
+})
+
+test("V2 context tool saves a read-only MCP snapshot in the bound round before reviews", async () => {
+  const root = mkdtempSync(join(tmpdir(), "prr-atlassian-test-"))
+  const home = join(root, "home")
+  const workspace = join(home, ".prr", "workspace")
+  const round = join(workspace, "acme-repo-pr-1", "r1")
+  mkdirSync(join(round, "results"), { recursive: true })
+  mkdirSync(join(round, "context"))
+  writeFileSync(join(round, "context-manifest.md"), "# Context Manifest\n")
+  writeFileSync(join(round, "results", "ticket-id.txt"), "DI-123")
+  writeFileSync(join(round, "results", "pr-metadata.json"), JSON.stringify({ title: "DI-123" }))
+  const previousHome = process.env.HOME
+  process.env.HOME = home
+  try {
+    const { ctx, registered } = fakeV2Context()
+    const calls = []
+    ctx.mcp = { list: async () => ({ data: [{ name: "atlassian", status: { status: "connected" } }] }) }
+    ctx.tool.list = async () => [
+      { id: "atlassian_getAccessibleAtlassianResources", execute: async () => {
+        calls.push("sites")
+        return { content: JSON.stringify([{ id: "site-1", url: "https://company.atlassian.net" }]) }
+      } },
+      { id: "atlassian_getJiraIssue", input: { properties: { view: {} } }, execute: async (input) => {
+        calls.push(input)
+        return { content: JSON.stringify({ key: "DI-123", fields: { summary: "Requirements", description: "Preserve ordering" } }) }
+      } },
+    ]
+    await PrrPlugin.setup(ctx)
+    const context = { agent: "prr-orchestrator", sessionID: "atlassian-test", signal: new AbortController().signal }
+    const fetch = registered.tools.find((item) => item.name === "prr_atlassian_context")
+    await assert.rejects(fetch.execute({ roundPath: round }, context), /not bound/)
+    assert.equal(calls.length, 0)
+    await registered.tools.find((item) => item.name === "prr_bind_round").execute({ roundPath: round }, context)
+    const result = await fetch.execute({ roundPath: round }, context)
+    assert.match(result.content, /Source: Atlassian MCP/)
+    assert.match(readFileSync(join(round, "context", "ticket-context.md"), "utf8"), /Preserve ordering/)
+    assert.equal(JSON.parse(readFileSync(join(round, "results", "atlassian-context.json"), "utf8")).source, "mcp")
+    assert.deepEqual(calls, ["sites", { cloudId: "site-1", issueIdOrKey: "DI-123", view: "full" }])
+    await fetch.execute({ roundPath: round }, context)
+    assert.equal(calls.length, 2)
+    writeFileSync(join(round, "results", "review-prompt.md"), "Review prompt")
+    await assert.rejects(fetch.execute({ roundPath: round }, context), /before reviewer prompts/)
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    rmSync(root, { recursive: true, force: true })
+  }
 })
