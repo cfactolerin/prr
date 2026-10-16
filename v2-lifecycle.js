@@ -14,16 +14,21 @@ export function createReviewLifecycle() {
     const lease = randomUUID()
     reviews.set(sessionID, {
       lease, returnAgent, stopping: false, dispatchReady: false,
-      controller: new AbortController(), operations: new Set(),
+      controller: new AbortController(), operations: new Set(), children: new Map(),
     })
     return lease
   }
 
-  const activeReview = (sessionID, lease) => {
+  const ownedReview = (sessionID, lease) => {
     const review = reviews.get(sessionID)
-    if (!review || review.lease !== lease || review.stopping) {
+    if (!review || review.lease !== lease) {
       throw new Error("PRR review is not active")
     }
+    return review
+  }
+  const activeReview = (sessionID, lease) => {
+    const review = ownedReview(sessionID, lease)
+    if (review.stopping) throw new Error("PRR review is not active")
     return review
   }
 
@@ -72,6 +77,40 @@ export function createReviewLifecycle() {
       }
       return (sessionID) => leases.get(sessionID)
     },
+    childObserver(sessionID, lease, continuationID) {
+      const review = activeReview(sessionID, lease)
+      if (!review.dispatchReady) throw new Error("PRR child dispatch is not active")
+      if (continuationID !== undefined && !review.children.get(continuationID)?.verified) {
+        throw new Error("PRR child continuation is not owned")
+      }
+      // An authorized dispatch may reveal its child after Stop.
+      return (childID) => {
+        ownedReview(sessionID, lease)
+        if (typeof childID !== "string" || !childID.trim() || childID === sessionID) {
+          throw new Error("Invalid PRR child identity")
+        }
+        for (const owner of reviews.values()) {
+          if (owner !== review && owner.children.has(childID)) {
+            throw new Error("PRR child is already owned by another review")
+          }
+        }
+        const child = review.children.get(childID) ?? { verified: false }
+        review.children.set(childID, child)
+        return (session) => {
+          ownedReview(sessionID, lease)
+          if (review.children.get(childID) !== child || session?.id !== childID || session.parentID !== sessionID) {
+            throw new Error("Could not verify PRR child ownership")
+          }
+          child.verified = true
+        }
+      }
+    },
+    children(sessionID, lease) {
+      const review = ownedReview(sessionID, lease)
+      return Object.freeze([...review.children].map(([childID, child]) =>
+        Object.freeze({ sessionID: childID, verified: child.verified }),
+      ))
+    },
     current(sessionID) {
       const review = reviews.get(sessionID)
       if (!review) return undefined
@@ -104,6 +143,7 @@ export function createReviewLifecycle() {
           return finish(review.returnAgent)
         })
         .then((outcome) => {
+          review.children.clear()
           review.stopping = false
           lifecycle.release(sessionID, lease)
           return outcome
@@ -117,7 +157,8 @@ export function createReviewLifecycle() {
     },
     release(sessionID, lease) {
       const review = reviews.get(sessionID)
-      if (!review || review.lease !== lease || review.stopping || review.operations.size) return undefined
+      if (!review || review.lease !== lease || review.stopping || review.operations.size
+        || review.children.size) return undefined
       reviews.delete(sessionID)
       return review.returnAgent
     },

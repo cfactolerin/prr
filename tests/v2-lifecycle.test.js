@@ -317,3 +317,111 @@ test("positive startup delivery stays latched without reviving revoked dispatch"
   assert.throws(() => lifecycle.activate("one", lease), /not active/)
   assert.throws(() => lifecycle.startupInputID("one", lease), /not active/)
 })
+
+function childReview() {
+  const lifecycle = createReviewLifecycle()
+  const lease = lifecycle.begin("parent", "coding")
+  lifecycle.activate("parent", lease)
+  return { lifecycle, lease, observe: lifecycle.childObserver("parent", lease) }
+}
+
+test("child observation requires an activated owner and valid child identities", () => {
+  const lifecycle = createReviewLifecycle()
+  const lease = lifecycle.reserve("parent")
+  assert.throws(() => lifecycle.childObserver("parent", lease), /not active/)
+  lifecycle.capture("parent", lease, "coding")
+  lifecycle.activate("parent", lease)
+  assert.throws(() => lifecycle.childObserver("other", lease), /not active/)
+  assert.throws(() => lifecycle.childObserver("parent", "stale"), /not active/)
+  const observe = lifecycle.childObserver("parent", lease)
+  for (const childID of [undefined, null, "", " ", 42, "parent"]) {
+    assert.throws(() => observe(childID), /Invalid PRR child/)
+  }
+  assert.deepEqual(lifecycle.children("parent", lease), [])
+  assert.throws(() => lifecycle.children("other", lease), /not active/)
+  assert.throws(() => lifecycle.children("parent", "stale"), /not active/)
+})
+
+test("child ownership stays provisional until the exact host identity is confirmed", () => {
+  const { lifecycle, lease, observe } = childReview()
+  const confirm = observe("child-one")
+  const before = lifecycle.children("parent", lease)
+  assert.deepEqual(before, [{ sessionID: "child-one", verified: false }])
+  for (const session of [undefined, {}, { id: "child-two", parentID: "parent" }, { id: "child-one", parentID: "other" }]) {
+    assert.throws(() => confirm(session), /verify PRR child/)
+    assert.deepEqual(lifecycle.children("parent", lease), before)
+  }
+  confirm({ id: "child-one", parentID: "parent" })
+  assert.deepEqual(lifecycle.children("parent", lease), [{ sessionID: "child-one", verified: true }])
+  assert.equal(before[0].verified, false)
+  assert.throws(() => before.push({ sessionID: "forged", verified: true }), TypeError)
+  assert.throws(() => { before[0].verified = true }, TypeError)
+})
+
+test("one child observer retains multiple children and repeated progress is idempotent", () => {
+  const { lifecycle, lease, observe } = childReview()
+  const first = observe("child-one")
+  const second = observe("child-two")
+  first({ id: "child-one", parentID: "parent" })
+  observe("child-one")({ id: "child-one", parentID: "parent" })
+  second({ id: "child-two", parentID: "parent" })
+  assert.deepEqual(lifecycle.children("parent", lease), [
+    { sessionID: "child-one", verified: true }, { sessionID: "child-two", verified: true },
+  ])
+})
+
+test("an authorized dispatch can retain and verify a child reported during Stop", () => {
+  const { lifecycle, lease, observe } = childReview()
+  lifecycle.revoke("parent", lease)
+  assert.throws(() => lifecycle.childObserver("parent", lease), /not active/)
+  const confirm = observe("late-child")
+  assert.deepEqual(lifecycle.children("parent", lease), [{ sessionID: "late-child", verified: false }])
+  confirm({ id: "late-child", parentID: "parent" })
+  assert.deepEqual(lifecycle.children("parent", lease), [{ sessionID: "late-child", verified: true }])
+  assert.equal(lifecycle.leaseSnapshot()("parent"), undefined)
+  assert.equal(lifecycle.current("parent").stopping, true)
+})
+
+test("another active parent cannot claim a provisional or confirmed child", () => {
+  const { lifecycle, lease, observe } = childReview()
+  const other = lifecycle.begin("other", "plan")
+  lifecycle.activate("other", other)
+  const foreign = lifecycle.childObserver("other", other)
+  const confirm = observe("child-one")
+  assert.throws(() => foreign("child-one"), /already owned/)
+  assert.deepEqual(lifecycle.children("other", other), [])
+  confirm({ id: "child-one", parentID: "parent" })
+  assert.throws(() => foreign("child-one"), /already owned/)
+  assert.deepEqual(lifecycle.children("parent", lease), [{ sessionID: "child-one", verified: true }])
+})
+
+test("continuations and old callbacks cannot borrow a replacement generation", async () => {
+  const { lifecycle, lease, observe } = childReview()
+  assert.throws(() => lifecycle.childObserver("parent", lease, "unknown"), /not owned/)
+  const confirm = observe("child-one")
+  assert.throws(() => lifecycle.childObserver("parent", lease, "child-one"), /not owned/)
+  confirm({ id: "child-one", parentID: "parent" })
+  assert.equal(typeof lifecycle.childObserver("parent", lease, "child-one"), "function")
+  await lifecycle.exit("parent", lease, (agent) => agent)
+  const replacement = lifecycle.begin("parent", "plan")
+  lifecycle.activate("parent", replacement)
+  assert.throws(() => observe("late-child"), /not active/)
+  assert.throws(() => confirm({ id: "child-one", parentID: "parent" }), /not active/)
+  assert.throws(() => lifecycle.children("parent", lease), /not active/)
+  assert.throws(() => lifecycle.childObserver("parent", replacement, "child-one"), /not owned/)
+  assert.deepEqual(lifecycle.children("parent", replacement), [])
+})
+
+test("only successful finish retires children; release and failed finish preserve recovery", async () => {
+  const { lifecycle, lease, observe } = childReview()
+  const confirm = observe("child-one")
+  assert.equal(lifecycle.release("parent", lease), undefined)
+  const failure = new Error("Child cleanup failed")
+  await assert.rejects(lifecycle.exit("parent", lease, () => { throw failure }), (error) => error === failure)
+  assert.deepEqual(lifecycle.current("parent"), { lease, returnAgent: "coding", stopping: true })
+  assert.deepEqual(lifecycle.children("parent", lease), [{ sessionID: "child-one", verified: false }])
+  confirm({ id: "child-one", parentID: "parent" })
+  assert.equal(lifecycle.release("parent", lease), undefined)
+  assert.equal(await lifecycle.exit("parent", lease, (agent) => agent), "coding")
+  assert.equal(lifecycle.current("parent"), undefined)
+})
