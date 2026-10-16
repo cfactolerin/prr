@@ -14,6 +14,9 @@
     "bin/prr-darwin-universal",
     "index.js",
     "atlassian.js",
+    "v2-lifecycle.js",
+    "v2-exit.js",
+    "v2-startup.js",
     "README.md"
   ],
   "os": [
