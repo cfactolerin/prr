@@ -22,6 +22,8 @@ import { fileURLToPath } from "node:url"
 import { tool } from "@opencode-ai/plugin"
 import { parse } from "yaml"
 import { fetchAtlassianContext } from "./atlassian.js"
+import { createReviewLifecycle } from "./v2-lifecycle.js"
+import { registerStartupObservation } from "./v2-startup.js"
 
 const packageRoot = dirname(fileURLToPath(import.meta.url))
 const assetRoot = join(packageRoot, ".opencode")
@@ -491,10 +493,12 @@ async function runPrrAtlassianContext({ roundPath: path }, context, host) {
   const ticketId = read("ticket-id.txt").trim()
   const metadata = JSON.parse(read("pr-metadata.json"))
   const runtime = JSON.parse(await runBinary(["config", "runtime"], context))
+  context.prrAssertCurrent?.()
   const snapshot = await fetchAtlassianContext({
     host, ticketId, metadata, baseUrl: runtime.jira_base_url,
     context: { ...context, signal: context.abort }, resourceCache: atlassianResources,
   })
+  context.prrAssertCurrent?.()
   const output = artifactOutput(results, join(results, "atlassian-context.json"))
   writeFileSync(output, JSON.stringify(snapshot))
   return runBinary(["context-atlassian", round], context)
@@ -725,6 +729,7 @@ function toolAllowed(permissions, name) {
 
 async function setup(ctx) {
   requireBinary()
+  const lifecycle = createReviewLifecycle()
   const agents = v2Agents()
   const agentPermissions = new Map(agents.map(({ name, permissions }) => [name, permissions]))
   const skills = v2Skills()
@@ -736,7 +741,10 @@ async function setup(ctx) {
     event.env.PRR_PLUGIN_ROOT = packageRoot
   })
 
+  await registerStartupObservation(ctx, lifecycle)
+
   await ctx.tool.transform((editor) => {
+    const leaseFor = lifecycle.leaseSnapshot()
     for (const [name, definition] of Object.entries(toolDefinitions)) {
       editor.add({
         name,
@@ -747,7 +755,20 @@ async function setup(ctx) {
           if (!toolAllowed(agentPermissions.get(context.agent), name)) {
             throw new Error(`${name} is not allowed for ${context.agent ?? "this agent"}`)
           }
-          const content = await definition.execute(input, { ...context, abort: context.signal }, ctx)
+          const invoke = (abort, prrAssertCurrent) => definition.execute(
+            input, { ...context, abort, ...(prrAssertCurrent ? { prrAssertCurrent } : {}) }, ctx,
+          )
+          let content
+          if (context.agent === "prr-orchestrator") {
+            content = await lifecycle.run(context.sessionID, leaseFor(context.sessionID), async (signal) => {
+              const abort = context.signal ? AbortSignal.any([context.signal, signal]) : signal
+              const assertCurrent = () => abort.throwIfAborted()
+              assertCurrent()
+              const result = await invoke(abort, assertCurrent)
+              assertCurrent()
+              return result
+            })
+          } else content = await invoke(context.signal)
           return { content }
         },
       })
@@ -781,16 +802,79 @@ async function setup(ctx) {
         name,
         description: metadata.description,
         execute: async ({ sessionID, prompt, delivery }) => {
-          if (metadata.agent) {
-            const session = await ctx.session.get({ sessionID })
-            if (session.agent !== metadata.agent) await ctx.session.switchAgent({ sessionID, agent: metadata.agent })
+          if (name === "prr-start" && delivery === "queue") {
+            throw new Error("PRR cannot start queued; submit the command with immediate delivery")
           }
-          await ctx.session.prompt({
-            ...prompt,
-            sessionID,
-            text: body.replaceAll("$ARGUMENTS", prompt.text),
-            delivery,
-          })
+          const lease = name === "prr-start" ? lifecycle.reserve(sessionID) : undefined
+          let promptAttempted = false
+          let rollbackFailed = false
+          const runCommand = async (signal) => {
+            if (metadata.agent) {
+              const session = await ctx.session.get({ sessionID })
+              signal?.throwIfAborted()
+              if (name === "prr-start") {
+                lifecycle.capture(sessionID, lease, session.agent)
+                let switchAttempted = false
+                try {
+                  const { data: previous } = await ctx.agent.get({ agentID: session.agent })
+                  signal.throwIfAborted()
+                  if (prrAgentNames.includes(session.agent) || previous?.hidden
+                    || !["primary", "all"].includes(previous?.mode)) {
+                    throw new Error("Select an available coding agent before starting PRR")
+                  }
+                  const selected = await ctx.session.get({ sessionID })
+                  signal.throwIfAborted()
+                  if (selected.agent !== session.agent) {
+                    throw new Error("Session agent changed while PRR was starting")
+                  }
+                  switchAttempted = true
+                  await ctx.session.switchAgent({ sessionID, agent: metadata.agent })
+                  signal.throwIfAborted()
+                  lifecycle.activate(sessionID, lease)
+                  await ctx.tool.reload()
+                  signal.throwIfAborted()
+                } catch (error) {
+                  if (signal.aborted) throw error
+                  try {
+                    if (switchAttempted) {
+                      const selected = await ctx.session.get({ sessionID })
+                      signal.throwIfAborted()
+                      if (selected.agent === metadata.agent) {
+                        await ctx.session.switchAgent({ sessionID, agent: session.agent })
+                        signal.throwIfAborted()
+                      }
+                    }
+                  } catch (restoreError) {
+                    rollbackFailed = true
+                    lifecycle.revoke(sessionID, lease)
+                    throw new AggregateError(
+                      [error, restoreError],
+                      "PRR startup failed and the previous agent could not be restored",
+                    )
+                  }
+                  throw error
+                }
+              } else if (session.agent !== metadata.agent) {
+                await ctx.session.switchAgent({ sessionID, agent: metadata.agent })
+              }
+            }
+            promptAttempted = true
+            await ctx.session.prompt({
+              ...prompt,
+              ...(lease ? { id: lifecycle.startupInputID(sessionID, lease) } : {}),
+              sessionID,
+              text: body.replaceAll("$ARGUMENTS", prompt.text),
+              delivery,
+            })
+            signal?.throwIfAborted()
+          }
+          try {
+            if (lease) await lifecycle.run(sessionID, lease, runCommand)
+            else await runCommand()
+          } catch (error) {
+            if (lease && !promptAttempted && !rollbackFailed) lifecycle.release(sessionID, lease)
+            throw error
+          }
         },
       })
     }
