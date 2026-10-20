@@ -1,11 +1,12 @@
 {
   "name": "opencode-prr",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "description": "OpenCode plugin for independent OpenCode and Codex pull request reviews",
   "type": "module",
   "main": "./index.js",
   "exports": {
-    ".": "./index.js"
+    ".": "./index.js",
+    "./tui": "./tui.js"
   },
   "files": [
     ".opencode/agents",
@@ -14,6 +15,9 @@
     "bin/prr-darwin-universal",
     "index.js",
     "atlassian.js",
+    "review-state.js",
+    "review-rpc.js",
+    "tui.js",
     "README.md"
   ],
   "os": [
@@ -45,6 +49,33 @@
   "license": "UNLICENSED",
   "dependencies": {
     "@opencode-ai/plugin": "^1.18.31",
+    "@opencode/plugin": "^2.1.0",
     "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@opentui/core": "^0.6.6",
+    "@opentui/solid": "^0.6.6",
+    "solid-js": "^1.9.17"
+  },
+  "peerDependencies": {
+    "@opentui/core": ">=0.6.6",
+    "@opentui/solid": ">=0.6.6",
+    "solid-js": ">=1.9.0"
+  },
+  "peerDependenciesMeta": {
+    "@opentui/core": {
+      "optional": true
+    },
+    "@opentui/solid": {
+      "optional": true
+    },
+    "solid-js": {
+      "optional": true
+    }
+  },
+  "overrides": {
+    "@opentui/solid": {
+      "solid-js": "$solid-js"
+    }
   }
 }

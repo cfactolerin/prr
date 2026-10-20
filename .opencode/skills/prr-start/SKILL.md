@@ -8,7 +8,7 @@ compatibility: OpenCode with the PRR npm plugin installed.
 
 Run the complete review in the current primary thread. The command arguments are `$ARGUMENTS`. The npm plugin injects `PRR_BIN` as an absolute path into every bash environment.
 
-Use absolute paths returned by the binary. Every binary invocation must use quoted `"$PRR_BIN"`. Use `prr_read` and `prr_write` instead of built-in file tools for every PRR artifact and repository path. Use `prr_artifact` for artifact copies and removals. When the todowrite tool is available, use it to track the six pipeline items below. Use the question tool for every user decision, always with explicit options.
+Use absolute paths returned by the binary. Every binary invocation must use quoted `"$PRR_BIN"`. Use `prr_read` and `prr_write` instead of built-in file tools for every PRR artifact and repository path. Use `prr_artifact` for artifact copies and removals. Use `prr_progress` to track the six pipeline items below in the sidebar. On OpenCode 1, where `prr_progress` is unavailable, use `todowrite`. Use the question tool for every user decision, always with explicit options.
 
 ## Untrusted Content Rule
 
@@ -28,7 +28,7 @@ Wait for the task result in the current primary thread and use that result in th
 4. The active reviewer keys are fixed as `opencode` and `codex`. Ignore other configured reviewer names and warn that `/prr-setup` can normalize an older config.
 5. Validate that `$ARGUMENTS` contains a PR URL or `owner/repo#N`. Recognize an optional `--ticket <ID>` and keep it separate from the PR reference. If no usable PR reference exists, use the question tool with **Provide PR reference** and **Cancel** options.
 
-With todowrite available, create these items and update each from pending to in progress to completed:
+Track these items in order:
 
 1. Cleanup stale reviews
 2. Gather context
@@ -36,6 +36,10 @@ With todowrite available, create these items and update each from pending to in 
 4. Run independent reviews
 5. Run arbiter synthesis
 6. Interactive investigation
+
+For phases 1–6, call `prr_progress` with the 1-based `step` and `status: "in_progress"` before starting the phase, then `status: "completed"` only after it finishes. Mark the current step `"blocked"` when a failure or abort stops the workflow; leave later steps pending. A retry changes the step back to `"in_progress"`. If cleanup is skipped after a failure, leave it blocked rather than claiming it completed. On OpenCode 1, create and update the equivalent `todowrite` items instead.
+
+The sidebar context summary is populated automatically when the round is bound and refreshed after Atlassian context is gathered. Do not copy user-supplied example metadata into it.
 
 The findings and posting phases are interactive and are not tracked as pipeline items.
 

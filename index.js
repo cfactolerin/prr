@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url"
 import { tool } from "@opencode-ai/plugin"
 import { parse } from "yaml"
 import { fetchAtlassianContext } from "./atlassian.js"
+import { createReviewState } from "./review-state.js"
 
 const packageRoot = dirname(fileURLToPath(import.meta.url))
 const assetRoot = join(packageRoot, ".opencode")
@@ -130,7 +131,7 @@ function registerToolDefaults(config) {
   config.permission ??= {}
   for (const name of [
     "prr_artifact", "prr_atlassian_context", "prr_bind_round", "prr_capability", "prr_codex", "prr_codex_health",
-    "prr_read", "prr_write",
+    "prr_progress", "prr_read", "prr_write",
   ]) {
     if (config.permission[name] === undefined) config.permission[name] = "deny"
   }
@@ -558,6 +559,15 @@ const arg = {
 }
 
 const toolDefinitions = {
+  prr_progress: {
+    description: "Update one of the six PRR review stages in the session sidebar (1-based step).",
+    args: { step: arg.positiveInt({ max: 6 }), status: arg.enum(["pending", "in_progress", "completed", "blocked"]) },
+    execute: async ({ step, status }, context, host) => {
+      if (context?.agent !== "prr-orchestrator") throw new Error("Only the PRR orchestrator may update progress")
+      await host.reviewState.update(requireSession(context), step, status)
+      return `PRR step ${step}: ${status}`
+    },
+  },
   prr_atlassian_context: {
     description: "Gather the bound round's ticket and linked Confluence pages through read-only Atlassian MCP tools, falling back to Jira API credentials.",
     args: { roundPath: arg.string() },
@@ -658,7 +668,7 @@ async function server() {
     },
     // OpenCode passes each executor to Effect's promise combinator, which calls .then()
     // on the return value, so a synchronous return or throw breaks the tool call.
-    tool: Object.fromEntries(Object.entries(toolDefinitions).map(([name, definition]) => [name, tool({
+    tool: Object.fromEntries(Object.entries(toolDefinitions).filter(([name]) => name !== "prr_progress").map(([name, definition]) => [name, tool({
       description: definition.description,
       args: zodArgs(definition.args),
       execute: definition.execute,
@@ -725,6 +735,15 @@ function toolAllowed(permissions, name) {
 
 async function setup(ctx) {
   requireBinary()
+  const { reviewRpc } = await import("./review-rpc.js")
+  let registration
+  const reviewState = createReviewState(ctx.storage, (data) => registration.events.emit("updated", data))
+  registration = await ctx.rpc.register(reviewRpc, {
+    get: async ({ sessionID }) => {
+      const state = await reviewState.get(sessionID)
+      return state ? { steps: state.steps, summary: state.summary } : null
+    },
+  })
   const agents = v2Agents()
   const agentPermissions = new Map(agents.map(({ name, permissions }) => [name, permissions]))
   const skills = v2Skills()
@@ -747,7 +766,16 @@ async function setup(ctx) {
           if (!toolAllowed(agentPermissions.get(context.agent), name)) {
             throw new Error(`${name} is not allowed for ${context.agent ?? "this agent"}`)
           }
-          const content = await definition.execute(input, { ...context, abort: context.signal }, ctx)
+          const host = name === "prr_progress" ? { reviewState } : ctx
+          const content = await definition.execute(input, { ...context, abort: context.signal }, host)
+          if (name === "prr_bind_round" || name === "prr_atlassian_context") {
+            const round = sessionRounds.get(context.sessionID)
+            const manifest = roundPath(configuredWorkspace(), join(round, "context-manifest.md"))
+            if (manifest.round !== round || statSync(manifest.target).size > 2 * 1024 * 1024) {
+              throw new Error("Invalid context manifest")
+            }
+            await reviewState.context(context.sessionID, round, readFileSync(manifest.target, "utf8"))
+          }
           return { content }
         },
       })
@@ -785,6 +813,7 @@ async function setup(ctx) {
             const session = await ctx.session.get({ sessionID })
             if (session.agent !== metadata.agent) await ctx.session.switchAgent({ sessionID, agent: metadata.agent })
           }
+          if (name === "prr-start") await reviewState.reset(sessionID)
           await ctx.session.prompt({
             ...prompt,
             sessionID,

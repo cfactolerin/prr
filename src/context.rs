@@ -98,13 +98,14 @@ pub fn run_with_atlassian(
     let version = format!("v{}", env!("CARGO_PKG_VERSION"));
     let branch = format!("`{head_branch}` -> `{base_branch}`");
     let round_label = format!("r{round_num}");
+    let ticket = ticket_link(ticket_id.as_deref(), &config.jira_base_url);
     let mut manifest = manifest_header(&[
         ("PRR", &version),
         ("PR", pr_url),
         ("Title", pr_title),
         ("Author", pr_author),
         ("Branch", &branch),
-        ("Ticket", ticket_id.as_deref().unwrap_or("none")),
+        ("Ticket", &ticket),
         ("Round", &round_label),
     ]);
     manifest.push_str("\n## Gathered Context\n\n");
@@ -198,6 +199,27 @@ fn manifest_header(fields: &[(&str, &str)]) -> String {
         header.push_str(&format!("- **{label}**: {value}\n"));
     }
     header
+}
+
+pub(crate) fn ticket_link(ticket_id: Option<&str>, base_url: &str) -> String {
+    let Some(ticket) = ticket_id else { return "none".into() };
+    if !ticket.split_once('-').map(|(project, number)| {
+        !project.is_empty() && project.bytes().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == b'_')
+            && !number.is_empty() && number.bytes().all(|c| c.is_ascii_digit())
+    }).unwrap_or(false) {
+        return ticket.into();
+    }
+    if let Ok(mut url) = reqwest::Url::parse(base_url) {
+        if matches!(url.scheme(), "http" | "https") && url.host_str().is_some()
+            && url.username().is_empty() && url.password().is_none()
+        {
+            url.set_path(&format!("/browse/{ticket}"));
+            url.set_query(None);
+            url.set_fragment(None);
+            return format!("[{ticket}]({url})");
+        }
+    }
+    ticket.into()
 }
 
 fn fetch_pr_metadata(pr_ref: &pr::PrRef) -> Result<Value, Box<dyn std::error::Error>> {
@@ -474,6 +496,19 @@ mod tests {
             "# Context Manifest\n\n- **PRR**: v1.2.3\n- **Title**: Share the guard\n"
         );
         assert!(!header.contains('|'));
+    }
+
+    #[test]
+    fn manifest_ticket_links_use_only_http_jira_urls() {
+        assert_eq!(ticket_link(Some("DI-1364"), "https://company.atlassian.net/"),
+            "[DI-1364](https://company.atlassian.net/browse/DI-1364)");
+        assert_eq!(ticket_link(Some("DI-1364"), "http://localhost:8080/browse/DI-1?x=1#top"),
+            "[DI-1364](http://localhost:8080/browse/DI-1364)");
+        for site in ["", "file:///etc/passwd", "javascript:alert(1)", "https://user:secret@company.atlassian.net"] {
+            assert_eq!(ticket_link(Some("DI-1364"), site), "DI-1364");
+        }
+        assert_eq!(ticket_link(None, "https://company.atlassian.net"), "none");
+        assert_eq!(ticket_link(Some("DI-1)[x]"), "https://company.atlassian.net"), "DI-1)[x]");
     }
 
     #[test]

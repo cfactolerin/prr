@@ -8,6 +8,7 @@ permission:
     "prr-*": allow
   question: allow
   todowrite: allow
+  prr_progress: allow
   task:
     "*": allow
     prr-opencode-reviewer: allow

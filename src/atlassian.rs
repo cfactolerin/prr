@@ -103,7 +103,12 @@ fn run_with_config(config: &Config, requested: &Path) -> Result<(), Box<dyn std:
     for note in notes {
         summary.push_str(&format!("- Note: {}\n", note.replace(['\n', '\r'], " ")));
     }
-    std::fs::write(manifest_path, format!("{manifest}\n## Atlassian Context\n\n{summary}"))?;
+    let site = snapshot.site_url.as_deref().unwrap_or(&config.jira_base_url);
+    let ticket = crate::context::ticket_link(Some(ticket_id), site);
+    let manifest = manifest.lines().map(|line| {
+        if line.starts_with("- **Ticket**: ") { format!("- **Ticket**: {ticket}") } else { line.to_string() }
+    }).collect::<Vec<_>>().join("\n");
+    std::fs::write(manifest_path, format!("{manifest}\n\n## Atlassian Context\n\n{summary}"))?;
     println!("{summary}");
     Ok(())
 }
@@ -275,6 +280,23 @@ mod tests {
         assert!(manifest.contains("MCP is not connected"));
         assert!(manifest.contains("fallback is not configured"));
         assert!(!round.join("context/ticket-context.md").exists());
+    }
+
+    #[test]
+    fn manifest_ticket_links_use_the_mcp_site_without_api_credentials() {
+        let root = tempfile::tempdir().unwrap();
+        let (config, round) = round_fixture(root.path(), json!({
+            "source": "mcp", "site_url": "https://company.atlassian.net",
+            "ticket": {"key": "DI-123", "fields": {"summary": "A change"}}
+        }));
+        std::fs::write(round.join("context-manifest.md"),
+            "# Context Manifest\n\n- **Ticket**: DI-123\n- **Round**: r1\n").unwrap();
+        run_with_config(&config, &round).unwrap();
+        let manifest = std::fs::read_to_string(round.join("context-manifest.md")).unwrap();
+        assert!(manifest.contains("- **Ticket**: [DI-123](https://company.atlassian.net/browse/DI-123)"));
+        assert!(manifest.contains("- **Round**: r1"));
+        run_with_config(&config, &round).unwrap();
+        assert_eq!(std::fs::read_to_string(round.join("context-manifest.md")).unwrap(), manifest);
     }
 
     #[test]

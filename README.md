@@ -145,6 +145,8 @@ To override automatic ticket detection:
 
 PRR gathers the context and shows it before dispatching either reviewer. You can add focus areas, ask the session to consult another OpenCode agent for additional context at any point, investigate the final findings, edit or reject proposed comments, and choose whether to approve, comment, request changes, or post nothing. User-requested context agents run in the foreground, so their answers remain in the active session context.
 
+In the OpenCode 2 terminal, the sidebar keeps the six review stages and the context manifest summary visible: PRR version, PR, title, author, branches, ticket, and round. PR and ticket links are clickable in terminals that support hyperlinks. The ticket links to the Jira site selected through MCP or configured for the API fallback. Sidebar state belongs to the review session and survives restarts; OpenCode 1 retains its built-in todo list.
+
 ## OpenCode Commands
 
 | Command | Description |

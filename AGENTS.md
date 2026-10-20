@@ -25,6 +25,7 @@ prr/
 |   `-- prompts/               # Templates compiled into the Rust binary
 |-- src/                       # Rust source
 |-- index.js                   # OpenCode plugin entry point
+|-- tui.js                     # OpenCode 2 sidebar entry point
 |-- package.json               # OpenCode package metadata
 |-- Cargo.toml
 `-- README.md
@@ -35,6 +36,8 @@ The OpenCode plugin registers commands and agents from `.opencode/`, adds the pa
 OpenCode 2 does not evaluate permissions for plugin tools and gives plugins no way to raise an approval prompt. Each PRR tool therefore checks the calling agent's own rule itself, and any action that needs user approval must go through a shell command with an `ask` rule. That is why GitHub posting is `"$PRR_BIN" post-review`, not a plugin tool.
 
 OpenCode assets must use quoted `"$PRR_BIN"`; retained legacy assets use `${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal`.
+
+The OpenCode 2 sidebar reads session-scoped review progress and the manifest header through the read-only RPC in `review-rpc.js`. `review-state.js` persists that state in plugin storage; only the orchestrator can update stages through `prr_progress`. The sidebar receives neither reviewer artifacts nor workspace paths. OpenCode 1 keeps its native `todowrite` list.
 
 ## OpenCode Architecture
 
