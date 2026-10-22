@@ -145,7 +145,9 @@ To override automatic ticket detection:
 
 PRR gathers the context and shows it before dispatching either reviewer. You can add focus areas, ask the session to consult another OpenCode agent for additional context at any point, investigate the final findings, edit or reject proposed comments, and choose whether to approve, comment, request changes, or post nothing. User-requested context agents run in the foreground, so their answers remain in the active session context.
 
-In the OpenCode 2 terminal, the sidebar keeps the six review stages and the context manifest summary visible: PRR version, PR, title, author, branches, ticket, and round. PR and ticket links are clickable in terminals that support hyperlinks. The ticket links to the Jira site selected through MCP or configured for the API fallback. Sidebar state belongs to the review session and survives restarts; OpenCode 1 retains its built-in todo list.
+In the OpenCode 2 terminal, the sidebar keeps seven review stages and the context manifest summary visible: PRR version, PR, title, author, branches, ticket, and round. After arbitration, **Review briefing** shows the change's purpose, saved-diff file and line counts, candid implementation assessment, readability, backwards compatibility, and the evidence and limits behind confidence. It pauses until you explicitly continue to **Interactive investigation**, including when no findings were identified. You can ask for an explanation or stop without posting.
+
+PR and ticket links are clickable in terminals that support hyperlinks. The ticket links to the Jira site selected through MCP or configured for the API fallback. Sidebar state belongs to the review session and survives restarts; older six-stage sessions retain their progress with the new briefing pending. OpenCode 1 retains its built-in todo list with the same seven stages and briefing pause.
 
 ## OpenCode Commands
 
@@ -162,8 +164,15 @@ The OpenCode reviewer and arbiter inherit the model selected in the current Open
 1. **Context gathering:** PRR clones the pull request, computes the diff, fetches linked Jira and Confluence context through Atlassian MCP or the Jira API fallback, and indexes repository guidance such as `AGENTS.md` and `README.md`.
 2. **Independent review:** a native OpenCode subagent and Codex CLI receive the same prompt in separate contexts. Neither receives the other's output.
 3. **Arbitration:** a separate OpenCode subagent compares both reviews and may ask either reviewer for path, line, test, or documentation evidence.
-4. **Interactive review:** PRR presents each finding individually so it can be accepted, edited, challenged, or rejected.
-5. **GitHub posting:** PRR builds a review only from the accepted findings and posts it with `prr post-review` after explicit confirmation and OpenCode's approval prompt for that command.
+4. **Review briefing:** read the summary, statistics, assessments, and confidence explanation before explicitly continuing to investigation.
+5. **Interactive review:** PRR presents each finding individually so it can be accepted, edited, challenged, or rejected.
+6. **GitHub posting:** PRR builds a review only from the accepted findings and posts it with `prr post-review` after explicit confirmation and OpenCode's approval prompt for that command. The briefing is not automatically published.
+
+### Review Policy
+
+Reviewers assess human readability rather than treating line length, method size, or disabled lint rules as automatic defects. New code should use clear practices supported by the configured runtime and dependencies, not repeat a poor legacy pattern for consistency. Improvements to existing code stay within the changed behavior; unrelated code is not modernized for its own sake. Bounded pre-PR commit history helps identify earlier decisions, but dates alone do not establish quality. Optional readability suggestions are low-severity and non-blocking, and must explain a concrete cost, compatible alternative, and tradeoff.
+
+Backwards-compatibility checks distinguish intended behavior changes from unintended regressions and unclear requirements. They cover affected callers, consumers, data contracts, and deployment or migration needs. An intentional break still needs appropriate handling; a refactor does not authorize silent contract changes. Confidence explains the evidence and limitations, distinguishing author-reported tests, static inspection, and verified execution. Older saved reports remain readable, but missing assessments are shown as unassessed rather than inferred.
 
 ## Configuration And Data
 

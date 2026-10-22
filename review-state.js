@@ -4,6 +4,7 @@ export const reviewSteps = [
   "Review context with user",
   "Run independent reviews",
   "Run arbiter synthesis",
+  "Review briefing",
   "Interactive investigation",
 ]
 
@@ -35,7 +36,14 @@ export function createReviewState(storage, emit) {
   const pending = new Map()
   const key = (sessionID) => `review/${sessionID}`
   const initial = () => ({ steps: reviewSteps.map((label) => ({ label, status: "pending" })), summary: [] })
-  const get = async (sessionID) => await storage.get(key(sessionID)) ?? null
+  const get = async (sessionID) => {
+    const state = await storage.get(key(sessionID))
+    if (!state) return null
+    return {
+      ...state,
+      steps: reviewSteps.map((label) => state.steps.find((step) => step.label === label) ?? { label, status: "pending" }),
+    }
+  }
   const save = async (sessionID, state) => {
     await storage.set(key(sessionID), state)
     await emit({ sessionID })

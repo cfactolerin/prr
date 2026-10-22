@@ -70,6 +70,10 @@ pub fn run_with_atlassian(
     let changed = git::changed_files(&repo_dir, base_branch)?;
     std::fs::write(round_dir.join("results/diff.txt"), &diff_text)?;
     std::fs::write(round_dir.join("results/changed-files.txt"), &changed)?;
+    std::fs::write(
+        round_dir.join("results/change-history.md"),
+        git::change_history(&repo_dir, base_branch, &changed),
+    )?;
 
     let repo_docs = gather_repo_docs(&repo_dir, &changed);
     for doc in &repo_docs.excluded {

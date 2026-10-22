@@ -39,6 +39,8 @@ OpenCode assets must use quoted `"$PRR_BIN"`; retained legacy assets use `${CLAU
 
 The OpenCode 2 sidebar reads session-scoped review progress and the manifest header through the read-only RPC in `review-rpc.js`. `review-state.js` persists that state in plugin storage; only the orchestrator can update stages through `prr_progress`. The sidebar receives neither reviewer artifacts nor workspace paths. OpenCode 1 keeps its native `todowrite` list.
 
+The seven stages include a user-gated Review briefing between arbiter synthesis and interactive investigation. Its assessments come from the arbiter report; `parse-report --diff` supplies deterministic snapshot statistics. Context gathering supplies bounded pre-PR file history for readability and migration judgments. New and changed code should use clear supported practices without unrelated legacy modernization. Reviewers explicitly assess backwards compatibility and explain confidence from evidence and limitations.
+
 ## OpenCode Architecture
 
 The OpenCode workflow has a restricted setup agent plus two review harnesses and four isolated review roles:

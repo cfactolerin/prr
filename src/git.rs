@@ -90,6 +90,41 @@ pub fn changed_files(repo: &Path, base_branch: &str) -> Result<String, Box<dyn s
     Ok(String::new())
 }
 
+pub fn change_history(repo: &Path, base_branch: &str, changed: &str) -> String {
+    let base = [base_branch.to_string(), format!("origin/{base_branch}")]
+        .iter()
+        .find_map(|reference| git_silent(repo, &["merge-base", reference, "pr-review"]));
+    let Some(base) = base else {
+        return "Change history unavailable: no merge-base in the supplied clone.".into();
+    };
+    let mut history = format!(
+        "History before this PR, at merge-base `{}`. Up to three commits per path for the first 40 changed paths. \
+         Dates are commit dates, not file creation dates or proof of code quality. \
+         Shallow history and renamed paths can hide earlier decisions; no history is not proof that code is new.\n",
+        base.trim()
+    );
+    for path in changed.lines().filter(|path| !path.is_empty()).take(40) {
+        let commits = git_silent(repo, &[
+            "log", "--no-show-signature", "--max-count=3", "--format=%h %cs %s",
+            "--follow", base.trim(), "--", path,
+        ]);
+        history.push_str(&format!("\n### `{path}`\n\n"));
+        match commits {
+            Some(commits) => {
+                for commit in commits.lines() {
+                    let bounded: String = commit.chars().take(500).collect();
+                    history.push_str(&format!("- {bounded}\n"));
+                }
+            }
+            None => history.push_str("No prior commits available for this path.\n"),
+        }
+    }
+    if changed.lines().count() > 40 {
+        history.push_str("\nRemaining paths omitted from this bounded history snapshot.\n");
+    }
+    history
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,5 +182,26 @@ mod tests {
         let dir = repo_with_diverged_base();
         let out = changed_files(dir.path(), "master").unwrap();
         assert_eq!(out.lines().collect::<Vec<_>>(), vec!["branch-only.txt"]);
+    }
+
+    #[test]
+    fn change_history_excludes_pr_and_later_base_commits() {
+        let dir = repo_with_diverged_base();
+        let history = change_history(dir.path(), "master", "shared.txt\nbranch-only.txt\n");
+        assert!(history.contains("initial"));
+        assert!(!history.contains("pr change"));
+        assert!(!history.contains("master moves on"));
+        assert!(history.contains("No prior commits available for this path."));
+        assert!(history.contains("Shallow history and renamed paths"));
+    }
+
+    #[test]
+    fn change_history_is_bounded_and_handles_missing_history() {
+        let dir = repo_with_diverged_base();
+        let paths = (0..42).map(|n| format!("path-{n}")).collect::<Vec<_>>().join("\n");
+        let history = change_history(dir.path(), "master", &paths);
+        assert_eq!(history.matches("### `").count(), 40);
+        assert!(history.contains("Remaining paths omitted"));
+        assert!(change_history(dir.path(), "unknown-base", "shared.txt").contains("no merge-base"));
     }
 }

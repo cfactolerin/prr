@@ -37,7 +37,9 @@ test("sidebar renders progress, context and links, refreshes live, and isolates 
     try {
       let frame = await view.waitForFrame(frame => frame.includes("DI-1364"))
       assert.ok(frame.includes("✓ Cleanup stale reviews"))
-      assert.ok(frame.includes("◉ Gather context"))
+       assert.ok(frame.includes("◉ Gather context"))
+      assert.ok(frame.includes("Review briefing"))
+      assert.ok(frame.includes("Interactive investigation"))
       assert.ok(frame.includes("Context manifest"))
       for (const label of ["PRR:", "PR:", "Title:", "Author:", "Branch:", "Ticket:", "Round:"]) assert.ok(frame.includes(label))
       const text = view.renderer.root.getChildren()[0].getChildren().find(node => node.plainText?.includes("Ticket:"))

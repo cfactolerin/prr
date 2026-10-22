@@ -10,6 +10,38 @@ APPROVE | REQUEST_CHANGES | COMMENT
 
 HIGH | MEDIUM | LOW
 
+Explain the evidence supporting the level and its limitations. Distinguish inspected code and
+assertions, author-reported tests, and verified runtime execution. Agreement is not proof.
+
+## Change Summary
+
+Purpose, changed behavior, and the main review question in plain language.
+
+## Overall Assessment
+
+Candid implementation assessment, including justified strengths, weaknesses, and remaining risks.
+
+## Code Quality
+
+Assess human readability and scoped modernization in new and changed code. Existing patterns are
+evidence, not an obligation to repeat poor practices. Recommendations must work with the configured
+runtime and dependencies and explain a concrete comprehension cost, alternative, and tradeoff.
+Leave unrelated legacy code alone. Optional LOW suggestions do not block approval. Include supported
+issues in Findings and reference their IDs here; do not manufacture suggestions when none are justified.
+
+## Backwards Compatibility
+
+Classify meaningful changes as Intended, Unintended, or Unclear, with base/head evidence, affected
+consumers, migration needs, and unverified boundaries. Intentional changes are not automatically safe;
+refactoring does not authorize silent contract changes. Reference supported findings by ID.
+
+The arbiter nests these assessment headings under `## Final Report` at level 3, like Verdict and
+Confidence. `parse-report` exposes them as optional `change_summary`, `overall_assessment`,
+`code_quality`, and `backwards_compatibility` strings, with `confidence_reasoning` separate from
+the confidence label. Older reports omit absent assessments. With `--diff`, `change_stats` counts
+changed/added/deleted/renamed files, binary files, and added/deleted text lines from the saved diff;
+binary content has no text line count. These counts do not imply execution or test coverage.
+
 ## Ticket Alignment
 
 | # | Criterion | Met | Evidence |

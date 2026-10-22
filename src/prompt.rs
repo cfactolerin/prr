@@ -66,6 +66,7 @@ pub fn build_review(
         &[
             ("{{pr_number}}", &pr_number),
             ("{{pr_title}}", &pr_title),
+            ("{{pr_body}}", &str_field(&meta, "body")),
             ("{{pr_url}}", &pr_url),
             ("{{pr_author}}", &pr_author),
             ("{{head_branch}}", &head_branch),
@@ -76,6 +77,7 @@ pub fn build_review(
             ("{{repo_docs}}", &repo_docs),
             ("{{previous_review}}", &previous_review),
             ("{{changed_files}}", &changed_files),
+            ("{{change_history}}", &change_history_section(&results)),
             ("{{diff}}", &diff),
             ("{{reviewer_tasks}}", &reviewer_tasks),
             ("{{repo}}", &repo),
@@ -140,6 +142,7 @@ pub fn build_arbiter(context_dir: &str) -> Result<(), Box<dyn std::error::Error>
         &[
             ("{{pr_number}}", &pr_number),
             ("{{pr_title}}", &pr_title),
+            ("{{pr_body}}", &str_field(&meta, "body")),
             ("{{pr_url}}", &pr_url),
             ("{{pr_author}}", &pr_author),
             ("{{head_branch}}", &head_branch),
@@ -150,6 +153,7 @@ pub fn build_arbiter(context_dir: &str) -> Result<(), Box<dyn std::error::Error>
             ("{{diff}}", &diff),
             ("{{repo_docs}}", &repo_docs),
             ("{{reviews}}", &reviews),
+            ("{{change_history}}", &change_history_section(&results)),
             ("{{round_history}}", &round_history),
             ("{{reviewer_tasks}}", &reviewer_tasks_section),
             ("{{repo}}", &repo),
@@ -206,6 +210,7 @@ pub fn build_question(
             ("{{context_path}}", &context_path),
             ("{{previous_review}}", &previous_review),
             ("{{questions}}", &questions),
+            ("{{change_history}}", &change_history_section(&results)),
         ],
     );
 
@@ -227,6 +232,15 @@ fn repo_docs_section(results: &Path) -> String {
         "No docs found.".to_string()
     } else {
         docs
+    }
+}
+
+fn change_history_section(results: &Path) -> String {
+    let history = read_if_exists(&results.join("change-history.md"));
+    if history.trim().is_empty() {
+        "No change history snapshot available. Do not infer code age from filesystem timestamps.".into()
+    } else {
+        history
     }
 }
 
@@ -680,6 +694,7 @@ mod tests {
         .unwrap();
         std::fs::write(base.join("results/diff.txt"), "diff content").unwrap();
         std::fs::write(base.join("results/changed-files.txt"), "src/main.rs").unwrap();
+        std::fs::write(base.join("results/change-history.md"), "Prior commit: preserve the API boundary.").unwrap();
 
         build_review(
             base.to_str().unwrap(),
@@ -689,10 +704,14 @@ mod tests {
 
         let out = std::fs::read_to_string(base.join("results/review-prompt.md")).unwrap();
         assert!(out.contains("Test PR"));
+        assert!(out.contains("PROJ-123 test body"));
+        assert!(!out.contains("{{pr_body}}"));
         assert!(out.contains("testuser"));
         assert!(out.contains("feat/test"));
         assert!(out.contains("diff content"));
         assert!(out.contains("Check auth"));
+        assert!(out.contains("Prior commit: preserve the API boundary."));
+        assert!(!out.contains("{{change_history}}"));
         let tasks = std::fs::read_to_string(base.join("results/reviewer-tasks.md")).unwrap();
         assert!(tasks.contains("Verify rollback"));
     }
@@ -710,7 +729,7 @@ mod tests {
             "author": {"login": "dev"},
             "headRefName": "fix/bug",
             "baseRefName": "main",
-            "body": ""
+            "body": "Preserve existing defaults while fixing the boundary."
         });
         std::fs::write(
             base.join("results/pr-metadata.json"),
@@ -732,9 +751,13 @@ mod tests {
 
         let out = std::fs::read_to_string(base.join("results/arbiter-prompt.md")).unwrap();
         assert!(out.contains("Arbiter Test"));
+        assert!(out.contains("Preserve existing defaults while fixing the boundary."));
+        assert!(!out.contains("{{pr_body}}"));
         assert!(out.contains("Claude Review"));
         assert!(out.contains("APPROVE"));
         assert!(out.contains("Check authorization boundaries"));
+        assert!(out.contains("No change history snapshot available."));
+        assert!(!out.contains("{{change_history}}"));
     }
 
     #[test]
@@ -771,6 +794,8 @@ mod tests {
         let out = std::fs::read_to_string(&out_path).unwrap();
         assert!(out.contains("Did you check line 42?"));
         assert!(out.contains("My prior review text."));
+        assert!(out.contains("No change history snapshot available."));
+        assert!(!out.contains("{{change_history}}"));
     }
 
     #[test]
@@ -795,6 +820,24 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn templates_require_briefing_assessments_and_scoped_review_policies() {
+        for template in [REVIEW_TEMPLATE, ARBITER_TEMPLATE] {
+            for heading in ["Change Summary", "Overall Assessment", "Code Quality", "Backwards Compatibility"] {
+                assert!(template.contains(&format!("## {heading}\n")), "missing {heading}");
+            }
+            for policy in ["Intended", "Unintended", "Unclear", "non-blocking", "tradeoff", "filesystem", "author-reported", "runtime"] {
+                assert!(template.to_lowercase().contains(&policy.to_lowercase()), "missing {policy}");
+            }
+            assert!(template.contains("{{change_history}}"));
+        }
+        assert!(REVIEW_TEMPLATE.contains("Existing patterns are evidence, not rules to preserve automatically"));
+        assert!(REVIEW_TEMPLATE.contains("Leave untouched code alone"));
+        assert!(ARBITER_TEMPLATE.contains("leave unrelated old code alone"));
+        assert!(ARBITER_TEMPLATE.contains("Agreement alone is not proof"));
+        assert!(ARBITER_TEMPLATE.contains("never justify\nREQUEST_CHANGES"));
     }
 
     #[test]

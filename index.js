@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url"
 import { tool } from "@opencode-ai/plugin"
 import { parse } from "yaml"
 import { fetchAtlassianContext } from "./atlassian.js"
-import { createReviewState } from "./review-state.js"
+import { createReviewState, reviewSteps } from "./review-state.js"
 
 const packageRoot = dirname(fileURLToPath(import.meta.url))
 const assetRoot = join(packageRoot, ".opencode")
@@ -560,8 +560,8 @@ const arg = {
 
 const toolDefinitions = {
   prr_progress: {
-    description: "Update one of the six PRR review stages in the session sidebar (1-based step).",
-    args: { step: arg.positiveInt({ max: 6 }), status: arg.enum(["pending", "in_progress", "completed", "blocked"]) },
+    description: "Update one of the seven PRR review stages in the session sidebar (1-based step).",
+    args: { step: arg.positiveInt({ max: reviewSteps.length }), status: arg.enum(["pending", "in_progress", "completed", "blocked"]) },
     execute: async ({ step, status }, context, host) => {
       if (context?.agent !== "prr-orchestrator") throw new Error("Only the PRR orchestrator may update progress")
       await host.reviewState.update(requireSession(context), step, status)

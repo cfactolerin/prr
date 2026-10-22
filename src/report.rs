@@ -49,10 +49,33 @@ pub struct Finding {
 pub struct ParsedReport {
     pub verdict: String,
     pub confidence: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence_reasoning: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub change_summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub overall_assessment: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code_quality: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backwards_compatibility: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub change_stats: Option<ChangeStats>,
     pub findings: Vec<Finding>,
     pub line_comments: Vec<LineComment>,
     pub review_action: Option<String>,
     pub review_body: Option<String>,
+}
+
+#[derive(Debug, Default, Serialize, PartialEq)]
+pub struct ChangeStats {
+    pub files_changed: usize,
+    pub files_added: usize,
+    pub files_deleted: usize,
+    pub files_renamed: usize,
+    pub binary_files: usize,
+    pub additions: usize,
+    pub deletions: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -115,11 +138,86 @@ pub fn parse_report_inner(content: &str, diff: Option<&str>) -> ParsedReport {
     ParsedReport {
         verdict,
         confidence,
+        confidence_reasoning: extract_section(content, "Confidence").and_then(|section| {
+            let end = section.find(char::is_whitespace).unwrap_or(section.len());
+            let reasoning = section[end..].trim().trim_start_matches(['—', '–', '-']).trim();
+            (!reasoning.is_empty()).then(|| reasoning.to_string())
+        }),
+        change_summary: extract_section(content, "Change Summary"),
+        overall_assessment: extract_section(content, "Overall Assessment"),
+        code_quality: extract_section(content, "Code Quality"),
+        backwards_compatibility: extract_section(content, "Backwards Compatibility"),
+        change_stats: diff.map(change_stats),
         findings,
         line_comments,
         review_action,
         review_body,
     }
+}
+
+fn change_stats(diff: &str) -> ChangeStats {
+    let mut stats = ChangeStats::default();
+    let mut in_file = false;
+    let mut in_hunk = false;
+    for line in diff.lines() {
+        if line.starts_with("diff --git ") {
+            stats.files_changed += 1;
+            in_file = true;
+            in_hunk = false;
+        } else if in_file && line.starts_with("@@ ") {
+            in_hunk = true;
+        } else if in_hunk {
+            if line.starts_with('+') {
+                stats.additions += 1;
+            } else if line.starts_with('-') {
+                stats.deletions += 1;
+            }
+        } else if in_file {
+            if line.starts_with("new file mode ") {
+                stats.files_added += 1;
+            } else if line.starts_with("deleted file mode ") {
+                stats.files_deleted += 1;
+            } else if line.starts_with("rename from ") {
+                stats.files_renamed += 1;
+            } else if line.starts_with("Binary files ") || line == "GIT binary patch" {
+                stats.binary_files += 1;
+            }
+        }
+    }
+    stats
+}
+
+fn extract_section(content: &str, heading: &str) -> Option<String> {
+    let mut level = None;
+    let mut lines = Vec::new();
+    let mut fence = None;
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        if let Some(marker @ ('`' | '~')) = trimmed.chars().next() {
+            let width = trimmed.chars().take_while(|c| *c == marker).count();
+            if width >= 3 {
+                match fence {
+                    None => fence = Some((marker, width)),
+                    Some((open, size))
+                        if open == marker && width >= size && trimmed[width..].trim().is_empty() =>
+                    {
+                        fence = None;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let depth = line.chars().take_while(|c| *c == '#').count();
+        let is_heading = fence.is_none() && depth > 0 && line[depth..].starts_with(' ');
+        if let Some(start) = level {
+            if is_heading && depth <= start { break; }
+            lines.push(line);
+        } else if is_heading && (2..=3).contains(&depth) && line[depth..].trim() == heading {
+            level = Some(depth);
+        }
+    }
+    let section = lines.join("\n").trim().to_string();
+    (!section.is_empty()).then_some(section)
 }
 
 fn verify_anchors(
@@ -787,6 +885,169 @@ pub fn parse_and_print(report_path: &str, diff_path: Option<&str>) -> Result<(),
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn briefing_sections_are_separate_from_findings_and_posted_body() {
+        let content = r#"## Final Report
+
+### Verdict
+
+APPROVE
+
+Restore the existing reader contract.
+
+### Confidence
+
+HIGH
+
+Direct field wiring; application tests were not executed.
+
+### Change Summary
+
+Populate the field read by the checker.
+
+### Overall Assessment
+
+The narrow fix preserves the existing consumer.
+
+### Code Quality
+
+No concrete issue identified.
+
+#### Scope
+
+No unrelated modernization is needed.
+
+### Backwards Compatibility
+
+Intended: restore metrics without changing their calculation.
+
+### Findings
+
+None identified.
+
+### Review Action
+
+Approve.
+"#;
+        let report = parse_report(content);
+        assert_eq!(report.verdict, "APPROVE");
+        assert_eq!(report.confidence, "HIGH");
+        assert_eq!(report.confidence_reasoning.as_deref(), Some("Direct field wiring; application tests were not executed."));
+        assert_eq!(report.change_summary.as_deref(), Some("Populate the field read by the checker."));
+        assert_eq!(report.overall_assessment.as_deref(), Some("The narrow fix preserves the existing consumer."));
+        assert!(report.code_quality.as_deref().unwrap().contains("#### Scope"));
+        assert_eq!(report.backwards_compatibility.as_deref(), Some("Intended: restore metrics without changing their calculation."));
+        assert!(report.findings.is_empty());
+        assert!(report.line_comments.is_empty());
+        assert_eq!(report.review_body.as_deref(), Some("Restore the existing reader contract."));
+        assert!(report.change_stats.is_none());
+    }
+
+    #[test]
+    fn older_reports_omit_unassessed_briefing_fields() {
+        let report = parse_report("## Verdict\n\nAPPROVE\n\n## Confidence\n\nMEDIUM — Static evidence only.\n\n## Findings\n\nNone identified.\n");
+        assert_eq!(report.confidence, "MEDIUM");
+        assert_eq!(report.confidence_reasoning.as_deref(), Some("Static evidence only."));
+        let json = serde_json::to_value(&report).unwrap();
+        for field in ["change_summary", "overall_assessment", "code_quality", "backwards_compatibility", "change_stats"] {
+            assert!(json.get(field).is_none(), "unexpected {field}");
+        }
+        assert!(parse_report("## Confidence\n\nLOW\n").confidence_reasoning.is_none());
+    }
+
+    #[test]
+    fn briefing_sections_preserve_fenced_headings() {
+        let content = r#"## Code Quality
+
+Example:
+
+````markdown
+### Backwards Compatibility
+```
+## Findings
+````
+
+Keep this explanation.
+
+## Backwards Compatibility
+
+Unclear: a client contract was not supplied.
+"#;
+        let report = parse_report(content);
+        assert!(report.code_quality.as_deref().unwrap().ends_with("Keep this explanation."));
+        assert_eq!(report.backwards_compatibility.as_deref(), Some("Unclear: a client contract was not supplied."));
+    }
+
+    #[test]
+    fn snapshot_statistics_count_text_and_nontext_changes_without_headers() {
+        let diff = r#"diff --git a/a.rb b/a.rb
+index 111..222 100644
+--- a/a.rb
++++ b/a.rb
+@@ -1 +1,2 @@
+-old
++new
++++data
+\ No newline at end of file
+diff --git a/new.rb b/new.rb
+new file mode 100644
+--- /dev/null
++++ b/new.rb
+@@ -0,0 +1 @@
++new
+diff --git a/gone.rb b/gone.rb
+deleted file mode 100644
+--- a/gone.rb
++++ /dev/null
+@@ -1 +0,0 @@
+-gone
+diff --git "a/old name" "b/new name"
+similarity index 100%
+rename from old name
+rename to new name
+diff --git a/image.png b/image.png
+Binary files a/image.png and b/image.png differ
+diff --git a/run b/run
+old mode 100644
+new mode 100755
+"#;
+        let report = parse_report_inner("## Verdict\n\nAPPROVE\n", Some(diff));
+        assert_eq!(report.change_stats.unwrap(), ChangeStats {
+            files_changed: 6,
+            files_added: 1,
+            files_deleted: 1,
+            files_renamed: 1,
+            binary_files: 1,
+            additions: 3,
+            deletions: 2,
+        });
+    }
+
+    #[test]
+    fn snapshot_statistics_handle_multiple_hunks_and_binary_patches() {
+        let diff = r#"diff --git a/a b/a
+--- a/a
++++ b/a
+@@ -1 +1 @@
+-x
++y
+@@ -9,0 +10,2 @@
++---content
+++++content
+diff --git a/bin b/bin
+new file mode 100644
+GIT binary patch
+literal 3
+abc
+"#;
+        assert_eq!(change_stats(diff), ChangeStats {
+            files_changed: 2, files_added: 1, binary_files: 1,
+            additions: 3, deletions: 1, ..ChangeStats::default()
+        });
+        assert_eq!(change_stats(""), ChangeStats::default());
+        assert_eq!(change_stats("+not a diff\n--- header\n"), ChangeStats::default());
+    }
 
     // ── New format tests ──────────────────────────────────────────────────
 

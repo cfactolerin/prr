@@ -52,7 +52,7 @@ test("review state is durable, session-scoped, resettable, and preserves concurr
     state.context("s1", "/round/r1", manifest),
   ])
   assert.deepEqual((await state.get("s1")).steps.map((step) => step.status), [
-    "completed", "in_progress", "pending", "pending", "pending", "pending",
+    "completed", "in_progress", "pending", "pending", "pending", "pending", "pending",
   ])
   const reloaded = createReviewState(storage, async () => {})
   assert.equal((await reloaded.get("s1")).summary.length, 7)
@@ -60,13 +60,55 @@ test("review state is durable, session-scoped, resettable, and preserves concurr
   assert.equal(events.length, 4)
   await state.update("s1", 1, "blocked")
   await state.update("s1", 6, "completed")
+  await state.update("s1", 7, "completed")
   await state.context("s1", "/round/r2", manifest.replace("r1", "r2"))
   assert.equal((await state.get("s1")).steps[0].status, "blocked")
   assert.equal((await state.get("s1")).steps[5].status, "pending")
+  assert.equal((await state.get("s1")).steps[6].status, "pending")
   await state.reset("s1")
   assert.equal((await state.get("s1")).summary.length, 0)
   assert.ok((await state.get("s1")).steps.every((step) => step.status === "pending"))
-  for (const [step, status] of [[0, "completed"], [7, "pending"], [1, "bogus"]]) {
+  for (const [step, status] of [[0, "completed"], [8, "pending"], [1, "bogus"]]) {
     await assert.rejects(state.update("s1", step, status), /Invalid PRR progress/)
   }
+})
+
+test("old six-stage sessions keep investigation status when the briefing is inserted", async () => {
+  let saved = {
+    steps: reviewSteps.filter((label) => label !== "Review briefing").map((label) => ({ label, status: "completed" })),
+    summary: [{ label: "Round", text: "r1" }],
+    round: "/round/r1",
+  }
+  const state = createReviewState({
+    get: async () => structuredClone(saved),
+    set: async (_key, value) => { saved = structuredClone(value) },
+  }, async () => {})
+  const loaded = await state.get("s")
+  assert.equal(loaded.steps.length, 7)
+  assert.deepEqual(loaded.steps[5], { label: "Review briefing", status: "pending" })
+  assert.deepEqual(loaded.steps[6], { label: "Interactive investigation", status: "completed" })
+  assert.equal(loaded.round, "/round/r1")
+  assert.deepEqual(loaded.summary, saved.summary)
+  await state.update("s", 6, "in_progress")
+  assert.equal(saved.steps[5].status, "in_progress")
+  assert.equal(saved.steps[6].status, "completed")
+})
+
+test("briefing and investigation have independent progress states", async () => {
+  let saved
+  const state = createReviewState({
+    get: async () => structuredClone(saved),
+    set: async (_key, value) => { saved = structuredClone(value) },
+  }, async () => {})
+  await state.update("s", 5, "completed")
+  await state.update("s", 6, "in_progress")
+  assert.deepEqual(saved.steps.slice(4), [
+    { label: "Run arbiter synthesis", status: "completed" },
+    { label: "Review briefing", status: "in_progress" },
+    { label: "Interactive investigation", status: "pending" },
+  ])
+  await state.update("s", 6, "completed")
+  await state.update("s", 7, "in_progress")
+  assert.equal(saved.steps[5].status, "completed")
+  assert.equal(saved.steps[6].status, "in_progress")
 })
