@@ -217,26 +217,68 @@ Both reviewers and the arbiter consume the same saved context. They have no dire
 
 ## Updating
 
-To update a GitHub installation tracking `main`, run:
+PRR updates through OpenCode's plugin manager; no manual clone, binary copy, or npm publication is needed. Check your installed source first:
 
 ```bash
+opencode plugin list
 opencode plugin check
+```
+
+For Git installations, the version shown by `plugin list` is the installed commit revision. The source tells you whether you track a branch such as `#main` or a full commit pin.
+
+| Source | How updates work |
+|---|---|
+| `github:cfactolerin/prr#main` | OpenCode can detect newer commits; `plugin update` installs them when requested |
+| `github:cfactolerin/prr#<full-40-character-commit-sha>` | Fixed revision; explicitly replace the pin to install a newer commit |
+
+### Update A Branch-Tracking Installation
+
+For an installation tracking `main`, run:
+
+```bash
+opencode plugin check 'github:cfactolerin/prr#main'
 opencode plugin update 'github:cfactolerin/prr#main'
 opencode service restart
+opencode plugin list
 ```
 
-If you installed with SSH or HTTPS, replace the update target with the exact package entry shown by `opencode plugin list`. Startup checks can report new commits without installing them; restarting alone does not update the cached package.
+For SSH or HTTPS installations, use the exact package target shown by `opencode plugin list` instead. Start a fresh review session after updating so its workflow instructions come from the new installation. Restarting the service can interrupt active work; do it between reviews.
 
-For a reproducible installation, replace `main` in the configured entry with a full 40-character Git commit SHA:
+### Update A Commit-Pinned Installation
 
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugins": ["github:cfactolerin/prr#<full-40-character-commit-sha>"]
-}
+Commit pins provide a reproducible installation. Exact revisions are skipped by normal update checks and `plugin update`, so a pinned package reported as current does not mean that `main` has no newer commits.
+
+Choose the new full commit SHA from this repository. Replace both placeholders below with actual 40-character SHAs; the old one is in your installed source:
+
+```bash
+opencode plugin add 'github:cfactolerin/prr#<NEW_FULL_COMMIT_SHA>'
+opencode plugin remove 'github:cfactolerin/prr#<OLD_FULL_COMMIT_SHA>'
+opencode service restart
+opencode plugin list
 ```
 
-Replace the placeholder with an actual commit from this repository. Exact commit pins are skipped by `opencode plugin update`; change the SHA in your configuration when you want a newer revision. Existing PRR settings and review workspaces are preserved across updates.
+Add the new revision successfully before removing the old entry. Use the exact old source when removing it, and verify that only one PRR entry remains. Adding a new revision does not automatically replace the old package target.
+
+### Switch From A Pin To Tracking Main
+
+To use normal update detection instead of selecting each revision manually, replace the old pin with the branch target:
+
+```bash
+opencode plugin add 'github:cfactolerin/prr#main'
+opencode plugin remove 'github:cfactolerin/prr#<OLD_FULL_COMMIT_SHA>'
+opencode service restart
+opencode plugin list
+```
+
+Replace the placeholder before running these commands. Future updates then use `opencode plugin update 'github:cfactolerin/prr#main'`.
+
+### Update Detection
+
+OpenCode's background service checks unpinned npm and Git plugins for updates at startup while loading the cached installation. Run `opencode plugin check` to check manually. Detection does not install the update: run `plugin update` explicitly. Restarting alone does not update the cached package.
+
+Full commit pins and exact npm versions stay fixed and are skipped. To have OpenCode detect new PRR commits through its normal update checks, track `main` rather than a commit SHA. No separate PRR update checker is required. See the [OpenCode plugin documentation](https://opencode.ai/v2/docs/plugins).
+
+These plugin-management commands modify global configuration. If PRR is configured in a project file instead, update that entry rather than adding a second global installation. Existing PRR settings and review workspaces are preserved across updates.
 
 ## Uninstall From OpenCode
 
