@@ -131,6 +131,16 @@ test("unavailable sites are rediscovered on retry", async () => {
   assert.equal(input.calls.filter((call) => call.name === "getAccessibleAtlassianResources").length, 2)
 })
 
+test("site discovery execution failures are not reported as missing or ambiguous sites", async () => {
+  const input = fixture()
+  const tools = await input.host.tool.list()
+  tools[0].execute = async () => { throw new Error("Unable to execute atlassian_getAccessibleAtlassianResources") }
+  const snapshot = await fetchAtlassianContext(input)
+  assert.equal(snapshot.source, "unavailable")
+  assert.match(snapshot.reason, /site discovery failed.*read permissions/)
+  assert.doesNotMatch(snapshot.reason, /missing or ambiguous/)
+})
+
 test("cancellation stops context gathering rather than starting token fallback", async () => {
   const input = fixture()
   const controller = new AbortController()

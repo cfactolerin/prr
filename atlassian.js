@@ -1,6 +1,10 @@
 const maxContentBytes = 1024 * 1024
 const maxPages = 20
 
+export const atlassianReadTools = [
+  "getAccessibleAtlassianResources", "getJiraIssue", "getConfluenceContent", "getConfluencePage",
+]
+
 function normalizeName(name) {
   return name.replace(/[^a-zA-Z0-9_-]/g, "_")
 }
@@ -111,6 +115,7 @@ export async function fetchAtlassianContext({ host, ticketId, metadata, baseUrl,
 
     const hint = issueHint(metadata, ticketId, baseUrl)
     const choices = []
+    let discoveryFailures = 0
     for (const candidate of candidates) {
       try {
         const cacheKey = `${context.sessionID}:${candidate.server.name}`
@@ -127,7 +132,11 @@ export async function fetchAtlassianContext({ host, ticketId, metadata, baseUrl,
         else resourceCache.delete(cacheKey)
       } catch {
         controller.signal.throwIfAborted()
+        discoveryFailures++
       }
+    }
+    if (choices.length === 0 && discoveryFailures > 0) {
+      return unavailable("Atlassian MCP site discovery failed; check PRR's MCP read permissions and connection")
     }
     if (choices.length !== 1) return unavailable("Atlassian MCP site is missing or ambiguous; include a Jira ticket URL in the PR")
     const selected = choices[0]

@@ -21,7 +21,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { fileURLToPath } from "node:url"
 import { tool } from "@opencode-ai/plugin"
 import { parse } from "yaml"
-import { fetchAtlassianContext } from "./atlassian.js"
+import { atlassianReadTools, fetchAtlassianContext } from "./atlassian.js"
 import { createReviewState, reviewSteps } from "./review-state.js"
 
 const packageRoot = dirname(fileURLToPath(import.meta.url))
@@ -708,7 +708,12 @@ function v2Agents() {
     const { metadata, body } = readMarkdown(`agents/${name}.md`)
     const agent = { ...metadata, prompt: body }
     allowWorkspace(agent, workspace, name)
-    return { name, agent, permissions: v2Permissions(agent.permission) }
+    const permissions = v2Permissions(agent.permission)
+    if (name === "prr-orchestrator") {
+      // MCP executors check the caller even when invoked internally by the context bridge.
+      permissions.push(...atlassianReadTools.map((tool) => ({ action: `*_${tool}`, resource: "*", effect: "allow" })))
+    }
+    return { name, agent, permissions }
   })
 }
 
@@ -749,6 +754,15 @@ async function setup(ctx) {
   const skills = v2Skills()
   const commands = prrCommandNames.map((name) => ({ name, ...readMarkdown(`commands/${name}.md`) }))
   const toolDenials = Object.keys(toolDefinitions).map((action) => ({ action, resource: "*", effect: "deny" }))
+
+  // Only the bound-round bridge may choose which ticket and linked pages to read.
+  const hideAtlassianReads = (event) => {
+    if (!agentPermissions.has(event.agent)) return
+    for (const id of Object.keys(event.tools)) {
+      if (atlassianReadTools.some((name) => id.endsWith(`_${name}`))) delete event.tools[id]
+    }
+  }
+  for (const hook of ["context", "compaction", "generate"]) await ctx.session.hook(hook, hideAtlassianReads)
 
   await ctx.shell.hook("create.before", (event) => {
     event.env.PRR_BIN = binary

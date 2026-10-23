@@ -6,7 +6,7 @@ import { test } from "node:test"
 import PrrPlugin from "../index.js"
 
 function fakeV2Context({ agents = [], sessionAgent = "build" } = {}) {
-  const registered = { hooks: {}, tools: [], agents: new Map(agents.map((agent) => [agent.id, agent])), skills: [], commands: [] }
+  const registered = { hooks: {}, sessionHooks: {}, tools: [], agents: new Map(agents.map((agent) => [agent.id, agent])), skills: [], commands: [] }
   const calls = []
   const stored = new Map()
   const ctx = {
@@ -41,12 +41,18 @@ function fakeV2Context({ agents = [], sessionAgent = "build" } = {}) {
     },
     command: { transform: async (callback) => callback({ add: (command) => registered.commands.push(command) }) },
     session: {
+      hook: async (name, callback) => { registered.sessionHooks[name] = callback },
       get: async () => ({ agent: sessionAgent }),
       switchAgent: async (input) => { calls.push(["switchAgent", input]) },
       prompt: async (input) => { calls.push(["prompt", input]) },
     },
   }
   return { ctx, registered, calls }
+}
+
+function toolPermission(registered, agent, action) {
+  return registered.agents.get(agent).permissions.findLast((rule) => rule.action === action || rule.action === "*"
+    || rule.action.startsWith("*_") && action.endsWith(rule.action.slice(1)))?.effect
 }
 
 test("registers PRR commands, agents, skills, and binary environment", async () => {
@@ -526,6 +532,29 @@ test("V2 commands switch to the PRR agent and forward arguments", async () => {
   assert.match(calls[1][1].text, /exactly as `acme\/repo#1`/)
 })
 
+test("V2 MCP read permissions belong only to the orchestrator and are hidden from PRR model requests", async () => {
+  const { ctx, registered } = fakeV2Context()
+  await PrrPlugin.setup(ctx)
+  const reads = [
+    "atlassian_getAccessibleAtlassianResources", "atlassian_getJiraIssue",
+    "atlassian_getConfluenceContent", "company_atlassian_getConfluencePage",
+  ]
+  for (const name of reads) assert.equal(toolPermission(registered, "prr-orchestrator", name), "allow")
+  for (const name of ["atlassian_editJiraIssue", "atlassian_executeWrite", "atlassian_discover", "atlassian_getGraphObject"]) {
+    assert.equal(toolPermission(registered, "prr-orchestrator", name), "deny")
+  }
+  for (const agent of ["prr-setup-orchestrator", "prr-opencode-reviewer", "prr-codex-reviewer", "prr-arbiter"]) {
+    for (const name of reads) assert.equal(toolPermission(registered, agent, name), "deny")
+  }
+  for (const hook of ["context", "compaction", "generate"]) {
+    for (const agent of [...registered.agents.keys(), "build"]) {
+      const tools = Object.fromEntries([...reads, "prr_atlassian_context", "unrelated"].map((name) => [name, {}]))
+      await registered.sessionHooks[hook]({ agent, tools })
+      assert.deepEqual(Object.keys(tools), agent === "build" ? [...reads, "prr_atlassian_context", "unrelated"] : ["prr_atlassian_context", "unrelated"])
+    }
+  }
+})
+
 test("V2 tools refuse agents whose PRR rules do not allow them", async () => {
   const { ctx, registered } = fakeV2Context()
   await PrrPlugin.setup(ctx)
@@ -616,11 +645,15 @@ test("V2 context tool retries unavailable MCP context and caches successful impo
     let connected = false
     ctx.mcp = { list: async () => ({ data: [{ name: "atlassian", status: { status: connected ? "connected" : "needs_auth" } }] }) }
     ctx.tool.list = async () => [
-      { id: "atlassian_getAccessibleAtlassianResources", execute: async () => {
+      { id: "atlassian_getAccessibleAtlassianResources", execute: async (_input, execution) => {
+        assert.equal(execution.agent, "prr-orchestrator")
+        assert.equal(toolPermission(registered, execution.agent, "atlassian_getAccessibleAtlassianResources"), "allow")
         calls.push("sites")
         return { content: JSON.stringify({ data: { resources: [{ cloudId: "site-1", url: "https://company.atlassian.net" }] } }) }
       } },
-      { id: "atlassian_getJiraIssue", input: { properties: { view: {} } }, execute: async (input) => {
+      { id: "atlassian_getJiraIssue", input: { properties: { view: {} } }, execute: async (input, execution) => {
+        assert.equal(execution.agent, "prr-orchestrator")
+        assert.equal(toolPermission(registered, execution.agent, "atlassian_getJiraIssue"), "allow")
         calls.push(input)
         return { content: JSON.stringify({ key: "DI-123", fields: { summary: "Requirements", description: "Preserve ordering" } }) }
       } },
