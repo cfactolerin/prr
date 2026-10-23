@@ -480,7 +480,7 @@ async function runPrrAtlassianContext({ roundPath: path }, context, host) {
   const manifest = roundPath(configuredWorkspace(), join(round, "context-manifest.md"))
   if (manifest.round !== round || statSync(manifest.target).size > 2 * 1024 * 1024) throw new Error("Invalid context manifest")
   const saved = readFileSync(manifest.target, "utf8").split("\n## Atlassian Context\n")[1]
-  if (saved !== undefined) return saved.trim()
+  if (saved !== undefined && !saved.split("\n").includes("- Jira ticket: unavailable")) return saved.trim()
   const results = realpathSync(join(round, "results"))
   const read = (name) => {
     const file = roundPath(configuredWorkspace(), join(results, name))

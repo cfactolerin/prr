@@ -598,7 +598,7 @@ test("V2 sidebar RPC persists session progress and exposes only the bound manife
   }
 })
 
-test("V2 context tool saves a read-only MCP snapshot in the bound round before reviews", async () => {
+test("V2 context tool retries unavailable MCP context and caches successful imports before reviews", async () => {
   const root = mkdtempSync(join(tmpdir(), "prr-atlassian-test-"))
   const home = join(root, "home")
   const workspace = join(home, ".prr", "workspace")
@@ -613,11 +613,12 @@ test("V2 context tool saves a read-only MCP snapshot in the bound round before r
   try {
     const { ctx, registered } = fakeV2Context()
     const calls = []
-    ctx.mcp = { list: async () => ({ data: [{ name: "atlassian", status: { status: "connected" } }] }) }
+    let connected = false
+    ctx.mcp = { list: async () => ({ data: [{ name: "atlassian", status: { status: connected ? "connected" : "needs_auth" } }] }) }
     ctx.tool.list = async () => [
       { id: "atlassian_getAccessibleAtlassianResources", execute: async () => {
         calls.push("sites")
-        return { content: JSON.stringify([{ id: "site-1", url: "https://company.atlassian.net" }]) }
+        return { content: JSON.stringify({ data: { resources: [{ cloudId: "site-1", url: "https://company.atlassian.net" }] } }) }
       } },
       { id: "atlassian_getJiraIssue", input: { properties: { view: {} } }, execute: async (input) => {
         calls.push(input)
@@ -630,11 +631,18 @@ test("V2 context tool saves a read-only MCP snapshot in the bound round before r
     await assert.rejects(fetch.execute({ roundPath: round }, context), /not bound/)
     assert.equal(calls.length, 0)
     await registered.tools.find((item) => item.name === "prr_bind_round").execute({ roundPath: round }, context)
+    const unavailable = await fetch.execute({ roundPath: round }, context)
+    assert.match(unavailable.content, /Jira ticket: unavailable/)
+    assert.equal(calls.length, 0)
+    connected = true
     const result = await fetch.execute({ roundPath: round }, context)
     assert.match(result.content, /Source: Atlassian MCP/)
     const sidebar = await registered.rpc.handlers.get({ sessionID: context.sessionID })
     assert.equal(sidebar.summary.find((field) => field.label === "Ticket").url, "https://company.atlassian.net/browse/DI-123")
     assert.match(readFileSync(join(round, "context", "ticket-context.md"), "utf8"), /Preserve ordering/)
+    const manifest = readFileSync(join(round, "context-manifest.md"), "utf8")
+    assert.equal(manifest.split("## Atlassian Context").length, 2)
+    assert.doesNotMatch(manifest, /Jira ticket: unavailable/)
     assert.equal(JSON.parse(readFileSync(join(round, "results", "atlassian-context.json"), "utf8")).source, "mcp")
     assert.deepEqual(calls, ["sites", { cloudId: "site-1", issueIdOrKey: "DI-123", view: "full" }])
     await fetch.execute({ roundPath: round }, context)

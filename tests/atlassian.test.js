@@ -13,7 +13,9 @@ function fixture({ connected = true, sites, ticket, pageFailure = false, pageToo
     },
   })
   const tools = [
-    tool("getAccessibleAtlassianResources", {}, sites ?? [{ id: "site-1", url: "https://company.atlassian.net" }]),
+    tool("getAccessibleAtlassianResources", {}, { data: { resources: sites ?? [
+      { cloudId: "site-1", url: "https://company.atlassian.net", products: [{ id: "jira", access: "read-write" }] },
+    ] } }),
     tool("getJiraIssue", { view: {}, responseContentFormat: {} }, ticket ?? {
       key: "DI-123", fields: {
         summary: "A change", description: "Requirements: https://company.atlassian.net/wiki/x/abc",
@@ -50,6 +52,29 @@ test("configured but unauthenticated servers are not used", async () => {
   assert.equal(input.calls.length, 0)
 })
 
+test("legacy site IDs and current cloud IDs both support Jira and linked Confluence reads", async () => {
+  for (const site of [
+    { id: "site-1", url: "https://company.atlassian.net" },
+    { id: "legacy-id", cloudId: "site-1", url: "https://company.atlassian.net" },
+  ]) {
+    const input = fixture({ sites: [site] })
+    const snapshot = await fetchAtlassianContext(input)
+    assert.equal(snapshot.source, "mcp")
+    assert.equal(snapshot.pages.length, 1)
+    assert.equal(input.calls[1].input.cloudId, "site-1")
+    assert.equal(input.calls[2].input.cloudId, "site-1")
+  }
+})
+
+test("legacy unwrapped resource arrays remain supported", async () => {
+  const input = fixture()
+  const tools = await input.host.tool.list()
+  tools[0].execute = async () => ({ content: JSON.stringify([
+    { id: "site-1", url: "https://company.atlassian.net" },
+  ]) })
+  assert.equal((await fetchAtlassianContext(input)).source, "mcp")
+})
+
 test("missing bridge, no ticket, and failed reads request REST fallback", async () => {
   assert.equal((await fetchAtlassianContext({ ticketId: "DI-123", context: {} })).source, "unavailable")
   const input = fixture({ ticket: new Error("Authentication expired") })
@@ -61,8 +86,8 @@ test("missing bridge, no ticket, and failed reads request REST fallback", async 
 
 test("multiple sites require a matching PR link or configured site", async () => {
   const input = fixture({ sites: [
-    { id: "site-2", url: "https://other.atlassian.net" },
-    { id: "site-1", url: "https://company.atlassian.net" },
+    { cloudId: "site-2", url: "https://other.atlassian.net" },
+    { cloudId: "site-1", url: "https://company.atlassian.net" },
   ] })
   assert.equal((await fetchAtlassianContext(input)).source, "unavailable")
   assert.equal(input.calls.filter((call) => call.name === "getJiraIssue").length, 0)
@@ -93,6 +118,16 @@ test("site discovery is cached per session and server, not globally across accou
   await fetchAtlassianContext({ ...input, resourceCache })
   assert.equal(input.calls.filter((call) => call.name === "getAccessibleAtlassianResources").length, 1)
   await fetchAtlassianContext({ ...input, resourceCache, context: { ...input.context, sessionID: "session-2" } })
+  assert.equal(input.calls.filter((call) => call.name === "getAccessibleAtlassianResources").length, 2)
+})
+
+test("unavailable sites are rediscovered on retry", async () => {
+  const sites = []
+  const input = fixture({ sites })
+  const resourceCache = new Map()
+  assert.equal((await fetchAtlassianContext({ ...input, resourceCache })).source, "unavailable")
+  sites.push({ cloudId: "site-1", url: "https://company.atlassian.net" })
+  assert.equal((await fetchAtlassianContext({ ...input, resourceCache })).source, "mcp")
   assert.equal(input.calls.filter((call) => call.name === "getAccessibleAtlassianResources").length, 2)
 })
 

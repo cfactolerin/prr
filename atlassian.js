@@ -42,7 +42,8 @@ function confluenceLinks(ticket) {
 }
 
 function selectSite(resources, hint) {
-  const sites = [...new Map(resources.filter((site) => site?.id && siteHost(site.url))
+  const sites = [...new Map(resources.map((site) => ({ ...site, id: site?.cloudId ?? site?.id }))
+    .filter((site) => typeof site.id === "string" && site.id.trim() && siteHost(site.url))
     .map((site) => [siteHost(site.url), site])).values()]
   if (hint) return sites.find((site) => siteHost(site.url) === siteHost(hint))
   return sites.length === 1 ? sites[0] : undefined
@@ -123,6 +124,7 @@ export async function fetchAtlassianContext({ host, ticketId, metadata, baseUrl,
         }
         const site = selectSite(resources, hint)
         if (site) choices.push({ ...candidate, site, resources })
+        else resourceCache.delete(cacheKey)
       } catch {
         controller.signal.throwIfAborted()
       }

@@ -39,10 +39,15 @@ fn run_with_config(config: &Config, requested: &Path) -> Result<(), Box<dyn std:
     let context = round.join("context");
     let manifest_path = round.join("context-manifest.md");
     let manifest = std::fs::read_to_string(&manifest_path)?;
-    if let Some((_, saved)) = manifest.split_once("\n## Atlassian Context\n") {
-        println!("{}", saved.trim());
-        return Ok(());
-    }
+    let manifest = if let Some((original, saved)) = manifest.split_once("\n## Atlassian Context\n") {
+        if !saved.lines().any(|line| line == "- Jira ticket: unavailable") {
+            println!("{}", saved.trim());
+            return Ok(());
+        }
+        original.trim_end().to_string()
+    } else {
+        manifest
+    };
     let snapshot_path = results.join("atlassian-context.json");
     reject_symlink(&snapshot_path)?;
     if std::fs::metadata(&snapshot_path)?.len() > 24 * 1024 * 1024 {
@@ -280,6 +285,26 @@ mod tests {
         assert!(manifest.contains("MCP is not connected"));
         assert!(manifest.contains("fallback is not configured"));
         assert!(!round.join("context/ticket-context.md").exists());
+    }
+
+    #[test]
+    fn unavailable_context_can_be_retried_before_review_prompts_are_built() {
+        let root = tempfile::tempdir().unwrap();
+        let (config, round) = round_fixture(root.path(), json!({"source":"unavailable", "reason":"MCP is not connected"}));
+        run_with_config(&config, &round).unwrap();
+        let failed_manifest = std::fs::read_to_string(round.join("context-manifest.md")).unwrap();
+        run_with_config(&config, &round).unwrap();
+        assert_eq!(std::fs::read_to_string(round.join("context-manifest.md")).unwrap(), failed_manifest);
+        std::fs::write(round.join("results/atlassian-context.json"), serde_json::to_string(&json!({
+            "source": "mcp", "ticket": {"key":"DI-123", "fields":{"summary":"Requirements", "description":"Preserve ordering"}}
+        })).unwrap()).unwrap();
+        run_with_config(&config, &round).unwrap();
+        let manifest = std::fs::read_to_string(round.join("context-manifest.md")).unwrap();
+        assert_eq!(manifest.matches("## Atlassian Context").count(), 1);
+        assert!(manifest.contains("Jira ticket: fetched"));
+        assert!(!manifest.contains("Jira ticket: unavailable"));
+        assert!(!manifest.contains("MCP is not connected"));
+        assert!(std::fs::read_to_string(round.join("context/ticket-context.md")).unwrap().contains("Preserve ordering"));
     }
 
     #[test]
