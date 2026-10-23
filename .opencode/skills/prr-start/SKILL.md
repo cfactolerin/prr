@@ -44,6 +44,14 @@ The sidebar context summary is populated automatically when the round is bound a
 
 The findings and posting phases are interactive and are not tracked as pipeline items.
 
+## Recovery After Interruption
+
+If OpenCode resumes after a server restart, do not treat interrupted reviewer or arbiter tasks as completed. Rebind the saved `ROUND_DIR` with `prr_bind_round` before using round tools. Keep completed context gathering, prompt preparation, and confirmed user choices; do not create another round or restart the workflow.
+
+An interrupted task's missing output is expected, not a permission denial. Even a non-empty file from that task is partial until the task succeeds. Do not probe its output or copy it into shared results to decide whether the task completed. Keep outputs only from tasks whose successful completion was recorded before the interruption.
+
+Mark the interrupted stage blocked and use the question tool with **Retry interrupted stage** and **Abort review**. On retry, remove only the interrupted tasks' private outputs and their shared canonical copies with `prr_artifact`, issue fresh role capabilities, and dispatch replacement tasks in separate contexts. Capabilities from before a server restart are no longer valid. Wait for the replacement tasks to settle before verifying their outputs. Never broaden permissions to recover.
+
 ## Phase 1: Cleanup
 
 Run:

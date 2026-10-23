@@ -627,6 +627,50 @@ test("V2 sidebar RPC persists session progress and exposes only the bound manife
   }
 })
 
+test("V2 restores only the saved session round after a restart and requires fresh reviewer capabilities", async () => {
+  const root = mkdtempSync(join(tmpdir(), "prr-restart-test-"))
+  const previousHome = process.env.HOME
+  process.env.HOME = root
+  const round = join(root, ".prr", "workspace", "acme-repo-pr-1", "r1")
+  const otherRound = join(root, ".prr", "workspace", "acme-repo-pr-2", "r1")
+  for (const path of [round, otherRound]) {
+    mkdirSync(join(path, "results", "reviewers", "opencode"), { recursive: true })
+    writeFileSync(join(path, "context-manifest.md"), "# Context Manifest\n\n- **Round**: r1\n")
+  }
+  const prompt = join(round, "results", "reviewers", "opencode", "review-prompt.md")
+  writeFileSync(prompt, "Saved review prompt")
+  const context = { agent: "prr-orchestrator", sessionID: "restart-test", signal: new AbortController().signal }
+  const reviewer = { ...context, agent: "prr-opencode-reviewer", sessionID: "old-reviewer" }
+  try {
+    const before = fakeV2Context()
+    await PrrPlugin.setup(before.ctx)
+    const oldTool = (name) => before.registered.tools.find((tool) => tool.name === name)
+    await oldTool("prr_bind_round").execute({ roundPath: round }, context)
+    const oldCapability = (await oldTool("prr_capability").execute({ roundPath: round, role: "opencode" }, context)).content
+    await oldTool("prr_read").execute({ filePath: prompt, capability: oldCapability }, reviewer)
+
+    const { default: restarted } = await import("../index.js?restart-test")
+    const after = fakeV2Context()
+    after.ctx.storage = before.ctx.storage
+    await restarted.setup(after.ctx)
+    const tool = (name) => after.registered.tools.find((tool) => tool.name === name)
+    await assert.rejects(tool("prr_read").execute({ filePath: prompt }, { ...context, sessionID: "unrelated" }), /not bound/)
+    assert.match((await tool("prr_read").execute({ filePath: prompt }, context)).content, /Saved review prompt/)
+    await assert.rejects(tool("prr_read").execute({ filePath: join(otherRound, "context-manifest.md") }, context), /not bound/)
+    await assert.rejects(tool("prr_bind_round").execute({ roundPath: otherRound }, context), /already bound/)
+    await assert.rejects(tool("prr_read").execute({ filePath: prompt, capability: oldCapability }, reviewer), /Invalid PRR round capability/)
+    const capability = (await tool("prr_capability").execute({ roundPath: round, role: "opencode" }, context)).content
+    assert.notEqual(capability, oldCapability)
+    assert.match((await tool("prr_read").execute({ filePath: prompt, capability }, { ...reviewer, sessionID: "new-reviewer" })).content, /Saved review prompt/)
+    const sidebar = await after.registered.rpc.handlers.get({ sessionID: context.sessionID })
+    assert.deepEqual(Object.keys(sidebar).sort(), ["steps", "summary"])
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test("V2 context tool retries unavailable MCP context and caches successful imports before reviews", async () => {
   const root = mkdtempSync(join(tmpdir(), "prr-atlassian-test-"))
   const home = join(root, "home")

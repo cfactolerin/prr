@@ -780,6 +780,13 @@ async function setup(ctx) {
           if (!toolAllowed(agentPermissions.get(context.agent), name)) {
             throw new Error(`${name} is not allowed for ${context.agent ?? "this agent"}`)
           }
+          if (context.agent === "prr-orchestrator" && !sessionRounds.has(context.sessionID)
+            && ["prr_bind_round", "prr_capability", "prr_read", "prr_write", "prr_artifact", "prr_atlassian_context"].includes(name)) {
+            const saved = await reviewState.get(requireSession(context))
+            if (saved?.round) {
+              sessionRounds.set(context.sessionID, roundRoot(configuredWorkspace(), saved.round))
+            }
+          }
           const host = name === "prr_progress" ? { reviewState } : ctx
           const content = await definition.execute(input, { ...context, abort: context.signal }, host)
           if (name === "prr_bind_round" || name === "prr_atlassian_context") {
