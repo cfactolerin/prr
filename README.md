@@ -159,11 +159,14 @@ Returning to chat preserves the selected finding and vertical scroll position; a
 
 Use `o` for files, `b` for findings, `p`/`n` for previous/next finding, and arrow or Page Up/Down keys to scroll vertically. Escape returns to the existing chat without sending a message; `c` explicitly opens the next-step review menu. Horizontal mouse scrolling stays synchronized between the before/after panes.
 
-**Discuss in chat** opens the selected finding in the existing conversation and asks what you want
-to investigate, without a popup. Reopen the diff to
+**Discuss in chat** opens the selected finding's full one-at-a-time review in the existing
+conversation, without a popup. It shows focused code, why it matters, the suggested fix and comment,
+then **Accept**, **Reject**, **Edit**, **Add finding**, and **Finish findings**. Questions investigate
+that same finding and return to its menu without deciding it. Prior decisions and edits are preserved.
+Reopen the diff to
 keep browsing, then use **Back to discussion** or Escape to return without replacing the discussion
-with another menu. **Resume discussion** on the same finding also returns without sending another
-request. The selected finding and diff position are retained.
+with another menu. **Discuss** always opens the selected finding's full view, even if the chat has
+since advanced to another finding. The selected finding and diff position are retained.
 
 **↑ Previous file** and **↓ Next file** cycle from the current file and wrap at either end. Choosing
 another file leaves finding details and restores that file's saved vertical position; arrow keys
@@ -195,7 +198,7 @@ The OpenCode reviewer and arbiter inherit the model selected in the current Open
 2. **Independent review:** a native OpenCode subagent and Codex CLI receive the same prompt in separate contexts. Neither receives the other's output.
 3. **Arbitration:** a separate OpenCode subagent compares both reviews and may ask either reviewer for path, line, test, or documentation evidence.
 4. **Review briefing:** read what changed, the assessment, and actionable concerns before explicitly continuing to diff or chat investigation.
-5. **Interactive review:** browse side-by-side diffs and linked findings, or investigate in chat. The separate findings walk lets you accept, edit, challenge, or reject comments before posting.
+5. **Interactive review:** browse side-by-side diffs and linked findings, or investigate in chat. **Discuss** carries a selected finding into the full findings walk, where you can accept, edit, challenge, or reject it before posting.
 6. **GitHub posting:** PRR builds a review only from the accepted findings and posts it with `prr post-review` after explicit confirmation and OpenCode's approval prompt for that command. The briefing is not automatically published.
 
 ### Review Policy

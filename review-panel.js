@@ -132,8 +132,7 @@ export function reviewPanel(context, panel, rpc) {
     if (submitting()) return
     const selected = finding()
     if (!selected) return
-    if (current()?.discussionFindingID === selected.id) return close()
-    await sendToChat(`Switch from the diff view to interactive chat investigation of finding ${JSON.stringify(selected.id)} in the current saved PRR review. The briefing has already been continued; this is an ongoing Phase 7 discussion, not a request to choose an investigation mode. Keep step 7 in progress with view=chat. Briefly show this finding and use the question tool to ask what I would like to investigate about it. Keep follow-up discussion here. Do not repeat the briefing, show the investigation-mode chooser, reopen the diff automatically, or show the next-step menu unless I ask to continue review. This is a request for evidence, not acceptance, rejection, or permission to post.`, selected.id)
+    await sendToChat(`Open the existing one-at-a-time findings review at finding ${JSON.stringify(selected.id)} in the current saved PRR review. Use Phase 8a to parse and verify the saved report without resetting any prior decisions or edits. Show the full Phase 8b/8c finding presentation: focused code with the target marked when anchored, location, origin, Why this matters, Suggested fix, and Suggested comment. Mark reference code as unchanged; for anchor=none show no anchor line without inventing code. Preserve the saved finding text; do not replace this view with a brief summary or an open-ended question. Restore the per-finding question-tool menu: Accept, Reject, Edit, Add finding, Finish findings. Questions and challenges investigate this same finding without deciding or advancing it. The briefing has already been continued; enter or resume the findings review directly, completing step 7 only if this is its first transition from investigation. Do not repeat the briefing, show the investigation-mode chooser, reopen the diff automatically, or reset the review. This opens the finding for discussion, not acceptance, rejection, or permission to post.`, selected.id)
   }
   context.keymap.layer(() => ({ priority: 10, commands: [
     { id: "prr.diff.close", bind: "escape", run: close },
@@ -239,7 +238,7 @@ export function reviewPanel(context, panel, rpc) {
                 heading("Suggested fix", fixColor, { marginTop: 1 }), markdown(finding().suggested_fix),
                 heading("Suggested comment", context.theme.text.action.primary.base, { marginTop: 1 }), markdown(finding().suggested_comment),
                 button("Previous [p]", () => adjacent(-1)), button("Next [n]", () => adjacent(1)),
-                button(current()?.discussionFindingID === finding().id ? "Resume discussion [d]" : "Discuss in chat [d]", discuss),
+                button("Discuss in chat [d]", discuss),
               ] : [
                 heading("Findings"),
                 ...(!value.findings.length ? [text("No findings. Browse any changed file, then Continue review to choose the next step.")] : value.findings.map((item) => button(

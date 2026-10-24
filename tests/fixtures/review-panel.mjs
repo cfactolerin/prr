@@ -152,24 +152,30 @@ try {
   assert.equal(closed, true)
   assert.equal(calls.filter((call) => call.prompt).length, beforeDiscuss + 1)
   assert.match(calls.find((call) => call.prompt).prompt.text, /not acceptance, rejection, or permission to post/)
-  assert.match(calls.find((call) => call.prompt).prompt.text, /interactive chat investigation of finding "F-01"/)
-  assert.match(calls.find((call) => call.prompt).prompt.text, /ongoing Phase 7 discussion/)
-  assert.match(calls.find((call) => call.prompt).prompt.text, /use the question tool to ask what I would like to investigate/)
-  assert.match(calls.find((call) => call.prompt).prompt.text, /unless I ask to continue review/)
+  const handoff = calls.find((call) => call.prompt).prompt.text
+  assert.match(handoff, /one-at-a-time findings review at finding "F-01"/)
+  assert.match(handoff, /full Phase 8b\/8c finding presentation/)
+  assert.match(handoff, /focused code with the target marked/)
+  assert.match(handoff, /Why this matters, Suggested fix, and Suggested comment/)
+  assert.match(handoff, /Accept, Reject, Edit, Add finding, Finish findings/)
+  assert.match(handoff, /without resetting any prior decisions or edits/)
+  assert.match(handoff, /Questions and challenges investigate this same finding without deciding or advancing it/)
   assert.ok(memory.sessions.session.offsets["finding:F-01"].y > 0)
   const discussionOffset = memory.sessions.session.offsets["finding:F-01"].y
   setOpen(true)
   await waitForContent((frame) => frame.includes("Please correct the value.") && frame.includes("after value"))
   assert.equal(memory.sessions.session.findingID, "F-01")
   closed = false
-  const beforeReturn = calls.filter((call) => call.prompt).length
-  assert.ok(view.captureCharFrame().includes("Resume discussion [d]"))
+  const beforeRedisplay = calls.filter((call) => call.prompt).length
+  assert.ok(view.captureCharFrame().includes("Discuss in chat [d]"))
   await commands.get("prr.diff.discuss").run()
   assert.equal(closed, true)
-  assert.equal(calls.filter((call) => call.prompt).length, beforeReturn)
+  assert.equal(calls.filter((call) => call.prompt).length, beforeRedisplay + 1)
+  assert.match(calls.filter((call) => call.prompt).at(-1).prompt.text, /one-at-a-time findings review at finding "F-01"/)
   setOpen(true)
   await waitForContent((frame) => frame.includes("Please correct the value."))
   closed = false
+  const beforeReturn = calls.filter((call) => call.prompt).length
   assert.equal(commands.get("prr.diff.close").bind, "escape")
   await commands.get("prr.diff.close").run()
   assert.equal(closed, true)
@@ -195,6 +201,15 @@ try {
   assert.equal(memory.sessions.session.findingID, "F-01")
   setOpen(true)
   await waitForContent((frame) => frame.includes("Please correct the value."))
+  await commands.get("prr.diff.next").run()
+  await waitForContent((frame) => frame.includes("Partner check missing."))
+  await commands.get("prr.diff.discuss").run()
+  const unanchored = calls.filter((call) => call.prompt).at(-1).prompt.text
+  assert.match(unanchored, /one-at-a-time findings review at finding "F-02"/)
+  assert.match(unanchored, /for anchor=none show no anchor line without inventing code/)
+  assert.equal(closed, true)
+  setOpen(true)
+  await waitForContent((frame) => frame.includes("Partner check missing."))
   report.snapshot = "two"
   report.findings = []
   report.verdict = "APPROVE"

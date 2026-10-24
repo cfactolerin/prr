@@ -45,7 +45,9 @@ After explicit briefing continuation, `prr_progress` with `step: 7`, `status: "i
 
 Navigation is read-only, and discussion returns to the existing chat workflow without accepting findings. OpenCode 1 keeps its native `todowrite` list and chat investigation.
 
-The visual view's **Continue review** action (`c`) sends a request to resume the investigation menu, including for reviews without findings. Escape and **Back to discussion / Back to chat** only close the panel; they never send a prompt or replace a pending chat question. Neither action accepts findings, completes investigation, or authorizes posting. **Discuss in chat** switches directly to interactive chat investigation of the selected finding without a popup; the orchestrator presents that finding and asks what the user wants to investigate. Answers and follow-ups stay in chat until the user asks to continue; reopening the diff never repeats the briefing or mode chooser.
+The visual view's **Continue review** action (`c`) sends a request to resume the investigation menu, including for reviews without findings. Escape and **Back to discussion / Back to chat** only close the panel; they never send a prompt or replace a pending chat question. Neither action accepts findings, completes investigation, or authorizes posting.
+
+**Discuss in chat** enters or resumes the existing one-at-a-time findings review at the selected ID without a popup. It shows the full 8b/8c rich block (focused code, location/origin, why it matters, fix, comment) and Accept/Reject/Edit/Add finding/Finish findings menu, not a brief summary or generic question. Prior decisions and edits survive view switches. Questions investigate the same finding and return to its menu without deciding it; reopening the diff never repeats the briefing or mode chooser.
 
 `statistics.js` keeps a private, append-only local event ledger under `~/.prr/statistics/v1/`, outside cleaned workspaces. OpenCode 2 records command starts, bound rounds, original reviewer candidates, arbiter attribution, and explicit human decisions. `/prr-stats` uses a read-only role; it does not replace an active review orchestrator.
 

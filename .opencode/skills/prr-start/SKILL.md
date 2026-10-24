@@ -405,20 +405,23 @@ Enter only after the briefing's explicit continuation. Do not repeat the briefin
 
 The OpenCode 2 visual investigation is an alternate view of this phase. `/prr-diff` and the sidebar
 open the saved round's changed files and findings. Clicking a finding selects its code location and
-details; non-code findings show details without inventing an anchor. **Discuss in chat** switches
-directly to interactive chat investigation of the selected finding, without a popup question, leaving
-all finding decisions pending. Returning to chat or
-opening the visual view never completes step 7, accepts findings, or authorizes posting. The selected
+details; non-code findings show details without inventing an anchor. **Discuss in chat** opens or
+resumes the one-at-a-time findings review at the selected finding, without a popup question or an
+intermediate menu. This is an explicit entry into Phase 8, not a finding decision or permission to
+post. Passive navigation back to chat or into the visual view never completes step 7, accepts
+findings, or authorizes posting. The selected
 finding and vertical diff scroll position are retained when switching views. For a visual-view choice,
 wait for a user question or **Continue review** rather than immediately opening another question dialog.
 
-Requests from **Discuss in chat** are already in Phase 7. Keep step 7 in progress with `view: "chat"`,
-briefly show the selected finding, and use the question tool to ask what the user wants to
-investigate about it. Apply the same evidence-gathering rules as **Investigate a finding** below.
-Do not ask the user to choose diff or chat investigation again. Answer their question directly.
-Keep follow-ups in the existing discussion; do not show the next-step
-menu after each answer unless the user asks to continue review. Reopening the diff is navigation,
-not a new briefing or investigation. **Back to discussion / Back to chat** (Escape) closes the panel
+For **Discuss in chat**, complete step 7 only on the first transition from Phase 7 to Phase 8;
+otherwise preserve the current review stage. Run 8a without resetting existing decisions or edits,
+then show the selected finding with the full 8b/8c presentation and its **Accept**, **Reject**,
+**Edit**, **Add finding**, **Finish findings** menu. Include focused code and all finding fields,
+not a brief summary or a generic "what do you want to investigate?" question. A custom question or
+challenge keeps the user on that finding; investigate it and show the same per-finding menu again.
+Do not substitute the overall investigation menu or ask the user to choose diff or chat again.
+Reopening the diff is navigation, not a new briefing or investigation.
+**Back to discussion / Back to chat** (Escape) closes the panel
 without sending a message, restarting the workflow, or replacing any pending chat question.
 
 The visual view's **Continue review** action (`c`) submits a request to return to this menu.
@@ -473,6 +476,13 @@ overridden_body: null or replacement text
 ```
 
 New user-authored findings start as Accepted. Keep this state through posting.
+
+Initialize state only for findings without an existing decision in this saved round. Switching
+between diff and chat, or choosing another finding to discuss, must preserve all decisions and
+approved edits. A **Discuss in chat** handoff starts at its selected finding ID, using 8b for a diff
+anchor or 8c for reference/none; it does not start again at the first finding. After an explicit
+decision, resume the remaining walk in its usual order, skipping previously decided entries unless
+the user asks to revisit them. Opening a finding alone never accepts or rejects it.
 
 When the parsed report has no findings, skip 8b and 8c and go to 8e. The user can still add one there.
 

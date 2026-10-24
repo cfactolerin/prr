@@ -65,13 +65,17 @@ test("leaving diff investigation resumes next-step choices even without findings
   assert.match(investigation, /Do not repeat the briefing, reopen the diff view/)
 })
 
-test("diff discussion and Escape return to existing chat without repeating mode selection", () => {
+test("diff discussion restores the full finding view and per-finding menu without resetting decisions", () => {
   const investigation = skill.split("## Phase 7:")[1].split("## Phase 8:")[0]
-  assert.match(investigation, /Requests from \*\*Discuss in chat\*\* are already in Phase 7/)
-  assert.match(investigation, /directly to interactive chat investigation of the selected finding, without a popup question/)
-  assert.match(investigation, /Answer their question directly/)
-  assert.match(investigation, /briefly show the selected finding, and use the question tool/)
-  assert.match(investigation, /do not show the next-step\nmenu after each answer unless the user asks/)
+  assert.match(investigation, /resumes the one-at-a-time findings review at the selected finding, without a popup question/)
+  assert.match(investigation, /complete step 7 only on the first transition from Phase 7 to Phase 8/)
+  assert.match(investigation, /full 8b\/8c presentation/)
+  assert.match(investigation, /Include focused code and all finding fields/)
+  for (const option of ["Accept", "Reject", "Edit", "Add finding", "Finish findings"]) assert.ok(investigation.includes(`**${option}**`))
+  assert.match(investigation, /show the same per-finding menu again/)
+  assert.match(skill, /Initialize state only for findings without an existing decision/)
+  assert.match(skill, /handoff starts at its selected finding ID/)
+  assert.match(skill, /skipping previously decided entries/)
   assert.match(investigation, /Escape\) closes the panel\nwithout sending a message/)
   assert.match(investigation, /or replacing any pending chat question/)
   assert.match(investigation, /\*\*Continue review\*\* action \(`c`\)/)
