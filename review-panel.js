@@ -1,4 +1,4 @@
-import { SyntaxStyle } from "@opentui/core"
+import { SyntaxStyle, TextAttributes } from "@opentui/core"
 import { createElement, spread } from "@opentui/solid"
 import { createEffect, createMemo, createResource, createSignal, onCleanup, untrack } from "solid-js"
 import { displayText, findingRows } from "./review-diff.js"
@@ -132,7 +132,19 @@ export function reviewPanel(context, panel, rpc) {
     })),
   ] }))
   const text = (value, props = {}) => element("text", { fg: context.theme.text.base, wrapMode: "word", children: displayText(value), ...props })
-  const button = (label, action) => text(label, { fg: context.theme.text.action.primary.base, onMouseDown: action })
+  const button = (label, action, props = {}) => text(label, {
+    fg: context.theme.text.action.primary.base, attributes: TextAttributes.UNDERLINE, onMouseDown: action, ...props,
+  })
+  const fileColor = (status) => {
+    const theme = context.theme
+    const feedback = theme.text.feedback
+    return ({
+      added: theme.diff?.text.added ?? feedback?.success?.base,
+      deleted: theme.diff?.text.removed ?? feedback?.error?.base,
+      modified: feedback?.warning?.base,
+      renamed: feedback?.info?.base,
+    })[status] ?? theme.text.action.primary.base
+  }
   const diffNode = createMemo(() => {
     const value = patch()
     if (!value?.patch || !/^@@ /m.test(value.patch)) return null
@@ -204,7 +216,10 @@ export function reviewPanel(context, panel, rpc) {
                   () => selectFinding(item.id),
                 ))),
                 text("Changed files", { marginTop: 1 }),
-                ...value.files.map((file) => button(`${file.status} · ${file.path}`, () => selectFile(file.id))),
+                ...value.files.map((file) => button(`${file.status} · ${file.path}`, () => selectFile(file.id), {
+                  fg: fileColor(file.status),
+                  attributes: TextAttributes.UNDERLINE | (current()?.fileID === file.id ? TextAttributes.BOLD : 0),
+                })),
               ],
             }),
           ],

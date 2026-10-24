@@ -112,3 +112,35 @@ test("briefing and investigation have independent progress states", async () => 
   assert.equal(saved.steps[5].status, "completed")
   assert.equal(saved.steps[6].status, "in_progress")
 })
+
+test("explicit diff choices emit fresh one-shot requests only after briefing continuation", async () => {
+  let saved
+  const events = []
+  const state = createReviewState({
+    get: async () => structuredClone(saved),
+    set: async (_key, value) => { saved = structuredClone(value) },
+  }, async (event) => { events.push(event) })
+  await assert.rejects(state.update("s", 7, "in_progress", "diff"), /Continue from the review briefing/)
+  await state.update("s", 6, "completed")
+  for (const [step, status, view] of [[6, "completed", "diff"], [7, "completed", "diff"], [7, "in_progress", "invalid"]]) {
+    await assert.rejects(state.update("s", step, status, view), /only be chosen/)
+  }
+  await state.update("s", 7, "in_progress", "chat")
+  assert.equal(saved.diffRequest, undefined)
+  assert.deepEqual(events.at(-1), { sessionID: "s" })
+  await state.update("s", 7, "in_progress", "diff")
+  const first = saved.diffRequest
+  assert.equal(typeof first, "string")
+  assert.deepEqual(events.at(-1), { sessionID: "s", diffRequest: first })
+  await state.update("s", 7, "in_progress")
+  assert.equal(saved.diffRequest, first)
+  assert.deepEqual(events.at(-1), { sessionID: "s" })
+  await state.update("s", 7, "in_progress", "diff")
+  assert.notEqual(saved.diffRequest, first)
+  await state.update("s", 7, "in_progress", "chat")
+  assert.equal(saved.diffRequest, undefined)
+  await state.context("s", "/round/r1", manifest)
+  await state.update("s", 7, "in_progress", "diff")
+  await state.context("s", "/round/r2", manifest)
+  assert.equal(saved.diffRequest, undefined)
+})

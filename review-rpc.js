@@ -20,6 +20,13 @@ const finding = {
 export const reviewRpc = Rpc.define({
   id: "prr.review",
   methods: {
+    pendingDiff: {
+      input: session,
+      output: { anyOf: [
+        { type: "null" },
+        { type: "object", properties: { diffRequest: { type: "string" } }, required: ["diffRequest"], additionalProperties: false },
+      ] },
+    },
     investigation: {
       input: session,
       output: {
@@ -78,5 +85,8 @@ export const reviewRpc = Rpc.define({
       },
     },
   },
-  events: { updated: { schema: session } },
+  events: {
+    updated: { schema: session },
+    openDiff: { schema: { ...session, properties: { ...session.properties, diffRequest: { type: "string" } }, required: ["sessionID", "diffRequest"] } },
+  },
 })

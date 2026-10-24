@@ -39,7 +39,9 @@ OpenCode assets must use quoted `"$PRR_BIN"`; retained legacy assets use `${CLAU
 
 The OpenCode 2 sidebar reads session-scoped review progress and the manifest header through the read-only RPC in `review-rpc.js`. `review-state.js` persists that state in plugin storage; only the orchestrator can update stages through `prr_progress`. The sidebar receives neither private reviewer artifacts nor workspace paths.
 
-After explicit briefing continuation, `/prr-diff` opens `review-panel.js` in a full-screen session panel. `review-reader.js` serves the saved final report and individual file diffs only for the session's bound round; clients supply snapshot and file/finding IDs, never filesystem paths. Unchanged references use the saved head commit, not the mutable clone.
+After explicit briefing continuation, `prr_progress` with `step: 7`, `status: "in_progress"`, and `view: "diff"` emits a one-shot diff request. The app-level TUI listener opens `review-panel.js` only for that request's active session and location, independently of sidebar visibility. `/prr-diff` remains a manual entry point.
+
+`review-reader.js` serves the saved final report and individual file diffs only for the session's bound round; clients supply snapshot and file/finding IDs, never filesystem paths. Unchanged references use the saved head commit, not the mutable clone. File links use semantic status colors and plain underlines; dashed underlines are not exposed by OpenTUI.
 
 Navigation is read-only, and discussion returns to the existing chat workflow without accepting findings. OpenCode 1 keeps its native `todowrite` list and chat investigation.
 

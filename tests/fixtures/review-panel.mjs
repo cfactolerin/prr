@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { render } from "@opentui/solid"
 import { createTestRenderer } from "@opentui/core/testing"
+import { RGBA, TextAttributes } from "@opentui/core"
 import { createStore, produce } from "solid-js/store"
 import { createComponent, createSignal, Show } from "solid-js"
 import { reviewPanel } from "../../review-panel.js"
@@ -23,7 +24,12 @@ const findings = [
   { id: "F-01", title: "Code issue", severity: "MED", trigger: "Logic Bug", anchor: "diff", origin: "introduced", path: "a.rb", line: 45, fileID: "0", why_it_matters: "The value is wrong.", suggested_fix: "Correct it.", suggested_comment: "Please correct the value." },
   { id: "F-02", title: "Acceptance check", severity: "MED", trigger: "Acceptance Criteria", anchor: "none", origin: "introduced", why_it_matters: "Partner check missing.", suggested_fix: "Record results.", suggested_comment: "Please record results." },
 ]
-const report = { snapshot: "one", round: "r1", verdict: "COMMENT", confidence: "HIGH", warnings: "", findings, files: [{ id: "0", path: "a.rb", status: "modified", binary: false }] }
+const report = { snapshot: "one", round: "r1", verdict: "COMMENT", confidence: "HIGH", warnings: "", findings, files: [
+  { id: "0", path: "a.rb", status: "modified", binary: false },
+  { id: "1", path: "added.rb", status: "added", binary: false },
+  { id: "2", path: "deleted.rb", status: "deleted", binary: false },
+  { id: "3", path: "renamed.rb", status: "renamed", binary: false },
+] }
 const rpc = {
   investigation: async () => structuredClone(report),
   diff: async (input) => {
@@ -36,7 +42,10 @@ const rpc = {
 const context = {
   location: { directory: "/repo" },
   storage: { memory: () => [memory, updateMemory] },
-  theme: { text: { base: "#ffffff", muted: "#aaaaaa", action: { primary: { base: "#00ffff" } } } },
+  theme: {
+    text: { base: "#ffffff", muted: "#aaaaaa", action: { primary: { base: "#00ffff" } }, feedback: { warning: { base: "#ffff00" }, info: { base: "#0088ff" } } },
+    diff: { text: { added: "#00ff00", removed: "#ff0000" } },
+  },
   keymap: {
     layer: (factory) => { for (const command of factory().commands) commands.set(command.id, command) },
     dispatch: (id) => commands.get(id).run(),
@@ -58,6 +67,15 @@ await render(() => createComponent(Show, { get when() { return open() }, childre
 try {
   const initial = await view.waitForFrame((frame) => frame.includes("Code issue") && frame.includes("BEFORE_START") && frame.includes("AFTER_START"))
   assert.equal(calls.length, 1)
+  const nodes = (node) => [node, ...(node.getChildren?.() ?? []).flatMap(nodes)]
+  const rendered = nodes(view.renderer.root)
+  for (const [status, path, color] of [["modified", "a.rb", "#ffff00"], ["added", "added.rb", "#00ff00"], ["deleted", "deleted.rb", "#ff0000"], ["renamed", "renamed.rb", "#0088ff"]]) {
+    const node = rendered.find((item) => item.plainText === `${status} · ${path}`)
+    assert.ok(node, path)
+    assert.ok(node.fg.equals(RGBA.fromHex(color)), `${status} color`)
+    assert.ok(node.attributes & TextAttributes.UNDERLINE, `${path} is clickable`)
+  }
+  assert.ok(!(rendered.find((item) => item.plainText === "Changed files").attributes & TextAttributes.UNDERLINE))
   const rows = initial.split("\n")
   const codeY = rows.findIndex((row) => row.includes("BEFORE_START"))
   for (let index = 0; index < 6; index++) await view.mockMouse.scroll(20, codeY, "right")

@@ -147,7 +147,11 @@ PRR gathers the context and shows it before dispatching either reviewer. You can
 
 In the OpenCode 2 terminal, the sidebar keeps seven review stages and the context manifest summary visible: PRR version, PR, title, author, branches, ticket, and round. After arbitration, **Review briefing** shows what changed, the implementation assessment, and findings needing attention. It pauses until you explicitly choose diff or chat investigation, including when no findings were identified. You can ask for an explanation or stop without posting.
 
-After continuing, click **Open diff investigation** in the sidebar or run `/prr-diff` to open a full-screen side-by-side diff. Select a finding to jump to its code and replace the findings list with its details. Unchanged references outside the diff open context from the saved PR commit; non-code findings show details without inventing an anchor.
+Choosing **Investigate in diff view** opens the full-screen side-by-side diff directly in the active terminal. The sidebar action and `/prr-diff` remain available to reopen it. Select a finding to jump to its code and replace the findings list with its details.
+
+File links are underlined and colored by status: added and deleted files use the theme's diff colors, modified files use its warning color, and renamed files use its information color. Status labels remain visible without color, and the selected file is bold. OpenTUI supports plain underlines, not dashed ones.
+
+Unchanged references outside the diff open context from the saved PR commit; non-code findings show details without inventing an anchor. Automatic opening applies only to a fresh explicit choice in the active session; progress refreshes, returning to chat, and plugin reloads do not reopen a closed panel.
 
 **Continue review** (`c` or Escape) returns to chat and resumes the investigation menu, including **Post review** when there are no findings. It does not accept findings or authorize posting. **Discuss in chat** instead sends your question about the selected finding.
 

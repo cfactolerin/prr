@@ -49,9 +49,9 @@ export function createReviewState(storage, emit) {
       steps: reviewSteps.map((label) => state.steps.find((step) => step.label === label) ?? { label, status: "pending" }),
     }
   }
-  const save = async (sessionID, state) => {
+  const save = async (sessionID, state, diffRequest) => {
     await storage.set(key(sessionID), state)
-    await emit({ sessionID })
+    await emit({ sessionID, ...(diffRequest ? { diffRequest } : {}) })
   }
   const change = (sessionID, update) => {
     const next = (pending.get(sessionID) ?? Promise.resolve()).catch(() => {}).then(update)
@@ -66,15 +66,23 @@ export function createReviewState(storage, emit) {
     reset(sessionID) {
       return change(sessionID, () => save(sessionID, initial()))
     },
-    async update(sessionID, step, status) {
+    async update(sessionID, step, status, view) {
       if (!Number.isInteger(step) || step < 1 || step > reviewSteps.length
         || !["pending", "in_progress", "completed", "blocked"].includes(status)) {
         throw new Error("Invalid PRR progress update")
       }
+      if (view !== undefined && (step !== 7 || status !== "in_progress" || !["diff", "chat"].includes(view))) {
+        throw new Error("Investigation view can only be chosen when starting step 7")
+      }
       await change(sessionID, async () => {
         const state = await get(sessionID) ?? initial()
+        if (view !== undefined && state.steps[5].status !== "completed") {
+          throw new Error("Continue from the review briefing before choosing an investigation view")
+        }
         state.steps[step - 1].status = status
-        await save(sessionID, state)
+        if (view === "diff") state.diffRequest = crypto.randomUUID()
+        if (view === "chat" || !investigationReady(state) || state.steps[6].status !== "in_progress") delete state.diffRequest
+        await save(sessionID, state, view === "diff" ? state.diffRequest : undefined)
       })
     },
     async context(sessionID, round, manifest) {
@@ -85,6 +93,7 @@ export function createReviewState(storage, emit) {
           state.steps = initial().steps
           state.steps[0] = cleanup
           state.steps[1].status = "in_progress"
+          delete state.diffRequest
         }
         state.round = round
         state.summary = manifestSummary(manifest)

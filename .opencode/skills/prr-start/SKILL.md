@@ -361,7 +361,7 @@ Then use the question tool:
 
 **Options:**
 
-- **Investigate in diff view** - finish step 6, begin step 7, and show how to open the visual view.
+- **Investigate in diff view** - finish step 6, begin step 7, and open the visual view directly.
 - **Investigate in chat** - finish step 6 and begin the existing chat investigation.
 - **Explain this briefing** - collect the question, explain using the saved report, and ask again.
 - **Stop here** - stop without investigating, accepting findings, or posting.
@@ -372,10 +372,15 @@ answer needs fresh code inspection, offer continuing to investigation rather tha
 this pause. **Stop here** marks step 6 blocked and leaves step 7 pending; a later explicit continuation
 can resume the briefing. Only an explicit investigation choice completes step 6 and starts step 7.
 
-For the diff choice on OpenCode 2, tell the user to click **Open diff investigation** in the sidebar
-or run `/prr-diff`. These open the same full-screen side-by-side view; do not claim to have opened it
-through a model tool. On OpenCode 1 or a client without session panels, offer chat investigation
-instead. The visual view is optional and never accepts findings or authorizes posting.
+For the diff choice on OpenCode 2, complete step 6, then call `prr_progress` with `step: 7`,
+`status: "in_progress"`, and `view: "diff"`. This requests the full-screen diff panel directly in the
+active terminal. Do not add another click, slash command, or question to enter it. For the chat choice,
+start step 7 with `view: "chat"` instead. Only an explicit visual-view choice includes `view: "diff"`;
+ordinary progress updates and returning to the chat menu must not reopen it.
+
+The sidebar action and `/prr-diff` remain manual fallbacks if automatic opening fails. On OpenCode 1
+or a client without session panels, offer chat investigation instead. The visual view is optional
+and never accepts findings or authorizes posting.
 
 ## Phase 7: Interactive Investigation
 
@@ -405,7 +410,7 @@ Use the question tool:
 - **Post review** - skip the findings walk and go to the posting confirmation.
 - **Investigate a finding** - collect a question or challenge.
 - **Run a focused check** - collect a code-inspection request.
-- **Open diff investigation** - show the sidebar action or `/prr-diff`, then wait for the user.
+- **Open diff investigation** - call `prr_progress` with `step: 7`, `status: "in_progress"`, and `view: "diff"` to open the panel directly, then wait for the user.
 - **Re-review** - create a new round with additional guidance.
 - **Review findings** - proceed to one-at-a-time findings decisions.
 - **Abort** - stop without posting.

@@ -8,3 +8,10 @@ test("visual investigation renders split diffs, navigates findings, and keeps ch
   })
   assert.equal(result.status, 0, result.stdout + result.stderr)
 })
+
+test("explicit diff choices open once in the active session without needing a sidebar click", () => {
+  const result = spawnSync(process.execPath, ["--conditions=browser", "tests/fixtures/review-auto-open.mjs"], {
+    cwd: new URL("..", import.meta.url), encoding: "utf8", timeout: 30_000,
+  })
+  assert.equal(result.status, 0, result.stdout + result.stderr)
+})

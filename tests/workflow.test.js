@@ -39,7 +39,9 @@ test("briefing is concise, uses saved assessments, and leaves investigation opti
     assert.ok(!briefing.includes(section))
   }
   assert.match(briefing, /\/prr-diff/)
-  assert.match(briefing, /do not claim to have opened it/)
+  assert.match(briefing, /Do not add another click/)
+  assert.match(briefing, /`view: "diff"`/)
+  assert.match(briefing, /`view: "chat"`/)
 })
 
 test("review confidence reflects assessment quality rather than local test execution", () => {

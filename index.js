@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url"
 import { tool } from "@opencode-ai/plugin"
 import { parse } from "yaml"
 import { atlassianReadTools, fetchAtlassianContext } from "./atlassian.js"
-import { createReviewState, reviewSteps } from "./review-state.js"
+import { createReviewState, investigationReady, reviewSteps } from "./review-state.js"
 import { createReviewReader } from "./review-reader.js"
 
 const packageRoot = dirname(fileURLToPath(import.meta.url))
@@ -555,17 +555,17 @@ async function runCodexHealth(_args, context) {
 
 const arg = {
   string: ({ optional = false } = {}) => ({ type: "string", optional }),
-  enum: (values) => ({ type: "string", enum: values, optional: false }),
+  enum: (values, { optional = false } = {}) => ({ type: "string", enum: values, optional }),
   positiveInt: ({ max, optional = false } = {}) => ({ type: "integer", max, optional }),
 }
 
 const toolDefinitions = {
   prr_progress: {
-    description: "Update one of the seven PRR review stages in the session sidebar (1-based step).",
-    args: { step: arg.positiveInt({ max: reviewSteps.length }), status: arg.enum(["pending", "in_progress", "completed", "blocked"]) },
-    execute: async ({ step, status }, context, host) => {
+    description: "Update a PRR review stage (1-based). Starting step 7 with view=diff opens visual investigation in the active terminal; view=chat keeps the chat workflow.",
+    args: { step: arg.positiveInt({ max: reviewSteps.length }), status: arg.enum(["pending", "in_progress", "completed", "blocked"]), view: arg.enum(["diff", "chat"], { optional: true }) },
+    execute: async ({ step, status, view }, context, host) => {
       if (context?.agent !== "prr-orchestrator") throw new Error("Only the PRR orchestrator may update progress")
-      await host.reviewState.update(requireSession(context), step, status)
+      await host.reviewState.update(requireSession(context), step, status, view)
       return `PRR step ${step}: ${status}`
     },
   },
@@ -743,11 +743,19 @@ async function setup(ctx) {
   requireBinary()
   const { reviewRpc } = await import("./review-rpc.js")
   let registration
-  const reviewState = createReviewState(ctx.storage, (data) => registration.events.emit("updated", data))
+  const reviewState = createReviewState(ctx.storage, async ({ sessionID, diffRequest }) => {
+    await registration.events.emit("updated", { sessionID })
+    if (diffRequest) await registration.events.emit("openDiff", { sessionID, diffRequest })
+  })
   const reader = createReviewReader({ state: reviewState, resolveRound: (round) => roundRoot(configuredWorkspace(), round), binary })
   registration = await ctx.rpc.register(reviewRpc, {
     investigation: reader.investigation,
     diff: reader.diff,
+    pendingDiff: async ({ sessionID }) => {
+      const state = await reviewState.get(sessionID)
+      return investigationReady(state) && state.steps[6].status === "in_progress" && state.diffRequest
+        ? { diffRequest: state.diffRequest } : null
+    },
     get: async ({ sessionID }) => {
       const state = await reviewState.get(sessionID)
       return state ? { steps: state.steps, summary: state.summary } : null

@@ -1,4 +1,5 @@
 import { Plugin } from "@opencode/plugin/tui"
+import { TextAttributes } from "@opentui/core"
 import { createElement, spread } from "@opentui/solid"
 import { createComponent, createResource, onCleanup, Show } from "solid-js"
 import { reviewRpc } from "./review-rpc.js"
@@ -9,6 +10,37 @@ function element(tag, props) {
   const node = createElement(tag)
   spread(node, props)
   return node
+}
+
+export function watchDiffRequests(context, rpc) {
+  const [memory, updateMemory] = context.storage.memory("diff-requests", { initial: { seen: {} } })
+  let disposed = false
+  const location = () => context.location ?? context.data.location.default()
+  const session = () => {
+    const route = context.ui.router.current()
+    return route.type === "session" ? route.sessionID : undefined
+  }
+  const stop = rpc.events.on("openDiff", async (event) => {
+    const { sessionID, diffRequest } = event.data
+    const scope = location()
+    if (!diffRequest || session() !== sessionID || event.location.directory !== scope.directory
+      || event.location.workspaceID !== scope.workspaceID) return
+    const key = JSON.stringify([scope.directory, scope.workspaceID, sessionID])
+    if (memory.seen[key] === diffRequest) return
+    try {
+      const request = await rpc.pendingDiff({ sessionID }, { location: scope })
+      if (disposed || session() !== sessionID || location().directory !== scope.directory
+        || location().workspaceID !== scope.workspaceID || memory.seen[key] === diffRequest
+        || request?.diffRequest !== diffRequest) return
+      updateMemory((draft) => { draft.seen[key] = diffRequest })
+      context.ui.panel.open(investigationPanel, { presentation: "fullscreen" })
+    } catch {
+      if (!disposed && session() === sessionID) context.ui.toast.show({
+        message: "Could not open diff investigation automatically. Use /prr-diff to open it.", variant: "error",
+      })
+    }
+  })
+  onCleanup(() => { disposed = true; stop() })
 }
 
 export function reviewSidebar(context, props, rpc) {
@@ -51,6 +83,7 @@ export function reviewSidebar(context, props, rpc) {
       if (investigationReady(state) && context.ui?.panel) {
         rows.push(element("text", {
           marginTop: 1, fg: theme.text.action.primary.base, children: "Open diff investigation",
+          attributes: TextAttributes.UNDERLINE,
           onMouseDown: () => context.ui.panel.open(investigationPanel, { presentation: "fullscreen" }),
         }))
       }
@@ -92,6 +125,7 @@ export default Plugin.define({
       stops.push(context.ui.slot({
         append: "app",
         render: () => {
+          watchDiffRequests(context, rpc)
           context.keymap.layer(() => ({ mode: "global", commands: [{
             id: "prr.diff.open", title: "PRR: Open diff investigation", group: "PRR", palette: true,
             slash: { name: "prr-diff" },
