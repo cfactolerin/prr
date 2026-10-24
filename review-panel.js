@@ -80,13 +80,17 @@ export function reviewPanel(context, panel, rpc) {
     })
   }
   const close = () => { saveScroll(); panel.close() }
-  const sendToChat = async (text) => {
+  const sendToChat = async (text, discussionFindingID) => {
     if (submitting()) return
     saveScroll()
+    const snapshot = data()?.snapshot
     setSubmitting(true)
     try {
       await context.client.session.prompt({ sessionID: panel.sessionID, text }, { location: location() })
       panel.close()
+      if (discussionFindingID && view()?.snapshot === snapshot) updateMemory((draft) => {
+        draft.sessions[panel.sessionID].discussionFindingID = discussionFindingID
+      })
     } catch (error) {
       context.ui.toast.show({ message: displayText(error.message), variant: "error" })
     } finally {
@@ -127,14 +131,12 @@ export function reviewPanel(context, panel, rpc) {
   const discuss = async () => {
     if (submitting()) return
     const selected = finding()
-    const snapshot = data()?.snapshot
     if (!selected) return
-    const question = await context.ui.dialog.prompt({ title: `Discuss ${displayText(selected.id)}`, placeholder: "What would you like to check?" })
-    if (!question?.trim() || snapshot !== data()?.snapshot) return
-    await sendToChat(`Investigate finding ${JSON.stringify(selected.id)} in the current saved PRR review. This is a request for evidence, not acceptance, rejection, or permission to post.\n\n${question}`)
+    if (current()?.discussionFindingID === selected.id) return close()
+    await sendToChat(`Switch from the diff view to interactive chat investigation of finding ${JSON.stringify(selected.id)} in the current saved PRR review. The briefing has already been continued; this is an ongoing Phase 7 discussion, not a request to choose an investigation mode. Keep step 7 in progress with view=chat. Briefly show this finding and use the question tool to ask what I would like to investigate about it. Keep follow-up discussion here. Do not repeat the briefing, show the investigation-mode chooser, reopen the diff automatically, or show the next-step menu unless I ask to continue review. This is a request for evidence, not acceptance, rejection, or permission to post.`, selected.id)
   }
   context.keymap.layer(() => ({ priority: 10, commands: [
-    { id: "prr.diff.close", bind: "escape", run: continueReview },
+    { id: "prr.diff.close", bind: "escape", run: close },
     { id: "prr.diff.continue", bind: "c", run: continueReview },
     { id: "prr.diff.findings", bind: "b", run: () => selectFinding(null) },
     { id: "prr.diff.next", bind: "n", run: () => adjacent(1) },
@@ -198,7 +200,7 @@ export function reviewPanel(context, panel, rpc) {
       const value = data()
       return [
         heading(`PRR investigation · ${value.round} · ${value.verdict} · ${value.confidence}`),
-        text("[o] Files   [b] Findings   [p/n] Previous/next finding   [d] Discuss   [r] Refresh   [c/Esc] Continue review", { fg: context.theme.text.muted, flexShrink: 0 }),
+        text("[o] Files   [b] Findings   [p/n] Previous/next finding   [d] Discuss   [r] Refresh   [Esc] Back to chat   [c] Continue review", { fg: context.theme.text.muted, flexShrink: 0 }),
         ...(value.warnings ? [text(value.warnings, { fg: context.theme.text.action.primary.base })] : []),
         element("box", {
           flexDirection: "row", flexGrow: 1, minHeight: 0,
@@ -236,7 +238,8 @@ export function reviewPanel(context, panel, rpc) {
                 heading("Why this matters", headingColor, { marginTop: 1 }), markdown(finding().why_it_matters),
                 heading("Suggested fix", fixColor, { marginTop: 1 }), markdown(finding().suggested_fix),
                 heading("Suggested comment", context.theme.text.action.primary.base, { marginTop: 1 }), markdown(finding().suggested_comment),
-                button("Previous [p]", () => adjacent(-1)), button("Next [n]", () => adjacent(1)), button("Discuss in chat [d]", discuss),
+                button("Previous [p]", () => adjacent(-1)), button("Next [n]", () => adjacent(1)),
+                button(current()?.discussionFindingID === finding().id ? "Resume discussion [d]" : "Discuss in chat [d]", discuss),
               ] : [
                 heading("Findings"),
                 ...(!value.findings.length ? [text("No findings. Browse any changed file, then Continue review to choose the next step.")] : value.findings.map((item) => button(
@@ -252,9 +255,10 @@ export function reviewPanel(context, panel, rpc) {
             }),
           ],
         }),
+        button(current()?.discussionFindingID ? `Back to discussion ${current().discussionFindingID} [Esc]` : "Back to chat [Esc]", close),
         element("text", {
-          fg: context.theme.text.action.primary.base, flexShrink: 0, onMouseDown: continueReview,
-          get children() { return submitting() ? "Returning to chat…" : "Continue review [c / Esc] — return to the investigation menu" },
+          fg: context.theme.text.action.primary.base, attributes: TextAttributes.UNDERLINE, flexShrink: 0, onMouseDown: continueReview,
+          get children() { return submitting() ? "Returning to chat…" : "Continue review [c] — choose the next review action" },
         }),
       ]
     },

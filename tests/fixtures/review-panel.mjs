@@ -52,7 +52,7 @@ const context = {
     dispatch: (id) => commands.get(id).run(),
   },
   ui: {
-    dialog: { prompt: async () => "Does the caller rely on this value?", select: async () => "0" },
+    dialog: { prompt: async () => { assert.fail("Discuss must switch to chat without a popup") }, select: async () => "0" },
     toast: { show: (input) => { errors.push(input.message) } },
   },
   client: { session: { prompt: async (input) => {
@@ -140,17 +140,53 @@ try {
   assert.ok(!frame.includes("before value"))
   await commands.get("prr.diff.previous").run()
   await waitForContent((frame) => frame.includes("Please correct the value."))
+  failPrompt = true
+  await commands.get("prr.diff.discuss").run()
+  assert.equal(closed, false)
+  assert.equal(memory.sessions.session.discussionFindingID, undefined)
+  assert.deepEqual(errors, ["Cannot reach the review session"])
+  errors.length = 0
+  failPrompt = false
+  const beforeDiscuss = calls.filter((call) => call.prompt).length
   await commands.get("prr.diff.discuss").run()
   assert.equal(closed, true)
+  assert.equal(calls.filter((call) => call.prompt).length, beforeDiscuss + 1)
   assert.match(calls.find((call) => call.prompt).prompt.text, /not acceptance, rejection, or permission to post/)
-  assert.match(calls.find((call) => call.prompt).prompt.text, /Does the caller rely/)
+  assert.match(calls.find((call) => call.prompt).prompt.text, /interactive chat investigation of finding "F-01"/)
+  assert.match(calls.find((call) => call.prompt).prompt.text, /ongoing Phase 7 discussion/)
+  assert.match(calls.find((call) => call.prompt).prompt.text, /use the question tool to ask what I would like to investigate/)
+  assert.match(calls.find((call) => call.prompt).prompt.text, /unless I ask to continue review/)
   assert.ok(memory.sessions.session.offsets["finding:F-01"].y > 0)
+  const discussionOffset = memory.sessions.session.offsets["finding:F-01"].y
   setOpen(true)
   await waitForContent((frame) => frame.includes("Please correct the value.") && frame.includes("after value"))
   assert.equal(memory.sessions.session.findingID, "F-01")
   closed = false
+  const beforeReturn = calls.filter((call) => call.prompt).length
+  assert.ok(view.captureCharFrame().includes("Resume discussion [d]"))
+  await commands.get("prr.diff.discuss").run()
+  assert.equal(closed, true)
+  assert.equal(calls.filter((call) => call.prompt).length, beforeReturn)
+  setOpen(true)
+  await waitForContent((frame) => frame.includes("Please correct the value."))
+  closed = false
+  assert.equal(commands.get("prr.diff.close").bind, "escape")
+  await commands.get("prr.diff.close").run()
+  assert.equal(closed, true)
+  assert.equal(calls.filter((call) => call.prompt).length, beforeReturn)
+  assert.equal(memory.sessions.session.discussionFindingID, "F-01")
+  assert.equal(memory.sessions.session.offsets["finding:F-01"].y, discussionOffset)
+  setOpen(true)
+  await waitForContent((frame) => frame.includes("Please correct the value.") && frame.includes("Back to discussion F-01 [Esc]"))
+  closed = false
+  await clickText("Back to discussion F-01 [Esc]")
+  await view.waitFor(() => closed)
+  assert.equal(calls.filter((call) => call.prompt).length, beforeReturn)
+  setOpen(true)
+  await waitForContent((frame) => frame.includes("Please correct the value."))
+  closed = false
   frame = view.captureCharFrame()
-  const continueY = frame.split("\n").findIndex((row) => row.includes("Continue review [c / Esc]"))
+  const continueY = frame.split("\n").findIndex((row) => row.includes("Continue review [c]"))
   await view.mockMouse.click(3, continueY)
   await view.waitFor(() => closed)
   const withFindings = calls.filter((call) => call.prompt).at(-1).prompt
@@ -165,6 +201,8 @@ try {
   eventHandler({ data: { sessionID: "session" }, location: context.location })
   await view.waitForFrame((frame) => frame.includes("No findings."))
   assert.equal(memory.sessions.session.findingID, null)
+  assert.equal(memory.sessions.session.discussionFindingID, undefined)
+  assert.ok(view.captureCharFrame().includes("Back to chat [Esc]"))
   await commands.get("prr.diff.scroll.down").run()
   await view.waitForFrame((frame) => !frame.includes("BEFORE_START"))
   view.resize(70, 24)
@@ -176,12 +214,12 @@ try {
   await commands.get("prr.diff.continue").run()
   assert.equal(closed, false)
   assert.deepEqual(errors, ["Cannot reach the review session"])
-  await view.waitForFrame((frame) => frame.includes("Continue review [c / Esc]"))
+  await view.waitForFrame((frame) => frame.includes("Continue review [c]"))
   failPrompt = false
   let releasePrompt
   promptWait = new Promise((resolve) => { releasePrompt = resolve })
   const beforeContinue = calls.filter((call) => call.prompt).length
-  const continuing = commands.get("prr.diff.close").run()
+  const continuing = commands.get("prr.diff.continue").run()
   await commands.get("prr.diff.continue").run()
   assert.equal(calls.filter((call) => call.prompt).length, beforeContinue + 1)
   const withoutFindings = calls.filter((call) => call.prompt).at(-1).prompt

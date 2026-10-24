@@ -153,11 +153,17 @@ File links are underlined and colored by status: added and deleted files use the
 
 Unchanged references outside the diff open context from the saved PR commit; non-code findings show details without inventing an anchor. Automatic opening applies only to a fresh explicit choice in the active session; progress refreshes, returning to chat, and plugin reloads do not reopen a closed panel.
 
-**Continue review** (`c` or Escape) returns to chat and resumes the investigation menu, including **Post review** when there are no findings. It does not accept findings or authorize posting. **Discuss in chat** instead sends your question about the selected finding.
+**Continue review** (`c`) returns to chat and resumes the investigation menu, including **Post review** when there are no findings. It does not accept findings or authorize posting. **Discuss in chat** instead switches directly to interactive investigation of the selected finding; Escape returns to that conversation without opening a menu.
 
 Returning to chat preserves the selected finding and vertical scroll position; a new round or changed report resets them. Browsing files and findings requires no model calls; continuing or discussing sends a request to the review session.
 
-Use `o` for files, `b` for findings, `p`/`n` for previous/next finding, arrow or Page Up/Down keys to scroll vertically, and `c` or Escape to continue review in chat. Horizontal mouse scrolling stays synchronized between the before/after panes.
+Use `o` for files, `b` for findings, `p`/`n` for previous/next finding, and arrow or Page Up/Down keys to scroll vertically. Escape returns to the existing chat without sending a message; `c` explicitly opens the next-step review menu. Horizontal mouse scrolling stays synchronized between the before/after panes.
+
+**Discuss in chat** opens the selected finding in the existing conversation and asks what you want
+to investigate, without a popup. Reopen the diff to
+keep browsing, then use **Back to discussion** or Escape to return without replacing the discussion
+with another menu. **Resume discussion** on the same finding also returns without sending another
+request. The selected finding and diff position are retained.
 
 **↑ Previous file** and **↓ Next file** cycle from the current file and wrap at either end. Choosing
 another file leaves finding details and restores that file's saved vertical position; arrow keys

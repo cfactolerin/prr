@@ -65,6 +65,18 @@ test("leaving diff investigation resumes next-step choices even without findings
   assert.match(investigation, /Do not repeat the briefing, reopen the diff view/)
 })
 
+test("diff discussion and Escape return to existing chat without repeating mode selection", () => {
+  const investigation = skill.split("## Phase 7:")[1].split("## Phase 8:")[0]
+  assert.match(investigation, /Requests from \*\*Discuss in chat\*\* are already in Phase 7/)
+  assert.match(investigation, /directly to interactive chat investigation of the selected finding, without a popup question/)
+  assert.match(investigation, /Answer their question directly/)
+  assert.match(investigation, /briefly show the selected finding, and use the question tool/)
+  assert.match(investigation, /do not show the next-step\nmenu after each answer unless the user asks/)
+  assert.match(investigation, /Escape\) closes the panel\nwithout sending a message/)
+  assert.match(investigation, /or replacing any pending chat question/)
+  assert.match(investigation, /\*\*Continue review\*\* action \(`c`\)/)
+})
+
 test("statistics metadata cannot turn a final report into another Q&A round", () => {
   const detection = skill.split("### 5c.")[1].split("### 5d.")[0]
   assert.match(detection, /starting with `## Final Report` is a final report/)

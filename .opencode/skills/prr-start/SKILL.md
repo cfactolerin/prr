@@ -405,13 +405,23 @@ Enter only after the briefing's explicit continuation. Do not repeat the briefin
 
 The OpenCode 2 visual investigation is an alternate view of this phase. `/prr-diff` and the sidebar
 open the saved round's changed files and findings. Clicking a finding selects its code location and
-details; non-code findings show details without inventing an anchor. **Discuss in chat** submits the
-user's question as evidence gathering, leaving all finding decisions pending. Returning to chat or
+details; non-code findings show details without inventing an anchor. **Discuss in chat** switches
+directly to interactive chat investigation of the selected finding, without a popup question, leaving
+all finding decisions pending. Returning to chat or
 opening the visual view never completes step 7, accepts findings, or authorizes posting. The selected
 finding and vertical diff scroll position are retained when switching views. For a visual-view choice,
 wait for a user question or **Continue review** rather than immediately opening another question dialog.
 
-The visual view's **Continue review** action (`c` or Escape) submits a request to return to this menu.
+Requests from **Discuss in chat** are already in Phase 7. Keep step 7 in progress with `view: "chat"`,
+briefly show the selected finding, and use the question tool to ask what the user wants to
+investigate about it. Apply the same evidence-gathering rules as **Investigate a finding** below.
+Do not ask the user to choose diff or chat investigation again. Answer their question directly.
+Keep follow-ups in the existing discussion; do not show the next-step
+menu after each answer unless the user asks to continue review. Reopening the diff is navigation,
+not a new briefing or investigation. **Back to discussion / Back to chat** (Escape) closes the panel
+without sending a message, restarting the workflow, or replacing any pending chat question.
+
+The visual view's **Continue review** action (`c`) submits a request to return to this menu.
 On receiving that request, immediately use the question tool below, including **Post review** when
 there are zero findings. Do not repeat the briefing, reopen the diff view, or leave the user waiting
 without next-step choices. Continuing from the diff view does not accept or reject findings, complete
