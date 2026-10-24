@@ -957,6 +957,31 @@ Approve.
     }
 
     #[test]
+    fn local_statistics_never_become_findings_or_the_posted_review_body() {
+        let report = parse_report(r#"## Final Report
+
+### Verdict
+
+APPROVE
+
+The implementation matches the requirements.
+
+### Findings
+
+None identified.
+
+### Review Statistics
+
+```json
+{"version":1,"agreement":{"status":"reached","round":0,"reason":"Matching reviews"},"assessments":[]}
+```
+"#);
+        assert!(report.findings.is_empty());
+        assert!(report.line_comments.is_empty());
+        assert_eq!(report.review_body.as_deref(), Some("The implementation matches the requirements."));
+    }
+
+    #[test]
     fn briefing_sections_preserve_fenced_headings() {
         let content = r#"## Code Quality
 

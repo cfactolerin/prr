@@ -1,4 +1,4 @@
-import { SyntaxStyle, TextAttributes } from "@opentui/core"
+import { RGBA, SyntaxStyle, TextAttributes } from "@opentui/core"
 import { createElement, spread } from "@opentui/solid"
 import { createEffect, createMemo, createResource, createSignal, onCleanup, untrack } from "solid-js"
 import { displayText, findingRows } from "./review-diff.js"
@@ -30,7 +30,20 @@ export function reviewPanel(context, panel, rpc) {
   const current = () => view()?.snapshot === data()?.snapshot ? view() : null
   let scroll
   let scrollSelection
-  const style = SyntaxStyle.fromStyles({ default: { fg: context.theme.text.base } }, context.renderer.nativeScene)
+  const headingColor = context.theme.text.feedback?.info?.base ?? context.theme.text.action.primary.base
+  const fixColor = context.theme.text.feedback?.success?.base ?? context.theme.text.action.primary.base
+  const style = SyntaxStyle.fromStyles({
+    default: { fg: context.theme.text.base },
+    "markup.heading": { fg: headingColor, bold: true },
+    "markup.strong": { fg: headingColor, bold: true },
+    "markup.italic": { italic: true },
+    "markup.raw": { fg: context.theme.text.action.primary.base },
+    "markup.link": { fg: context.theme.text.action.primary.base, underline: true },
+  }, context.renderer.nativeScene)
+  const foreground = typeof context.theme.text.base === "string" ? RGBA.fromHex(context.theme.text.base) : context.theme.text.base
+  const luminance = [foreground.r, foreground.g, foreground.b].map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+    .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0)
+  const issueBackground = luminance > 0.179 ? "#174b73" : "#b9ddff"
   onCleanup(() => {
     saveScroll()
     void context.renderer.idle().then(() => style.destroy())
@@ -105,6 +118,12 @@ export function reviewPanel(context, panel, rpc) {
     const result = content()
     return result?.sessionID === panel.sessionID && result.snapshot === data()?.snapshot && result.key === selectionKey() ? result.value : null
   }
+  const adjacentFile = (step) => {
+    const files = data()?.files ?? []
+    if (!files.length) return
+    const index = files.findIndex((file) => file.id === current()?.fileID)
+    selectFile(files[index < 0 ? step > 0 ? 0 : files.length - 1 : (index + step + files.length) % files.length].id)
+  }
   const discuss = async () => {
     if (submitting()) return
     const selected = finding()
@@ -132,8 +151,12 @@ export function reviewPanel(context, panel, rpc) {
     })),
   ] }))
   const text = (value, props = {}) => element("text", { fg: context.theme.text.base, wrapMode: "word", children: displayText(value), ...props })
+  const heading = (value, color = headingColor, props = {}) => text(value, { fg: color, attributes: TextAttributes.BOLD, flexShrink: 0, ...props })
+  const markdown = (value) => element("markdown", {
+    content: displayText(value), syntaxStyle: style, fg: context.theme.text.base, conceal: true, concealCode: true, internalBlockMode: "top-level", width: "100%", flexShrink: 0,
+  })
   const button = (label, action, props = {}) => text(label, {
-    fg: context.theme.text.action.primary.base, attributes: TextAttributes.UNDERLINE, onMouseDown: action, ...props,
+    fg: context.theme.text.action.primary.base, attributes: TextAttributes.UNDERLINE, flexShrink: 0, onMouseDown: action, ...props,
   })
   const fileColor = (status) => {
     const theme = context.theme
@@ -155,12 +178,13 @@ export function reviewPanel(context, panel, rpc) {
     let positioned = false
     const node = element("diff", {
       diff: safePatch, view: "split", syncScroll: true, wrapMode: "none", showLineNumbers: true, syntaxStyle: style,
+      fg: context.theme.text.base, lineNumberFg: context.theme.text.base,
       get width() { return Math.max(20, panel.width - (panel.width < 100 ? 30 : 40)) },
       flexShrink: 0,
       renderAfter() {
         if (positioned || !scroll || !node.height) return
         positioned = true
-        for (const row of rows) node.setLineColor(row, { gutter: context.theme.text.action.primary.base })
+        for (const row of rows) node.setLineColor(row, { gutter: issueBackground, content: issueBackground })
         scroll.scrollTo(offset)
       },
     })
@@ -173,7 +197,7 @@ export function reviewPanel(context, panel, rpc) {
       if (!data()) return [text("Loading saved review…"), button("Return to chat [Esc]", close)]
       const value = data()
       return [
-        text(`PRR investigation · ${value.round} · ${value.verdict} · ${value.confidence}`, { flexShrink: 0 }),
+        heading(`PRR investigation · ${value.round} · ${value.verdict} · ${value.confidence}`),
         text("[o] Files   [b] Findings   [p/n] Previous/next finding   [d] Discuss   [r] Refresh   [c/Esc] Continue review", { fg: context.theme.text.muted, flexShrink: 0 }),
         ...(value.warnings ? [text(value.warnings, { fg: context.theme.text.action.primary.base })] : []),
         element("box", {
@@ -183,6 +207,10 @@ export function reviewPanel(context, panel, rpc) {
               flexDirection: "column", flexGrow: 1, minWidth: 20,
               children: [
                 button("Choose file [o]", () => context.keymap.dispatch("prr.diff.files")),
+                ...(value.files.length ? [element("box", { flexDirection: "row", flexShrink: 0, height: 1, gap: 2, children: [
+                  button("↑ Previous file", () => adjacentFile(-1)),
+                  button("↓ Next file", () => adjacentFile(1)),
+                ] })] : []),
                 text(patch()?.path || "No code selected", { flexShrink: 0 }),
                 element("box", { flexDirection: "row", flexShrink: 0, children: [
                   text("Before", { width: "50%", fg: context.theme.text.muted }),
@@ -201,21 +229,21 @@ export function reviewPanel(context, panel, rpc) {
               width: panel.width < 100 ? 28 : 38, flexShrink: 0, border: ["left"], paddingLeft: 1, scrollY: true,
               children: finding() ? [
                 button("← All findings [b]", () => selectFinding(null)),
-                text(`${finding().id} · ${finding().severity} · ${finding().trigger}`, { marginTop: 1 }),
-                text(finding().title),
+                heading(`${finding().id} · ${finding().severity} · ${finding().trigger}`, context.theme.text.feedback?.[finding().severity === "HIGH" ? "error" : "warning"]?.base ?? headingColor, { marginTop: 1 }),
+                heading(finding().title),
                 ...(finding().origin === "pre-existing" ? [text("Pre-existing — not caused by this PR; non-blocking.", { marginTop: 1 })] : []),
                 text(finding().anchor === "none" ? "No code location" : `${finding().path}:${finding().start_line ?? finding().line}${finding().start_line ? `–${finding().line}` : ""}`),
-                text("Why this matters", { marginTop: 1 }), text(finding().why_it_matters),
-                text("Suggested fix", { marginTop: 1 }), text(finding().suggested_fix),
-                text("Suggested comment", { marginTop: 1 }), text(finding().suggested_comment),
+                heading("Why this matters", headingColor, { marginTop: 1 }), markdown(finding().why_it_matters),
+                heading("Suggested fix", fixColor, { marginTop: 1 }), markdown(finding().suggested_fix),
+                heading("Suggested comment", context.theme.text.action.primary.base, { marginTop: 1 }), markdown(finding().suggested_comment),
                 button("Previous [p]", () => adjacent(-1)), button("Next [n]", () => adjacent(1)), button("Discuss in chat [d]", discuss),
               ] : [
-                text("Findings"),
+                heading("Findings"),
                 ...(!value.findings.length ? [text("No findings. Browse any changed file, then Continue review to choose the next step.")] : value.findings.map((item) => button(
                   `${item.severity} · ${item.id} · ${item.title}${item.origin === "pre-existing" ? " (pre-existing)" : ""}${item.anchor === "none" ? " (no code location)" : ""}`,
                   () => selectFinding(item.id),
                 ))),
-                text("Changed files", { marginTop: 1 }),
+                heading("Changed files", headingColor, { marginTop: 1 }),
                 ...value.files.map((file) => button(`${file.status} · ${file.path}`, () => selectFile(file.id), {
                   fg: fileColor(file.status),
                   attributes: TextAttributes.UNDERLINE | (current()?.fileID === file.id ? TextAttributes.BOLD : 0),

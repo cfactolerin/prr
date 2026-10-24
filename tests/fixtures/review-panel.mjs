@@ -21,7 +21,7 @@ const patch = "diff --git a/a.rb b/a.rb\n--- a/a.rb\n+++ b/a.rb\n@@ -1,50 +1,50 
   + Array.from({ length: 50 }, (_, index) => index === 0 ? `-BEFORE_START_${"a".repeat(120)}_TAIL\n+AFTER_START_${"a".repeat(120)}_TAIL`
     : index === 44 ? "-before value\n+after value" : ` line ${index + 1}`).join("\n") + "\n"
 const findings = [
-  { id: "F-01", title: "Code issue", severity: "MED", trigger: "Logic Bug", anchor: "diff", origin: "introduced", path: "a.rb", line: 45, fileID: "0", why_it_matters: "The value is wrong.", suggested_fix: "Correct it.", suggested_comment: "Please correct the value." },
+  { id: "F-01", title: "Code issue", severity: "MED", trigger: "Logic Bug", anchor: "diff", origin: "introduced", path: "a.rb", line: 45, fileID: "0", why_it_matters: "- **Previous behavior:** Kept `value`.\n- **What's wrong:** The value is wrong.", suggested_fix: "Correct **the value**.", suggested_comment: "Please correct the value." },
   { id: "F-02", title: "Acceptance check", severity: "MED", trigger: "Acceptance Criteria", anchor: "none", origin: "introduced", why_it_matters: "Partner check missing.", suggested_fix: "Record results.", suggested_comment: "Please record results." },
 ]
 const report = { snapshot: "one", round: "r1", verdict: "COMMENT", confidence: "HIGH", warnings: "", findings, files: [
@@ -34,8 +34,9 @@ const rpc = {
   investigation: async () => structuredClone(report),
   diff: async (input) => {
     calls.push(input)
+    const path = report.files.find((file) => file.id === input.fileID)?.path ?? "a.rb"
     return input.findingID === "F-02" ? { patch: "", path: "", mode: "none", message: "This finding has no code location." }
-      : { patch, path: "a.rb", mode: "diff", message: "" }
+      : { patch: patch.replaceAll("a.rb", path), path, mode: "diff", message: "" }
   },
   events: { on: (_name, callback) => { eventHandler = callback; return () => { stopped = true } } },
 }
@@ -43,7 +44,7 @@ const context = {
   location: { directory: "/repo" },
   storage: { memory: () => [memory, updateMemory] },
   theme: {
-    text: { base: "#ffffff", muted: "#aaaaaa", action: { primary: { base: "#00ffff" } }, feedback: { warning: { base: "#ffff00" }, info: { base: "#0088ff" } } },
+    text: { base: process.env.PRR_LIGHT_THEME ? "#172b4d" : "#ffffff", muted: "#aaaaaa", action: { primary: { base: "#00ffff" } }, feedback: { success: { base: "#00ff00" }, warning: { base: "#ffff00" }, info: { base: "#0088ff" } } },
     diff: { text: { added: "#00ff00", removed: "#ff0000" } },
   },
   keymap: {
@@ -62,6 +63,15 @@ const context = {
 }
 const panel = { name: "prr.investigation", sessionID: "session", width: 140, focused: true, close: () => { closed = true; setOpen(false) } }
 const view = await createTestRenderer({ width: 140, height: 32 })
+const waitForContent = async (predicate) => {
+  for (let attempt = 0; attempt < 250; attempt++) {
+    await view.flush()
+    const frame = view.captureCharFrame()
+    if (predicate(frame)) return frame
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  assert.fail("Timed out waiting for Markdown content")
+}
 context.renderer = view.renderer
 await render(() => createComponent(Show, { get when() { return open() }, children: () => reviewPanel(context, panel, rpc) }), view.renderer)
 try {
@@ -76,28 +86,67 @@ try {
     assert.ok(node.attributes & TextAttributes.UNDERLINE, `${path} is clickable`)
   }
   assert.ok(!(rendered.find((item) => item.plainText === "Changed files").attributes & TextAttributes.UNDERLINE))
+  const clickText = async (label) => {
+    const frame = view.captureCharFrame().split("\n")
+    const y = frame.findIndex((row) => row.includes(label))
+    assert.ok(y >= 0, label)
+    await view.mockMouse.click(frame[y].indexOf(label) + 2, y)
+  }
+  await clickText("↓ Next file")
+  await view.waitForFrame((frame) => frame.includes("added.rb") && memory.sessions.session.fileID === "1")
+  assert.equal(memory.sessions.session.findingID, null)
+  await clickText("↑ Previous file")
+  await view.waitFor(() => memory.sessions.session.fileID === "0")
+  await view.waitForFrame((frame) => frame.includes("BEFORE_START"))
+  await clickText("↑ Previous file")
+  await view.waitFor(() => memory.sessions.session.fileID === "3")
+  await clickText("↓ Next file")
+  await view.waitFor(() => memory.sessions.session.fileID === "0")
+  await view.waitForFrame((frame) => frame.includes("BEFORE_START"))
   const rows = initial.split("\n")
   const codeY = rows.findIndex((row) => row.includes("BEFORE_START"))
   for (let index = 0; index < 6; index++) await view.mockMouse.scroll(20, codeY, "right")
   await view.waitForFrame((frame) => !frame.includes("BEFORE_START") && !frame.includes("AFTER_START"))
   const y = rows.findIndex((row) => row.includes("MED · F-01"))
   await view.mockMouse.click(rows[y].indexOf("MED · F-01") + 3, y)
-  let frame = await view.waitForFrame((frame) => frame.includes("Why this matters") && frame.includes("after value"))
+  let frame = await waitForContent((frame) => frame.includes("Previous behavior:") && frame.includes("Please correct the value.") && frame.includes("after value"))
   assert.ok(frame.includes("before value"))
+  assert.ok(frame.includes("Previous behavior:"))
+  assert.ok(!frame.includes("**"))
+  assert.ok(!frame.includes("`value`"))
+  const details = nodes(view.renderer.root)
+  for (const [label, color] of [["F-01 · MED · Logic Bug", "#ffff00"], ["Why this matters", "#0088ff"], ["Suggested fix", "#00ff00"], ["Suggested comment", "#00ffff"]]) {
+    const node = details.find((item) => item.plainText === label)
+    assert.ok(node.fg.equals(RGBA.fromHex(color)), label)
+    assert.ok(node.attributes & TextAttributes.BOLD, label)
+  }
+  const gutters = details.filter((node) => node.getLineColors)
+  const highlight = process.env.PRR_LIGHT_THEME ? "#b9ddff" : "#174b73"
+  assert.ok(gutters.some((node) => [...node.getLineColors().content.values()].some((color) => color.equals(RGBA.fromHex(highlight)))))
+  const spans = view.captureSpans().lines.flatMap((line) => line.spans)
+  const issue = spans.find((span) => span.text.includes("after value"))
+  assert.ok(issue.bg.equals(RGBA.fromHex(highlight)))
+  const luminance = (color) => [color.r, color.g, color.b].map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+    .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0)
+  const lightness = [luminance(issue.fg), luminance(issue.bg)].sort((a, b) => a - b)
+  assert.ok((lightness[1] + 0.05) / (lightness[0] + 0.05) >= 4.5, "issue text contrast")
+  const orientation = spans.find((span) => span.text.includes("Previous behavior:"))
+  assert.ok(orientation.attributes & TextAttributes.BOLD)
+  assert.ok(orientation.fg.equals(RGBA.fromHex("#0088ff")))
   assert.equal(memory.sessions.session.findingID, "F-01")
   assert.ok(!frame.includes("BEFORE_START"))
   await commands.get("prr.diff.next").run()
-  frame = await view.waitForFrame((frame) => frame.includes("Partner check missing.") && frame.includes("no code location"))
+  frame = await waitForContent((frame) => frame.includes("Partner check missing.") && frame.includes("no code location"))
   assert.ok(!frame.includes("before value"))
   await commands.get("prr.diff.previous").run()
-  await view.waitForFrame((frame) => frame.includes("Please correct the value."))
+  await waitForContent((frame) => frame.includes("Please correct the value."))
   await commands.get("prr.diff.discuss").run()
   assert.equal(closed, true)
   assert.match(calls.find((call) => call.prompt).prompt.text, /not acceptance, rejection, or permission to post/)
   assert.match(calls.find((call) => call.prompt).prompt.text, /Does the caller rely/)
   assert.ok(memory.sessions.session.offsets["finding:F-01"].y > 0)
   setOpen(true)
-  await view.waitForFrame((frame) => frame.includes("Please correct the value.") && frame.includes("after value"))
+  await waitForContent((frame) => frame.includes("Please correct the value.") && frame.includes("after value"))
   assert.equal(memory.sessions.session.findingID, "F-01")
   closed = false
   frame = view.captureCharFrame()
@@ -109,7 +158,7 @@ try {
   assert.match(withFindings.text, /does not accept or reject findings/)
   assert.equal(memory.sessions.session.findingID, "F-01")
   setOpen(true)
-  await view.waitForFrame((frame) => frame.includes("Please correct the value."))
+  await waitForContent((frame) => frame.includes("Please correct the value."))
   report.snapshot = "two"
   report.findings = []
   report.verdict = "APPROVE"
@@ -143,6 +192,7 @@ try {
   await continuing
   assert.equal(closed, true)
 } catch (error) {
+  console.error(view.captureCharFrame())
   console.error(JSON.stringify({ memory, calls }))
   throw error
 } finally {

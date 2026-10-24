@@ -253,6 +253,15 @@ and already has that context.
 
 ### Writing rules
 
+For behavioral findings, include a short concrete example scenario in `What's wrong` (or
+`What's missing` when it explains missing coverage or error handling). State the triggering input
+or state, the path it takes through the code, and the actual result versus the expected result.
+Use values and reachable conditions supported by the diff, ticket, or repository evidence. Label
+illustrative inputs as examples, not observed incidents or executed tests. If a prerequisite is
+unverified, say so; do not invent callers, production impact, or unsupported requirements to make
+the example work. Do not force scenarios into purely stylistic findings. Keep the example inside
+the existing problem slot, not a new required report field.
+
 A reviewer reads this in a terminal. Four fields go wrong there: the two
 `Why this matters` problem slots, `Suggested fix`, and `Suggested
 comment`. The rules below are about those four.

@@ -46,6 +46,7 @@ Please answer each question above specifically and concisely.
 - If you need to verify a claim from your earlier review, re-examine the diff carefully before answering.
 - If a repo guide covers the code in question, read it before defending a finding — it may already document the behaviour you flagged.
 - If you realize a previous finding was incorrect, say so explicitly and correct it.
+- For behavioral claims, give a concrete example scenario: supported input or state, the code path, and actual versus expected result. Label illustrative inputs as examples, not observed incidents or executed tests. Identify unverified prerequisites rather than inventing callers or requirements.
 - For readability questions, explain the concrete comprehension cost, compatible alternative, and tradeoff. Prefer current practices in new or changed code without requiring unrelated legacy cleanup. History is context, not proof that old code is bad.
 - For compatibility questions, compare base/head behavior and classify intent as Intended, Unintended, or Unclear. Distinguish static evidence, executed checks, and proven production impact; missing intent needs clarification rather than a presumed regression.
 - Do not repeat your entire prior review — focus only on answering the questions asked.

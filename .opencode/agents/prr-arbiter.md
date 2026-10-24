@@ -52,6 +52,7 @@ Produce the final report when the reviews agree, prior answers provide enough ev
 - Keep `Origin` honest so a fault the base branch already had never drives `REQUEST_CHANGES`.
 - Preserve the closed trigger vocabulary, required finding fields, severity, and prose structure from the prompt.
 - Never weaken a finding solely to manufacture consensus.
+- Include the prompt's structured Review Statistics section in final reports. Attribute every original reviewer candidate, separate incorrect from out-of-scope or unresolved claims, and never infer reviewer agreement from your own final verdict.
 - Give a candid implementation assessment and explain confidence from evidence and limitations, not agreement alone. Assess readability, scoped modernization, and backwards compatibility as the prompt requires; optional LOW suggestions do not block approval.
 
 Verify that the output file is non-empty before returning.

@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { test } from "node:test"
 import PrrPlugin from "../index.js"
 
-function fakeV2Context({ agents = [], sessionAgent = "build" } = {}) {
+function fakeV2Context({ agents = [], sessionAgent = "build", model } = {}) {
   const registered = { hooks: {}, sessionHooks: {}, tools: [], agents: new Map(agents.map((agent) => [agent.id, agent])), skills: [], commands: [] }
   const calls = []
   const stored = new Map()
@@ -42,7 +42,7 @@ function fakeV2Context({ agents = [], sessionAgent = "build" } = {}) {
     command: { transform: async (callback) => callback({ add: (command) => registered.commands.push(command) }) },
     session: {
       hook: async (name, callback) => { registered.sessionHooks[name] = callback },
-      get: async () => ({ agent: sessionAgent }),
+      get: async () => ({ agent: sessionAgent, model }),
       switchAgent: async (input) => { calls.push(["switchAgent", input]) },
       prompt: async (input) => { calls.push(["prompt", input]) },
     },
@@ -65,6 +65,7 @@ test("registers PRR commands, agents, skills, and binary environment", async () 
     "prr-cleanup",
     "prr-setup",
     "prr-start",
+    "prr-stats",
   ])
   assert.deepEqual(Object.keys(config.agent).sort(), [
     "prr-arbiter",
@@ -72,6 +73,7 @@ test("registers PRR commands, agents, skills, and binary environment", async () 
     "prr-opencode-reviewer",
     "prr-orchestrator",
     "prr-setup-orchestrator",
+    "prr-stats",
   ])
   assert.equal(config.agent["prr-opencode-reviewer"].mode, "subagent")
   assert.equal(config.agent["prr-opencode-reviewer"].model, undefined)
@@ -466,7 +468,7 @@ test("V2 setup registers PRR tools, agents, skills, commands, and binary environ
   await PrrPlugin.setup(ctx)
 
   assert.deepEqual(registered.tools.map((item) => item.name).sort(), [
-    "prr_artifact", "prr_atlassian_context", "prr_bind_round", "prr_capability", "prr_codex", "prr_codex_health", "prr_progress", "prr_read", "prr_write",
+    "prr_artifact", "prr_atlassian_context", "prr_bind_round", "prr_capability", "prr_codex", "prr_codex_health", "prr_progress", "prr_read", "prr_stats_record", "prr_stats_summary", "prr_write",
   ])
   for (const item of registered.tools) assert.equal(item.options.codemode, false)
   const read = registered.tools.find((item) => item.name === "prr_read")
@@ -474,7 +476,7 @@ test("V2 setup registers PRR tools, agents, skills, commands, and binary environ
   assert.equal(read.input.properties.limit.maximum, 2000)
 
   assert.deepEqual([...registered.agents.keys()].sort(), [
-    "build", "prr-arbiter", "prr-codex-reviewer", "prr-opencode-reviewer", "prr-orchestrator", "prr-setup-orchestrator",
+    "build", "prr-arbiter", "prr-codex-reviewer", "prr-opencode-reviewer", "prr-orchestrator", "prr-setup-orchestrator", "prr-stats",
   ])
   const build = registered.agents.get("build")
   assert.ok(build.permissions.some((rule) => rule.action === "prr_read" && rule.effect === "deny"))
@@ -509,16 +511,20 @@ test("V2 setup registers PRR tools, agents, skills, commands, and binary environ
   assert.ok(codexReviewer.permissions.some((rule) => rule.action === "external_directory"
     && !rule.resource.startsWith("~") && rule.resource.endsWith("/.prr/workspace/*/r*/repo/**")))
 
-  assert.deepEqual(registered.skills.map((skill) => skill.id).sort(), ["prr-cleanup", "prr-setup", "prr-start"])
+  assert.deepEqual(registered.skills.map((skill) => skill.id).sort(), ["prr-cleanup", "prr-setup", "prr-start", "prr-stats"])
   assert.match(registered.skills.find((skill) => skill.id === "prr-start").path, /skills\/prr-start\/SKILL\.md$/)
-  assert.deepEqual(registered.commands.map((command) => command.name).sort(), ["prr-cleanup", "prr-setup", "prr-start"])
+  assert.deepEqual(registered.commands.map((command) => command.name).sort(), ["prr-cleanup", "prr-setup", "prr-start", "prr-stats"])
 
   const event = { env: {} }
   registered.hooks["create.before"](event)
   assert.match(event.env.PRR_BIN, /bin\/prr-darwin-universal$/)
 })
 
-test("V2 commands switch to the PRR agent and forward arguments", async () => {
+test("V2 commands switch to the PRR agent and forward arguments", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "prr-start-stats-"))
+  const previousHome = process.env.HOME
+  process.env.HOME = root
+  t.after(() => { process.env.HOME = previousHome; rmSync(root, { recursive: true, force: true }) })
   const { ctx, registered, calls } = fakeV2Context()
   await PrrPlugin.setup(ctx)
 
@@ -530,6 +536,59 @@ test("V2 commands switch to the PRR agent and forward arguments", async () => {
   assert.equal(calls[1][1].sessionID, "session-1")
   assert.equal(calls[1][1].delivery, "queue")
   assert.match(calls[1][1].text, /exactly as `acme\/repo#1`/)
+  const summary = registered.tools.find((tool) => tool.name === "prr_stats_summary")
+  const stats = JSON.parse((await summary.execute({}, { agent: "prr-stats", sessionID: "stats", signal: new AbortController().signal })).content)
+  assert.equal(stats.tracked_runs, 1)
+  assert.equal(stats.completed_review_rounds, 0)
+  assert.equal(toolPermission(registered, "prr-stats", "prr_stats_record"), "deny")
+  assert.equal(toolPermission(registered, "prr-stats", "prr_read"), "deny")
+})
+
+test("statistics command preserves an active review agent and cannot mutate decisions", async () => {
+  const { ctx, registered, calls } = fakeV2Context({ sessionAgent: "prr-orchestrator" })
+  await PrrPlugin.setup(ctx)
+  await registered.commands.find((command) => command.name === "prr-stats").execute({ sessionID: "review", prompt: { text: "acme/repo#1" }, delivery: "steer" })
+  assert.equal(calls[0][0], "prompt")
+  assert.match(calls[0][1].text, /acme\/repo#1/)
+  await assert.rejects(registered.tools.find((tool) => tool.name === "prr_stats_record").execute({ operation: "finish", status: "posted" }, { agent: "prr-stats", sessionID: "review" }), /not allowed/)
+})
+
+test("V2 automatically records starts, bound rounds, final attribution, model identity, and explicit decisions", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "prr-statistics-flow-"))
+  const previousHome = process.env.HOME
+  process.env.HOME = root
+  t.after(() => { process.env.HOME = previousHome; rmSync(root, { recursive: true, force: true }) })
+  const round = join(root, ".prr/workspace/acme-repo-pr-1/r1")
+  mkdirSync(join(round, "results/arbiter"), { recursive: true })
+  mkdirSync(join(round, "results/reviewers/opencode"), { recursive: true })
+  writeFileSync(join(round, "context-manifest.md"), "# Context Manifest\n\n- **Round**: r1\n")
+  writeFileSync(join(round, "results/pr-metadata.json"), JSON.stringify({ url: "https://github.com/acme/repo/pull/1" }))
+  const report = "## Final Report\n\n### Verdict\n\nCOMMENT\n\n### Confidence\n\nHIGH\n\n### Findings\n\n#### Trigger: Logic Bug\n\n##### F-01 — A concern\n\n- **Severity:** MED\n- **Anchor:** none\n- **Origin:** introduced\n- **Why this matters:** Wrong behavior.\n- **Suggested fix:** Correct it.\n- **Suggested comment:** Please correct it.\n"
+  for (const role of ["opencode", "codex"]) writeFileSync(join(round, `results/${role}-review.md`), report)
+  const metrics = { version: 1, agreement: { status: "reached", round: 0, reason: "Matching original reviews." }, assessments: ["opencode", "codex"].map((reviewer) => ({ reviewer, finding_id: "F-01", outcome: "validated", final_finding_ids: ["F-01"], reason: "Same supported claim." })) }
+  const output = join(round, "results/arbiter/output.md")
+  writeFileSync(output, report + "\n### Review Statistics\n\n```json\n" + JSON.stringify(metrics) + "\n```\n")
+  const promptPath = join(round, "results/reviewers/opencode/review-prompt.md")
+  writeFileSync(promptPath, "Review the supplied source.")
+  const { ctx, registered } = fakeV2Context({ model: { id: "parent-model", providerID: "provider" } })
+  await PrrPlugin.setup(ctx)
+  await registered.commands.find((command) => command.name === "prr-start").execute({ sessionID: "review", prompt: { text: "acme/repo#1" }, delivery: "steer" })
+  const context = { sessionID: "review", agent: "prr-orchestrator", signal: new AbortController().signal }
+  const tool = (name) => registered.tools.find((tool) => tool.name === name)
+  await tool("prr_bind_round").execute({ roundPath: round }, context)
+  const capability = (await tool("prr_capability").execute({ roundPath: round, role: "opencode" }, context)).content
+  await tool("prr_read").execute({ filePath: promptPath, capability }, { ...context, sessionID: "native", agent: "prr-opencode-reviewer" })
+  await registered.sessionHooks["model.request"]({ sessionID: "native", agent: "prr-opencode-reviewer", kind: "primary", model: { id: "actual-model", providerID: "provider" } })
+  await tool("prr_artifact").execute({ operation: "copy", sourcePath: output, targetPath: join(round, "results/final-report.md") }, context)
+  await tool("prr_stats_record").execute({ operation: "decision", finding_id: "F-01", status: "rejected", reason: "not_worth_raising" }, context)
+  const summary = JSON.parse((await tool("prr_stats_summary").execute({}, { ...context, agent: "prr-stats" })).content)
+  assert.equal(summary.tracked_runs, 1)
+  assert.equal(summary.completed_review_rounds, 1)
+  assert.equal(summary.totals.rejected, 1)
+  assert.equal(summary.totals.incorrect, 0)
+  assert.equal(summary.harnesses.find((item) => item.reviewer === "opencode").model, "provider/actual-model")
+  assert.equal(summary.harnesses.find((item) => item.reviewer === "opencode").model_basis, "session_request")
+  assert.ok(!JSON.stringify(summary).includes(root))
 })
 
 test("V2 MCP read permissions belong only to the orchestrator and are hidden from PRR model requests", async () => {

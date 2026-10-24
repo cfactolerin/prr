@@ -24,6 +24,7 @@ import { parse } from "yaml"
 import { atlassianReadTools, fetchAtlassianContext } from "./atlassian.js"
 import { createReviewState, investigationReady, reviewSteps } from "./review-state.js"
 import { createReviewReader } from "./review-reader.js"
+import { createStatistics } from "./statistics.js"
 
 const packageRoot = dirname(fileURLToPath(import.meta.url))
 const assetRoot = join(packageRoot, ".opencode")
@@ -79,9 +80,10 @@ function configuredCodexModel() {
   return config.codex_model.trim()
 }
 
-const prrCommandNames = ["prr-setup", "prr-start", "prr-cleanup"]
+const prrCommandNames = ["prr-setup", "prr-start", "prr-cleanup", "prr-stats"]
 const prrAgentNames = [
   "prr-setup-orchestrator", "prr-orchestrator", "prr-opencode-reviewer", "prr-codex-reviewer", "prr-arbiter",
+  "prr-stats",
 ]
 
 function registerCommands(config) {
@@ -132,7 +134,7 @@ function registerToolDefaults(config) {
   config.permission ??= {}
   for (const name of [
     "prr_artifact", "prr_atlassian_context", "prr_bind_round", "prr_capability", "prr_codex", "prr_codex_health",
-    "prr_progress", "prr_read", "prr_write",
+    "prr_progress", "prr_read", "prr_write", "prr_stats_summary", "prr_stats_record",
   ]) {
     if (config.permission[name] === undefined) config.permission[name] = "deny"
   }
@@ -218,7 +220,7 @@ function codexPolicyArgs(repo, additionalPaths = [], executablePaths = codexExec
   ]
 }
 
-async function runCodex({ capability, promptPath, repoPath, outputPath, timeoutSeconds }, context) {
+async function runCodex({ capability, promptPath, repoPath, outputPath, timeoutSeconds }, context, host) {
   const workspace = configuredWorkspace()
   const paths = codexPaths(workspace, promptPath, repoPath, outputPath)
   const executablePaths = codexExecutablePaths()
@@ -226,9 +228,13 @@ async function runCodex({ capability, promptPath, repoPath, outputPath, timeoutS
   requireCapability(capability, context, round, "codex")
   const contextPath = realpathSync(join(round, "context"))
   const timeout = Math.min(Math.max(timeoutSeconds, 30), 3600) * 1000
+  const model = configuredCodexModel()
+  let statisticsWarning = ""
+  try { host?.statistics?.model(round, "codex", { id: model }, "codex_invocation") }
+  catch (error) { statisticsWarning = `\nStatistics warning: ${error.message}` }
   const args = [
     "-a", "never", "exec",
-    "--model", configuredCodexModel(),
+    "--model", model,
     "--ignore-user-config", "--ignore-rules",
     "--disable", "hooks", "--disable", "apps", "--disable", "multi_agent",
     "--strict-config", "-C", paths.repo,
@@ -266,7 +272,7 @@ async function runCodex({ capability, promptPath, repoPath, outputPath, timeoutS
         return
       }
       settled = true
-      resolvePromise(`Codex wrote ${statSync(paths.output).size} bytes to ${paths.output}`)
+      resolvePromise(`Codex wrote ${statSync(paths.output).size} bytes to ${paths.output}${statisticsWarning}`)
     })
     child.stdin.end(readFileSync(paths.prompt, "utf8"))
   })
@@ -560,6 +566,33 @@ const arg = {
 }
 
 const toolDefinitions = {
+  prr_stats_summary: {
+    description: "Read local PRR usage, agreement, reviewer attribution, and human-decision statistics. No review code or credentials are returned.",
+    args: { query: arg.string({ optional: true }), limit: arg.positiveInt({ max: 100, optional: true }) },
+    execute: async (input, _context, host) => JSON.stringify((host?.statistics ?? createStatistics({ directory: join(homedir(), ".prr/statistics/v1"), binary })).summary(input)),
+  },
+  prr_stats_record: {
+    description: "Record an explicit human finding decision or review outcome for the bound round. Accept/reject does not imply correctness. Use collect only to retry collection of a saved final report.",
+    args: {
+      operation: arg.enum(["decision", "finish", "collect"]),
+      finding_id: arg.string({ optional: true }),
+      status: arg.enum(["pending", "accepted", "rejected", "edited", "added", "posted", "skipped", "aborted"], { optional: true }),
+      correctness: arg.enum(["confirmed", "incorrect", "unassessed"], { optional: true }),
+      reason: arg.enum(["incorrect", "out_of_scope", "already_fixed", "not_worth_raising", "duplicate", "other", "not_assessed"], { optional: true }),
+    },
+    execute: async ({ operation, ...input }, context, host) => {
+      if (context?.agent !== "prr-orchestrator") throw new Error("Only the PRR orchestrator may record review decisions")
+      const sessionID = requireSession(context)
+      const state = await host?.reviewState?.get(sessionID)
+      if (!state?.statsRun) return "Statistics were not enabled for this saved review; no historical accuracy judgment was recorded."
+      const round = sessionRounds.get(sessionID)
+      if (!round) throw new Error("No bound PRR round")
+      if (operation === "collect") await host.statistics.collect(state.statsRun, round)
+      else if (operation === "decision") host.statistics.decision(state.statsRun, round, input)
+      else host.statistics.finish(state.statsRun, round, input.status)
+      return "Local review statistics recorded."
+    },
+  },
   prr_progress: {
     description: "Update a PRR review stage (1-based). Starting step 7 with view=diff opens visual investigation in the active terminal; view=chat keeps the chat workflow.",
     args: { step: arg.positiveInt({ max: reviewSteps.length }), status: arg.enum(["pending", "in_progress", "completed", "blocked"]), view: arg.enum(["diff", "chat"], { optional: true }) },
@@ -747,6 +780,7 @@ async function setup(ctx) {
     await registration.events.emit("updated", { sessionID })
     if (diffRequest) await registration.events.emit("openDiff", { sessionID, diffRequest })
   })
+  const statistics = createStatistics({ directory: join(homedir(), ".prr/statistics/v1"), binary })
   const reader = createReviewReader({ state: reviewState, resolveRound: (round) => roundRoot(configuredWorkspace(), round), binary })
   registration = await ctx.rpc.register(reviewRpc, {
     investigation: reader.investigation,
@@ -776,6 +810,20 @@ async function setup(ctx) {
   }
   for (const hook of ["context", "compaction", "generate"]) await ctx.session.hook(hook, hideAtlassianReads)
 
+  const recordedModels = new Set()
+  await ctx.session.hook("model.request", (event) => {
+    if (event.agent !== "prr-opencode-reviewer" || event.kind !== "primary") return
+    const capability = [...capabilities.values()].find((value) => value.role === "opencode" && value.sessionID === event.sessionID)
+    if (!capability) return
+    const key = `${capability.round}:${JSON.stringify(event.model)}`
+    if (recordedModels.has(key)) return
+    try {
+      statistics.model(capability.round, "opencode", event.model, "session_request")
+      recordedModels.add(key)
+      if (recordedModels.size > 1000) recordedModels.delete(recordedModels.values().next().value)
+    } catch { /* A statistics write must not interrupt a reviewer request. */ }
+  })
+
   await ctx.shell.hook("create.before", (event) => {
     event.env.PRR_BIN = binary
     event.env.PRR_PLUGIN_ROOT = packageRoot
@@ -793,13 +841,13 @@ async function setup(ctx) {
             throw new Error(`${name} is not allowed for ${context.agent ?? "this agent"}`)
           }
           if (context.agent === "prr-orchestrator" && !sessionRounds.has(context.sessionID)
-            && ["prr_bind_round", "prr_capability", "prr_read", "prr_write", "prr_artifact", "prr_atlassian_context"].includes(name)) {
+            && ["prr_bind_round", "prr_capability", "prr_read", "prr_write", "prr_artifact", "prr_atlassian_context", "prr_stats_record"].includes(name)) {
             const saved = await reviewState.get(requireSession(context))
             if (saved?.round) {
               sessionRounds.set(context.sessionID, roundRoot(configuredWorkspace(), saved.round))
             }
           }
-          const host = name === "prr_progress" ? { reviewState } : ctx
+          const host = { ...ctx, reviewState, statistics }
           const content = await definition.execute(input, { ...context, abort: context.signal }, host)
           if (name === "prr_bind_round" || name === "prr_atlassian_context") {
             const round = sessionRounds.get(context.sessionID)
@@ -809,7 +857,21 @@ async function setup(ctx) {
             }
             await reviewState.context(context.sessionID, round, readFileSync(manifest.target, "utf8"))
           }
-          return { content }
+          let statisticsWarning = ""
+          try {
+            const state = context.agent === "prr-orchestrator" ? await reviewState.get(context.sessionID) : null
+            const round = sessionRounds.get(context.sessionID)
+            if (state?.statsRun && round) {
+              if (name === "prr_bind_round") {
+                const session = await ctx.session.get({ sessionID: context.sessionID })
+                statistics.bind(state.statsRun, round, { opencode: session.model, codex: { id: configuredCodexModel() } })
+              }
+              if (name === "prr_artifact" && input.operation === "copy" && canonicalCandidate(input.targetPath) === join(round, "results/final-report.md")) {
+                await statistics.collect(state.statsRun, round)
+              }
+            }
+          } catch (error) { statisticsWarning = `\nStatistics warning: ${error.message}` }
+          return { content: content + statisticsWarning }
         },
       })
     }
@@ -844,13 +906,21 @@ async function setup(ctx) {
         execute: async ({ sessionID, prompt, delivery }) => {
           if (metadata.agent) {
             const session = await ctx.session.get({ sessionID })
-            if (session.agent !== metadata.agent) await ctx.session.switchAgent({ sessionID, agent: metadata.agent })
+            if (session.agent !== metadata.agent && !(name === "prr-stats" && session.agent === "prr-orchestrator")) {
+              await ctx.session.switchAgent({ sessionID, agent: metadata.agent })
+            }
           }
-          if (name === "prr-start") await reviewState.reset(sessionID)
+          let statisticsWarning = ""
+          if (name === "prr-start") {
+            const runID = randomUUID()
+            await reviewState.reset(sessionID, runID)
+            try { statistics.start(runID, prompt.text) }
+            catch (error) { statisticsWarning = `\nReport this local statistics warning without stopping the review: ${error.message}` }
+          }
           await ctx.session.prompt({
             ...prompt,
             sessionID,
-            text: body.replaceAll("$ARGUMENTS", prompt.text),
+            text: body.replaceAll("$ARGUMENTS", prompt.text) + statisticsWarning,
             delivery,
           })
         },

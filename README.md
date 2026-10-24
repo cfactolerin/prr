@@ -159,6 +159,14 @@ Returning to chat preserves the selected finding and vertical scroll position; a
 
 Use `o` for files, `b` for findings, `p`/`n` for previous/next finding, arrow or Page Up/Down keys to scroll vertically, and `c` or Escape to continue review in chat. Horizontal mouse scrolling stays synchronized between the before/after panes.
 
+**↑ Previous file** and **↓ Next file** cycle from the current file and wrap at either end. Choosing
+another file leaves finding details and restores that file's saved vertical position; arrow keys
+remain available for scrolling the diff.
+
+Finding details render Markdown with colored section headings. Selected issue lines use blue
+backgrounds: light blue with dark text, darker blue with light text. Behavioral findings include
+code-grounded example scenarios in new reports; existing saved reports are not rewritten.
+
 All changed files remain browsable, including binary and metadata-only changes. The viewer requires an OpenCode 2 client with session-panel support; other clients retain chat investigation. Artifacts over 32 MiB are rejected explicitly rather than truncated; chat investigation remains available.
 
 PR and ticket links are clickable in terminals that support hyperlinks. The ticket links to the Jira site selected through MCP or configured for the API fallback. Sidebar state belongs to the review session and survives restarts; older six-stage sessions retain their progress with the new briefing pending. OpenCode 1 retains its built-in todo list with the same seven stages and briefing pause.
@@ -171,6 +179,7 @@ PR and ticket links are clickable in terminals that support hyperlinks. The tick
 | `/prr-start <pr>` | Run native OpenCode and Codex reviews, arbitration, findings review, and optional posting |
 | `/prr-diff` | Open visual investigation of the saved review after continuing from its briefing (OpenCode 2 terminal) |
 | `/prr-cleanup` | Remove review workspaces whose pull requests are closed or merged |
+| `/prr-stats [PR or run ID]` | Show local usage, agreement rounds, reviewer effectiveness, and human decisions |
 
 The OpenCode reviewer and arbiter inherit the model selected in the current OpenCode session and need no separate model setting.
 
@@ -190,6 +199,39 @@ Reviewers assess human readability rather than treating line length, method size
 Backwards-compatibility checks distinguish intended behavior changes from unintended regressions and unclear requirements. They cover affected callers, consumers, data contracts, and deployment or migration needs. An intentional break still needs appropriate handling; a refactor does not authorize silent contract changes. Supported unintended changes become findings rather than a routine briefing section.
 
 Confidence reflects coverage of affected areas, understanding of intent, ticket alignment, language and repository standards, and unresolved material questions. PRR captures GitHub CI results with the PR context and trusts relevant passing checks without requiring a local rerun. Missing local execution or hypothetical future cross-service changes do not lower confidence by themselves. Older saved reports retain their original verdict and confidence; missing assessments are unassessed rather than inferred.
+
+## Review Statistics
+
+Run `/prr-stats` for tracked runs, completed review rounds, findings found and rejected, and the
+Q&A round where reviewers agreed. Round 0 means agreement in the initial reviews; unresolved
+disagreements and missing assessments are shown separately. Use `/prr-stats owner/repo#42` or a
+run ID for the per-review breakdown.
+
+The harness/model table separates arbiter-validated candidates, refuted candidates, out-of-scope
+concerns, duplicates, unresolved claims, and findings uniquely validated from one original reviewer.
+Arbiter precision is validated / (validated + refuted). This is an arbiter judgment, not objective
+ground truth or measured recall; unknown bugs and unattributed later discoveries cannot be counted.
+
+Human decisions are a separate layer. Accept/reject/edit alone does not classify correctness;
+explicit correctness judgments produce a separate human precision figure with its sample count.
+Valid-but-not-worth-raising, already-fixed, and scope rejections are not false positives.
+
+During final findings confirmation, **Classify accuracy** can record an optional correctness
+assessment without changing the posting decision. New user-added findings are counted separately,
+not credited to a reviewer. Findings rejected during the normal walk are counted immediately.
+
+Local records live under `~/.prr/statistics/v1/`, outside the review workspace, and survive cleanup.
+They contain PR references, finding IDs/titles, model identities, classification reasons, and decisions;
+they do not copy diffs, prompts, credentials, or full review bodies, and are never uploaded or posted.
+
+Tracking covers new OpenCode 2 `/prr-start` invocations after this feature is enabled, not lifetime
+usage or reconstructed historical accuracy. Re-review adds a correlated round to the same run;
+resuming a round does not add another run. Missing or invalid attribution remains unassessed.
+
+Native model identities use observed session requests, and Codex identities use the requested CLI
+model; round-start snapshots are the fallback. Changed models are marked mixed rather than silently
+assigned to one model. Compare matching models and PRs, and use the sample denominators before
+deciding which harness is more accurate.
 
 ## Configuration And Data
 

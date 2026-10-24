@@ -45,6 +45,30 @@ the confidence label. Older reports omit absent assessments. With `--diff`, `cha
 changed/added/deleted/renamed files, binary files, and added/deleted text lines from the saved diff;
 binary content has no text line count. These counts do not imply execution or test coverage.
 
+## Behavioral Examples And Rendering
+
+Behavioral findings include a short concrete example scenario within the existing `What's wrong`
+or `What's missing` problem slot: triggering input/state, code path, and actual versus expected
+result. Examples must follow reachable conditions supported by available evidence. Illustrative
+values are not observed incidents or executed tests; unverified prerequisites stay explicit.
+Purely stylistic findings do not need a forced scenario. Finding fields remain Markdown for chat
+and GitHub; the visual sidebar renders that Markdown rather than displaying its formatting markers.
+
+## Review Statistics Metadata
+
+Final arbiter reports also end with `### Review Statistics` and a JSON block used only for local
+measurement. The block has `version: 1`, `agreement: {status, round, reason}`, and `assessments`, each
+with `reviewer`, original `finding_id`, `outcome`, `final_finding_ids`, and an evidence-based `reason`.
+
+Agreement status is `reached`, `not_reached`, or `unassessed`; a reached round is 0 for initial reviews
+or a saved Q&A round, otherwise null. Candidate outcomes are `validated`, `invalid`, `out_of_scope`,
+`duplicate`, or `unresolved`. Every original reviewer candidate must be covered exactly once.
+
+Validated candidates map to existing final IDs; refuted and out-of-scope candidates map to none.
+Duplicates include `duplicate_of`, a non-duplicate original ID in the same review, and repeat its
+final-ID mapping. An arbiter override is not reviewer agreement, and missing evidence is unresolved, not false.
+This metadata is not a finding, is not part of the posted body, and is not inferred for older reports.
+
 ## Ticket Alignment
 
 | # | Criterion | Met | Evidence |

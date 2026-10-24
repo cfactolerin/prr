@@ -63,8 +63,8 @@ export function createReviewState(storage, emit) {
   }
   return {
     get,
-    reset(sessionID) {
-      return change(sessionID, () => save(sessionID, initial()))
+    reset(sessionID, statsRun) {
+      return change(sessionID, () => save(sessionID, { ...initial(), ...(statsRun ? { statsRun } : {}) }))
     },
     async update(sessionID, step, status, view) {
       if (!Number.isInteger(step) || step < 1 || step > reviewSteps.length

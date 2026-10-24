@@ -890,6 +890,25 @@ mod tests {
     }
 
     #[test]
+    fn arbiter_statistics_require_provenance_without_manufacturing_consensus() {
+        for field in ["### Review Statistics", "finding_id", "final_finding_ids", "not_reached", "unassessed", "out_of_scope", "unresolved"] {
+            assert!(ARBITER_TEMPLATE.contains(field), "missing {field}");
+        }
+        assert!(ARBITER_TEMPLATE.contains("Missing evidence alone is unresolved, not invalid"));
+        assert!(ARBITER_TEMPLATE.contains("exhausting\nthe Q&A limit is not agreement"));
+        assert!(!REVIEW_TEMPLATE.contains("### Review Statistics"));
+    }
+
+    #[test]
+    fn behavioral_examples_stay_evidence_grounded_in_each_prompt() {
+        for template in [REVIEW_TEMPLATE, ARBITER_TEMPLATE, QUESTION_TEMPLATE] {
+            assert!(template.contains("concrete example scenario"));
+            assert!(template.contains("not observed incidents or executed tests"));
+            assert!(template.contains("unverified"));
+        }
+    }
+
+    #[test]
     fn test_templates_demonstrate_nested_why_this_matters() {
         for (name, template) in [
             ("review-prompt.md", REVIEW_TEMPLATE),

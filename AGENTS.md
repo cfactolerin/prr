@@ -47,6 +47,10 @@ Navigation is read-only, and discussion returns to the existing chat workflow wi
 
 The visual view's **Continue review** action (`c` or Escape) sends a request to resume the investigation menu, including for reviews without findings. It never accepts findings, completes investigation, or authorizes posting. Discussion sends only the user's finding question, not an additional menu request.
 
+`statistics.js` keeps a private, append-only local event ledger under `~/.prr/statistics/v1/`, outside cleaned workspaces. OpenCode 2 records command starts, bound rounds, original reviewer candidates, arbiter attribution, and explicit human decisions. `/prr-stats` uses a read-only role; it does not replace an active review orchestrator.
+
+The arbiter's final report includes a structured `Review Statistics` section, validated against original and final finding IDs and saved Q&A bounds. Arbiter precision and explicit human correctness judgments are separate measures; accept/reject/edit alone never proves true/false. Missing attribution, unverified claims, and old reviews remain unassessed, and statistics never enter GitHub review bodies.
+
 The seven stages include a user-gated Review briefing between arbiter synthesis and interactive investigation. Its concise change summary, assessment, and actionable concerns come from the arbiter report; statistics and routine compatibility/testing disclaimers stay out of the briefing. Context gathering supplies GitHub CI status and bounded pre-PR file history.
 
 Confidence measures assessment coverage, intent and ticket alignment, language/repository standards, and unresolved material questions; not rerunning passing CI locally is not a penalty. New and changed code should use clear supported practices without unrelated legacy modernization. Reviewers assess backwards compatibility and flag supported unintended changes as findings.

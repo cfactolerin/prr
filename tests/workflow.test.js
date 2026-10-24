@@ -64,3 +64,10 @@ test("leaving diff investigation resumes next-step choices even without findings
   assert.match(investigation, /or authorize posting/)
   assert.match(investigation, /Do not repeat the briefing, reopen the diff view/)
 })
+
+test("statistics metadata cannot turn a final report into another Q&A round", () => {
+  const detection = skill.split("### 5c.")[1].split("### 5d.")[0]
+  assert.match(detection, /starting with `## Final Report` is a final report/)
+  assert.match(detection, /JSON is metadata, never a question set/)
+  assert.match(detection, /entire trimmed output is one fenced JSON block/)
+})

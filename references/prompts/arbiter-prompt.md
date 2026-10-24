@@ -268,6 +268,15 @@ and already has that context.
 
 ### Writing rules
 
+For behavioral findings, include a short concrete example scenario in `What's wrong` (or
+`What's missing` when it explains missing coverage or error handling). State the triggering input
+or state, the path it takes through the code, and the actual result versus the expected result.
+Use values and reachable conditions supported by the diff, ticket, or repository evidence. Label
+illustrative inputs as examples, not observed incidents or executed tests. If a prerequisite is
+unverified, say so; do not invent callers, production impact, or unsupported requirements to make
+the example work. Do not force scenarios into purely stylistic findings. Keep the example inside
+the existing problem slot, not a new required report field.
+
 A reviewer reads this in a terminal. Four fields go wrong there: the two
 `Why this matters` problem slots, `Suggested fix`, and `Suggested
 comment`. The rules below are about those four.
@@ -305,9 +314,32 @@ comment`. The rules below are about those four.
 
 ## Final Report Template
 
+Include the machine-readable **Review Statistics** section at the end of every final report. It is
+local measurement data, not a GitHub comment. Assess every finding ID in each original independent
+review exactly once, using `reviewer: "opencode"` or `"codex"` and that review's original ID. Do not
+invent source IDs for new arbiter or Q&A discoveries. Map supported candidates to final finding IDs;
+multiple reviewers can map to the same final finding. Missing old evidence is unassessed, not false.
+
+Use `validated` for an evidence-supported claim retained in the final findings, `invalid` only for a
+claim refuted by evidence, `out_of_scope` for a concern excluded by scope rather
+than disproved, `duplicate` only for a repeated candidate within the same review, and `unresolved`
+when the available evidence cannot settle it. Every assessment needs a short evidence-based reason.
+Missing evidence alone is unresolved, not invalid. Validated entries require final IDs;
+invalid/out-of-scope entries have an empty final-ID array. Duplicate entries also require
+`duplicate_of`, the non-duplicate original ID within that same review, and repeat its final-ID
+array (which may be empty for a duplicate refuted claim). Do not count stylistic preferences or
+deferred valid issues as incorrect.
+
+Agreement concerns both the verdict and substantive finding conclusions, not just the arbiter's
+decision. Use `round: 0` only when the original reviews agree; otherwise identify the first saved
+Q&A round establishing explicit agreement. Silence, a failed answer, an arbiter override, or exhausting
+the Q&A limit is not agreement. Use `status: "not_reached", round: null` for unresolved differences,
+or `status: "unassessed", round: null` when evidence or a second reviewer is missing. An earlier
+agreement later contradicted by substantive evidence is not the final convergence round.
+
 When you are ready to finalize, output the following markdown structure **exactly**:
 
-```
+````
 ## Final Report
 
 ### Metadata
@@ -436,4 +468,29 @@ The scope rule: a finding may appear only if it is caused/exposed by the diff or
 - [ ] Merge when: all introduced HIGH items resolved
 
 (Drop the pre-existing line when no finding is pre-existing.)
+
+### Review Statistics
+
+```json
+{
+  "version": 1,
+  "agreement": {
+    "status": "unassessed",
+    "round": null,
+    "reason": "Replace with the saved evidence for agreement, unresolved differences, or missing assessment."
+  },
+  "assessments": [
+    {
+      "reviewer": "opencode",
+      "finding_id": "F-01",
+      "outcome": "unresolved",
+      "final_finding_ids": [],
+      "reason": "Replace with evidence supporting this candidate's disposition."
+    }
+  ]
+}
 ```
+
+(Replace the example with every actual original reviewer finding. Use an empty assessments array
+when neither reviewer proposed findings. Never leave example IDs or agreement claims in the output.)
+````
