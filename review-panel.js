@@ -15,6 +15,7 @@ export function reviewPanel(context, panel, rpc) {
   const [memory, updateMemory] = context.storage.memory("investigation", { initial: { sessions: {} } })
   const location = () => context.location ?? context.data.location.default()
   const [revision, setRevision] = createSignal(0)
+  const [submitting, setSubmitting] = createSignal(false)
   const [report, { refetch }] = createResource(
     () => [panel.sessionID, revision()],
     async ([sessionID]) => ({ sessionID, report: await rpc.investigation({ sessionID }, { location: location() }) }),
@@ -66,6 +67,23 @@ export function reviewPanel(context, panel, rpc) {
     })
   }
   const close = () => { saveScroll(); panel.close() }
+  const sendToChat = async (text) => {
+    if (submitting()) return
+    saveScroll()
+    setSubmitting(true)
+    try {
+      await context.client.session.prompt({ sessionID: panel.sessionID, text }, { location: location() })
+      panel.close()
+    } catch (error) {
+      context.ui.toast.show({ message: displayText(error.message), variant: "error" })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+  const continueReview = () => {
+    if (!data()) return close()
+    return sendToChat("Return from the PRR diff view to the interactive investigation menu for the current saved review. Show the next-step choices using the question tool, including Post review when there are no findings. Do not reopen the diff view or repeat the briefing. This only resumes the menu; it does not accept or reject findings, complete investigation, or authorize posting. If the review has already advanced beyond investigation, preserve its current stage rather than restarting it.")
+  }
   const adjacent = (step) => {
     const findings = data()?.findings ?? []
     if (!findings.length) return
@@ -88,23 +106,17 @@ export function reviewPanel(context, panel, rpc) {
     return result?.sessionID === panel.sessionID && result.snapshot === data()?.snapshot && result.key === selectionKey() ? result.value : null
   }
   const discuss = async () => {
+    if (submitting()) return
     const selected = finding()
     const snapshot = data()?.snapshot
     if (!selected) return
     const question = await context.ui.dialog.prompt({ title: `Discuss ${displayText(selected.id)}`, placeholder: "What would you like to check?" })
     if (!question?.trim() || snapshot !== data()?.snapshot) return
-    try {
-      await context.client.session.prompt({
-        sessionID: panel.sessionID,
-        text: `Investigate finding ${JSON.stringify(selected.id)} in the current saved PRR review. This is a request for evidence, not acceptance, rejection, or permission to post.\n\n${question}`,
-      }, { location: location() })
-      close()
-    } catch (error) {
-      context.ui.toast.show({ message: displayText(error.message), variant: "error" })
-    }
+    await sendToChat(`Investigate finding ${JSON.stringify(selected.id)} in the current saved PRR review. This is a request for evidence, not acceptance, rejection, or permission to post.\n\n${question}`)
   }
-  context.keymap.layer(() => ({ commands: [
-    { id: "prr.diff.close", bind: "escape", run: close },
+  context.keymap.layer(() => ({ priority: 10, commands: [
+    { id: "prr.diff.close", bind: "escape", run: continueReview },
+    { id: "prr.diff.continue", bind: "c", run: continueReview },
     { id: "prr.diff.findings", bind: "b", run: () => selectFinding(null) },
     { id: "prr.diff.next", bind: "n", run: () => adjacent(1) },
     { id: "prr.diff.previous", bind: "p", run: () => adjacent(-1) },
@@ -150,7 +162,7 @@ export function reviewPanel(context, panel, rpc) {
       const value = data()
       return [
         text(`PRR investigation · ${value.round} · ${value.verdict} · ${value.confidence}`, { flexShrink: 0 }),
-        text("[o] Files   [b] Findings   [p/n] Previous/next finding   [d] Discuss   [r] Refresh   [Esc] Chat", { fg: context.theme.text.muted, flexShrink: 0 }),
+        text("[o] Files   [b] Findings   [p/n] Previous/next finding   [d] Discuss   [r] Refresh   [c/Esc] Continue review", { fg: context.theme.text.muted, flexShrink: 0 }),
         ...(value.warnings ? [text(value.warnings, { fg: context.theme.text.action.primary.base })] : []),
         element("box", {
           flexDirection: "row", flexGrow: 1, minHeight: 0,
@@ -187,7 +199,7 @@ export function reviewPanel(context, panel, rpc) {
                 button("Previous [p]", () => adjacent(-1)), button("Next [n]", () => adjacent(1)), button("Discuss in chat [d]", discuss),
               ] : [
                 text("Findings"),
-                ...(!value.findings.length ? [text("No findings. Browse any changed file.")] : value.findings.map((item) => button(
+                ...(!value.findings.length ? [text("No findings. Browse any changed file, then Continue review to choose the next step.")] : value.findings.map((item) => button(
                   `${item.severity} · ${item.id} · ${item.title}${item.origin === "pre-existing" ? " (pre-existing)" : ""}${item.anchor === "none" ? " (no code location)" : ""}`,
                   () => selectFinding(item.id),
                 ))),
@@ -197,7 +209,10 @@ export function reviewPanel(context, panel, rpc) {
             }),
           ],
         }),
-        button("Return to chat [Esc]", close),
+        element("text", {
+          fg: context.theme.text.action.primary.base, flexShrink: 0, onMouseDown: continueReview,
+          get children() { return submitting() ? "Returning to chat…" : "Continue review [c / Esc] — return to the investigation menu" },
+        }),
       ]
     },
   })

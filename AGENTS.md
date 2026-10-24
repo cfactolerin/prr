@@ -43,6 +43,8 @@ After explicit briefing continuation, `/prr-diff` opens `review-panel.js` in a f
 
 Navigation is read-only, and discussion returns to the existing chat workflow without accepting findings. OpenCode 1 keeps its native `todowrite` list and chat investigation.
 
+The visual view's **Continue review** action (`c` or Escape) sends a request to resume the investigation menu, including for reviews without findings. It never accepts findings, completes investigation, or authorizes posting. Discussion sends only the user's finding question, not an additional menu request.
+
 The seven stages include a user-gated Review briefing between arbiter synthesis and interactive investigation. Its concise change summary, assessment, and actionable concerns come from the arbiter report; statistics and routine compatibility/testing disclaimers stay out of the briefing. Context gathering supplies GitHub CI status and bounded pre-PR file history.
 
 Confidence measures assessment coverage, intent and ticket alignment, language/repository standards, and unresolved material questions; not rerunning passing CI locally is not a penalty. New and changed code should use clear supported practices without unrelated legacy modernization. Reviewers assess backwards compatibility and flag supported unintended changes as findings.

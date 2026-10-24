@@ -149,9 +149,11 @@ In the OpenCode 2 terminal, the sidebar keeps seven review stages and the contex
 
 After continuing, click **Open diff investigation** in the sidebar or run `/prr-diff` to open a full-screen side-by-side diff. Select a finding to jump to its code and replace the findings list with its details. Unchanged references outside the diff open context from the saved PR commit; non-code findings show details without inventing an anchor.
 
-**Discuss in chat** sends your question to the review session without accepting or rejecting the finding. Returning to chat preserves the selected finding and vertical scroll position; a new round or changed report resets them. Navigation is read-only and requires no model calls.
+**Continue review** (`c` or Escape) returns to chat and resumes the investigation menu, including **Post review** when there are no findings. It does not accept findings or authorize posting. **Discuss in chat** instead sends your question about the selected finding.
 
-Use `o` for files, `b` for findings, `p`/`n` for previous/next finding, arrow or Page Up/Down keys to scroll vertically, and Escape to return to chat. Horizontal mouse scrolling stays synchronized between the before/after panes.
+Returning to chat preserves the selected finding and vertical scroll position; a new round or changed report resets them. Browsing files and findings requires no model calls; continuing or discussing sends a request to the review session.
+
+Use `o` for files, `b` for findings, `p`/`n` for previous/next finding, arrow or Page Up/Down keys to scroll vertically, and `c` or Escape to continue review in chat. Horizontal mouse scrolling stays synchronized between the before/after panes.
 
 All changed files remain browsable, including binary and metadata-only changes. The viewer requires an OpenCode 2 client with session-panel support; other clients retain chat investigation. Artifacts over 32 MiB are rejected explicitly rather than truncated; chat investigation remains available.
 

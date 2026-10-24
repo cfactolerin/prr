@@ -9,6 +9,9 @@ const [memory, setMemory] = createStore({ sessions: {} })
 const updateMemory = (update) => setMemory(produce(update))
 const commands = new Map()
 const calls = []
+const errors = []
+let failPrompt = false
+let promptWait
 let eventHandler
 let stopped = false
 let closed = false
@@ -40,9 +43,13 @@ const context = {
   },
   ui: {
     dialog: { prompt: async () => "Does the caller rely on this value?", select: async () => "0" },
-    toast: { show: (input) => { throw new Error(input.message) } },
+    toast: { show: (input) => { errors.push(input.message) } },
   },
-  client: { session: { prompt: async (input) => { calls.push({ prompt: input }) } } },
+  client: { session: { prompt: async (input) => {
+    calls.push({ prompt: input })
+    if (failPrompt) throw new Error("Cannot reach the review session")
+    await promptWait
+  } } },
 }
 const panel = { name: "prr.investigation", sessionID: "session", width: 140, focused: true, close: () => { closed = true; setOpen(false) } }
 const view = await createTestRenderer({ width: 140, height: 32 })
@@ -74,8 +81,20 @@ try {
   setOpen(true)
   await view.waitForFrame((frame) => frame.includes("Please correct the value.") && frame.includes("after value"))
   assert.equal(memory.sessions.session.findingID, "F-01")
+  closed = false
+  frame = view.captureCharFrame()
+  const continueY = frame.split("\n").findIndex((row) => row.includes("Continue review [c / Esc]"))
+  await view.mockMouse.click(3, continueY)
+  await view.waitFor(() => closed)
+  const withFindings = calls.filter((call) => call.prompt).at(-1).prompt
+  assert.match(withFindings.text, /Show the next-step choices using the question tool/)
+  assert.match(withFindings.text, /does not accept or reject findings/)
+  assert.equal(memory.sessions.session.findingID, "F-01")
+  setOpen(true)
+  await view.waitForFrame((frame) => frame.includes("Please correct the value."))
   report.snapshot = "two"
   report.findings = []
+  report.verdict = "APPROVE"
   eventHandler({ data: { sessionID: "session" }, location: context.location })
   await view.waitForFrame((frame) => frame.includes("No findings."))
   assert.equal(memory.sessions.session.findingID, null)
@@ -84,6 +103,27 @@ try {
   view.resize(70, 24)
   await view.flush()
   assert.ok(view.captureCharFrame().includes("Before"))
+  assert.deepEqual(errors, [])
+  closed = false
+  failPrompt = true
+  await commands.get("prr.diff.continue").run()
+  assert.equal(closed, false)
+  assert.deepEqual(errors, ["Cannot reach the review session"])
+  await view.waitForFrame((frame) => frame.includes("Continue review [c / Esc]"))
+  failPrompt = false
+  let releasePrompt
+  promptWait = new Promise((resolve) => { releasePrompt = resolve })
+  const beforeContinue = calls.filter((call) => call.prompt).length
+  const continuing = commands.get("prr.diff.close").run()
+  await commands.get("prr.diff.continue").run()
+  assert.equal(calls.filter((call) => call.prompt).length, beforeContinue + 1)
+  const withoutFindings = calls.filter((call) => call.prompt).at(-1).prompt
+  assert.equal(withoutFindings.sessionID, "session")
+  assert.match(withoutFindings.text, /Post review when there are no findings/)
+  assert.match(withoutFindings.text, /does not accept or reject findings, complete investigation, or authorize posting/)
+  releasePrompt()
+  await continuing
+  assert.equal(closed, true)
 } catch (error) {
   console.error(JSON.stringify({ memory, calls }))
   throw error

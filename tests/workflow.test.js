@@ -53,3 +53,12 @@ test("review confidence reflects assessment quality rather than local test execu
     assert.match(prompt, /\{\{ci_checks\}\}/)
   }
 })
+
+test("leaving diff investigation resumes next-step choices even without findings", () => {
+  const investigation = skill.split("## Phase 7:")[1].split("## Phase 8:")[0]
+  assert.match(investigation, /Continue review/)
+  assert.match(investigation, /immediately use the question tool/)
+  assert.match(investigation, /\*\*Post review\*\* when\nthere are zero findings/)
+  assert.match(investigation, /or authorize posting/)
+  assert.match(investigation, /Do not repeat the briefing, reopen the diff view/)
+})

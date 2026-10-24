@@ -386,8 +386,15 @@ open the saved round's changed files and findings. Clicking a finding selects it
 details; non-code findings show details without inventing an anchor. **Discuss in chat** submits the
 user's question as evidence gathering, leaving all finding decisions pending. Returning to chat or
 opening the visual view never completes step 7, accepts findings, or authorizes posting. The selected
-finding and vertical diff scroll position are retained when switching views. For a visual-view choice, wait
-for a user question or return to chat rather than immediately opening another question dialog.
+finding and vertical diff scroll position are retained when switching views. For a visual-view choice,
+wait for a user question or **Continue review** rather than immediately opening another question dialog.
+
+The visual view's **Continue review** action (`c` or Escape) submits a request to return to this menu.
+On receiving that request, immediately use the question tool below, including **Post review** when
+there are zero findings. Do not repeat the briefing, reopen the diff view, or leave the user waiting
+without next-step choices. Continuing from the diff view does not accept or reject findings, complete
+step 7, or authorize posting. If the review has already advanced beyond investigation, preserve its
+current stage and offer the appropriate next choices rather than restarting investigation.
 
 Use the question tool:
 
