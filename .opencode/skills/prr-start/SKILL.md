@@ -316,18 +316,10 @@ Keep step 6 `in_progress` and step 7 pending throughout the briefing and explana
 ```
 
 Capture the parsed JSON and surface stderr warnings. Stop on a parse failure and offer **Retry
-briefing** or **Abort review**. Use `change_stats` for file and line counts, never estimates from
-the arbiter or the live PR. Counts describe the saved snapshot: added/deleted text lines include
-moved code, binary files have no textual line counts, and a large test diff is not proof of coverage.
-If stats are unavailable, say so rather than showing zero. Do not infer production/test breakdowns
-from filename guesses. Optional commit counts come only from the saved `pr-metadata.json`.
-
-Use the arbiter's `change_summary`, `overall_assessment`, `code_quality`,
-`backwards_compatibility`, and `confidence_reasoning` to present this briefing. Summarize faithfully
-and retain material limitations, disagreements, and citations. Distinguish inspected assertions,
-author-reported tests, static tracing, and executed checks. Do not add findings, conduct another
-review, inflate confidence, or change the saved verdict in the primary thread. For an older report
-missing an assessment, say **Not assessed in this saved report**; do not infer a clean bill of health.
+briefing** or **Abort review**. Use `change_summary` and `overall_assessment` from the saved report.
+Do not add findings, conduct another review, inflate confidence, or change the saved verdict in the
+primary thread. For an older report missing an assessment, say **Not assessed in this saved report**;
+do not infer a clean bill of health.
 
 ```markdown
 ---
@@ -336,41 +328,32 @@ missing an assessment, say **Not assessed in this saved report**; do not infer a
 
 ### <PR link and title>
 
-**Verdict:** `[<VERDICT>]` | **Confidence:** <CONFIDENCE>
+**Verdict:** <VERDICT> · **Confidence:** <CONFIDENCE>
 **Findings:** <introduced counts by severity/trigger; pre-existing counted separately>
-**Saved round:** <round> | <successful reviewers> | <Q&A rounds>
 
-### What you're reviewing
-<Purpose, intended behavior change, and main review question.>
+### What changed
+<Purpose and intended behavior change in plain language.>
 
-### Change size
-<Files changed; text lines added/deleted; new/deleted/renamed files and binary count when relevant.>
+### Assessment
+<Short implementation conclusion, including any material risk not already stated below.>
 
-### Overall assessment
-<Candid assessment from the arbiter, including strengths, weaknesses, and material risks.>
-
-### Readability and gradual modernization
-<Assessment of new/changed code, supported Code Quality finding IDs and locations, alternatives
-and tradeoffs. Optional LOW suggestions are non-blocking; do not request unrelated legacy cleanup.>
-
-### Backwards compatibility
-<Intended, Unintended, or Unclear behavior changes; affected contracts, migration needs,
-finding IDs, and unverified boundaries. No issue identified is not a guarantee.>
-
-### Why this confidence level
-<Evidence supporting it, limitations, unresolved disagreements, and what was actually executed.>
-
-### Recommended review focus
-<Highest-impact questions or findings, or state that none were identified.>
+### Needs attention
+<Finding IDs, the concrete concern, and the requested action. Distinguish a code defect from an
+acceptance or rollout decision. Optional LOW suggestions are non-blocking.>
 
 ---
 ```
 
-Keep the briefing scannable; it is an orientation, not the one-at-a-time finding walk. Put any
+Keep the briefing scannable, normally under 180 words; it is an orientation, not the finding walk.
+Do not include change statistics, reviewer/Q&A metadata, exact test-suite counts, routine execution
+disclaimers, or a "main review question" for the user to resolve. Assess readability and backwards
+compatibility during review; unintended changes belong in findings, not a routine briefing section.
+Explain confidence only when a specific unresolved uncertainty materially affects the conclusion;
+use the saved `confidence_reasoning`, without adding a standard testing disclaimer. Do not repeat
+the same concern across sections. Put any
 `pre-existing` finding only under a separate **Pre-existing (not caused by this PR)** heading,
-never among introduced concerns or reasons to block merging. Omit empty sections for findings,
-but retain the readability, compatibility, and confidence assessments even with zero findings.
-Use only `[APPROVE]`, `[REQUEST_CHANGES]`, or `[COMMENT]` for the verdict.
+never among introduced concerns or reasons to block merging. Omit **Needs attention** when empty,
+including with zero findings. Use only `APPROVE`, `REQUEST_CHANGES`, or `COMMENT` for the verdict.
 
 Then use the question tool:
 
@@ -378,19 +361,33 @@ Then use the question tool:
 
 **Options:**
 
-- **Continue to investigation** - finish step 6 and begin step 7.
+- **Investigate in diff view** - finish step 6, begin step 7, and show how to open the visual view.
+- **Investigate in chat** - finish step 6 and begin the existing chat investigation.
 - **Explain this briefing** - collect the question, explain using the saved report, and ask again.
 - **Stop here** - stop without investigating, accepting findings, or posting.
 
-Do not proceed until the user explicitly selects **Continue to investigation**. Explanations and
+Do not proceed until the user explicitly selects **Investigate in diff view** or **Investigate in chat**. Explanations and
 custom replies do not complete step 6, accept findings, authorize posting, or start step 7. If an
 answer needs fresh code inspection, offer continuing to investigation rather than doing it during
 this pause. **Stop here** marks step 6 blocked and leaves step 7 pending; a later explicit continuation
-can resume the briefing. Only the continuing option completes step 6 and starts step 7.
+can resume the briefing. Only an explicit investigation choice completes step 6 and starts step 7.
+
+For the diff choice on OpenCode 2, tell the user to click **Open diff investigation** in the sidebar
+or run `/prr-diff`. These open the same full-screen side-by-side view; do not claim to have opened it
+through a model tool. On OpenCode 1 or a client without session panels, offer chat investigation
+instead. The visual view is optional and never accepts findings or authorizes posting.
 
 ## Phase 7: Interactive Investigation
 
 Enter only after the briefing's explicit continuation. Do not repeat the briefing automatically.
+
+The OpenCode 2 visual investigation is an alternate view of this phase. `/prr-diff` and the sidebar
+open the saved round's changed files and findings. Clicking a finding selects its code location and
+details; non-code findings show details without inventing an anchor. **Discuss in chat** submits the
+user's question as evidence gathering, leaving all finding decisions pending. Returning to chat or
+opening the visual view never completes step 7, accepts findings, or authorizes posting. The selected
+finding and vertical diff scroll position are retained when switching views. For a visual-view choice, wait
+for a user question or return to chat rather than immediately opening another question dialog.
 
 Use the question tool:
 
@@ -401,6 +398,7 @@ Use the question tool:
 - **Post review** - skip the findings walk and go to the posting confirmation.
 - **Investigate a finding** - collect a question or challenge.
 - **Run a focused check** - collect a code-inspection request.
+- **Open diff investigation** - show the sidebar action or `/prr-diff`, then wait for the user.
 - **Re-review** - create a new round with additional guidance.
 - **Review findings** - proceed to one-at-a-time findings decisions.
 - **Abort** - stop without posting.

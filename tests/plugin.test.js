@@ -592,6 +592,7 @@ test("V2 sidebar RPC persists session progress and exposes only the bound manife
     const context = { agent: "prr-orchestrator", sessionID: "sidebar-test", signal: new AbortController().signal }
     const get = () => registered.rpc.handlers.get({ sessionID: context.sessionID })
     assert.equal(await get(), null)
+    await assert.rejects(registered.rpc.handlers.investigation({ sessionID: context.sessionID }), /Continue from the review briefing/)
     const progress = registered.tools.find((tool) => tool.name === "prr_progress")
     assert.equal(progress.input.properties.step.maximum, 7)
     await progress.execute({ step: 1, status: "completed" }, context)
@@ -614,6 +615,15 @@ test("V2 sidebar RPC persists session progress and exposes only the bound manife
     await progress.execute({ step: 6, status: "completed" }, context)
     await progress.execute({ step: 7, status: "in_progress" }, context)
     assert.equal((await get()).steps[6].status, "in_progress")
+    writeFileSync(join(round, "results/final-report.md"), "## Verdict\n\nAPPROVE\n\n## Confidence\n\nHIGH\n")
+    writeFileSync(join(round, "results/diff.txt"), "diff --git a/test.rb b/test.rb\n--- a/test.rb\n+++ b/test.rb\n@@ -1 +1 @@\n-old\n+new\n")
+    const investigation = await registered.rpc.handlers.investigation({ sessionID: context.sessionID })
+    assert.equal(investigation.verdict, "APPROVE")
+    assert.equal(investigation.files[0].path, "test.rb")
+    assert.deepEqual(investigation.findings, [])
+    assert.ok(!JSON.stringify(investigation).includes(round))
+    await assert.rejects(registered.rpc.handlers.investigation({ sessionID: "unrelated-session" }), /Continue from the review briefing/)
+    assert.ok((await registered.rpc.handlers.diff({ sessionID: context.sessionID, snapshot: investigation.snapshot, fileID: "0" })).patch.includes("+new"))
     await assert.rejects(progress.execute({ step: 8, status: "pending" }, context), /Invalid PRR progress/)
     await registered.commands.find((command) => command.name === "prr-start").execute({
       sessionID: context.sessionID, prompt: { text: "acme/repo#1" }, delivery: "steer",

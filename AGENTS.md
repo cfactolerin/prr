@@ -37,9 +37,15 @@ OpenCode 2 does not evaluate permissions for plugin tools and gives plugins no w
 
 OpenCode assets must use quoted `"$PRR_BIN"`; retained legacy assets use `${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal`.
 
-The OpenCode 2 sidebar reads session-scoped review progress and the manifest header through the read-only RPC in `review-rpc.js`. `review-state.js` persists that state in plugin storage; only the orchestrator can update stages through `prr_progress`. The sidebar receives neither reviewer artifacts nor workspace paths. OpenCode 1 keeps its native `todowrite` list.
+The OpenCode 2 sidebar reads session-scoped review progress and the manifest header through the read-only RPC in `review-rpc.js`. `review-state.js` persists that state in plugin storage; only the orchestrator can update stages through `prr_progress`. The sidebar receives neither private reviewer artifacts nor workspace paths.
 
-The seven stages include a user-gated Review briefing between arbiter synthesis and interactive investigation. Its assessments come from the arbiter report; `parse-report --diff` supplies deterministic snapshot statistics. Context gathering supplies bounded pre-PR file history for readability and migration judgments. New and changed code should use clear supported practices without unrelated legacy modernization. Reviewers explicitly assess backwards compatibility and explain confidence from evidence and limitations.
+After explicit briefing continuation, `/prr-diff` opens `review-panel.js` in a full-screen session panel. `review-reader.js` serves the saved final report and individual file diffs only for the session's bound round; clients supply snapshot and file/finding IDs, never filesystem paths. Unchanged references use the saved head commit, not the mutable clone.
+
+Navigation is read-only, and discussion returns to the existing chat workflow without accepting findings. OpenCode 1 keeps its native `todowrite` list and chat investigation.
+
+The seven stages include a user-gated Review briefing between arbiter synthesis and interactive investigation. Its concise change summary, assessment, and actionable concerns come from the arbiter report; statistics and routine compatibility/testing disclaimers stay out of the briefing. Context gathering supplies GitHub CI status and bounded pre-PR file history.
+
+Confidence measures assessment coverage, intent and ticket alignment, language/repository standards, and unresolved material questions; not rerunning passing CI locally is not a penalty. New and changed code should use clear supported practices without unrelated legacy modernization. Reviewers assess backwards compatibility and flag supported unintended changes as findings.
 
 ## OpenCode Architecture
 

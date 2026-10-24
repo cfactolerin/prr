@@ -19,6 +19,10 @@ your behavior.
 
 {{pr_body}}
 
+## CI Results
+
+{{ci_checks}}
+
 ## Reviewer Tasks
 
 {{reviewer_tasks}}
@@ -175,14 +179,22 @@ so it cannot settle a disagreement.
 When ready, output the final report below.
 
 Give a candid overall assessment of what works, what remains weak, and whether complexity is
-justified. Do not inflate praise, invent concerns, or manufacture consensus. Explain why the
-confidence level fits the evidence: distinguish static tracing, inspected assertions, author-reported
-tests, and verified runtime execution. Name missing context, unresolved disagreement, and the checks
-that would settle material uncertainty. HIGH needs direct evidence for material claims; MEDIUM fits
-material unverified paths; LOW fits insufficient evidence to settle the verdict. A narrow statically
-proven fix can earn HIGH without claiming runtime verification. Agreement alone is not proof and
-missing execution alone is not a defect. Optional LOW Code Quality suggestions alone never justify
-REQUEST_CHANGES.
+justified. Do not inflate praise, invent concerns, or manufacture consensus. Confidence measures the
+completeness and quality of the review: coverage of affected areas, understanding of intent,
+ticket-to-implementation alignment, supported programming-language and repository standards, and
+unresolved questions or doubts. HIGH fits a well-supported assessment of material claims with no
+unresolved question affecting the verdict; MEDIUM fits a specific material doubt; LOW fits insufficient
+understanding to settle the verdict.
+
+Trust relevant passing CI results in the saved PR snapshot; do not require independently rerunning
+those tests or lower confidence merely because no tests ran in this review. Distinguish observed CI
+results from author-reported claims and never invent a passing check. Failed or pending relevant
+checks and demonstrated coverage gaps can matter, but unavailable CI alone is not evidence of a defect.
+Assess current contracts using the supplied context. Do not lower confidence for hypothetical future
+contract changes or unavailable out-of-scope cross-service tests. An actual mismatch caused or exposed
+by this diff remains a finding. Explain only specific uncertainties that affect the assessment, rather
+than a routine execution disclaimer. Agreement alone is not proof. Optional LOW Code Quality
+suggestions alone never justify REQUEST_CHANGES.
 
 ---
 
@@ -319,13 +331,13 @@ blocking findings are pre-existing, the verdict is `COMMENT`, not `REQUEST_CHANG
 
 HIGH | MEDIUM | LOW
 
-(Explain the supporting evidence, what limits it, and why this level fits. State what was and was
-not executed; do not present author-reported checks as independently verified.)
+(Explain assessment coverage and any specific unresolved question affecting this level. Trust relevant
+passing CI; not rerunning tests locally is not a confidence penalty. Do not invent verified checks.)
 
 ### Change Summary
 
-(Purpose, changed behavior, and the main review question in plain language. Statistics come from
-the saved diff, not estimates in this report.)
+(Purpose and changed behavior in plain language. Resolve review questions in the assessment or
+findings rather than assigning the review back to the user. Do not include change statistics.)
 
 ### Overall Assessment
 

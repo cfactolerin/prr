@@ -32,7 +32,9 @@ test("sidebar renders progress, context and links, refreshes live, and isolates 
     const context = {
       location: {directory: "/repo"},
       theme: {text: {base: "#ffffff", muted: "#aaaaaa", action: {primary: {base: "#00ffff"}}}},
+      ui: {panel: {open: (...args) => opens.push(args)}},
     }
+    const opens = []
     const view = await testRender(() => reviewSidebar(context, {get sessionID() {return session()}}, rpc), {width: 36, height: 35})
     try {
       let frame = await view.waitForFrame(frame => frame.includes("DI-1364"))
@@ -41,6 +43,7 @@ test("sidebar renders progress, context and links, refreshes live, and isolates 
       assert.ok(frame.includes("Review briefing"))
       assert.ok(frame.includes("Interactive investigation"))
       assert.ok(frame.includes("Context manifest"))
+      assert.ok(!frame.includes("Open diff investigation"))
       for (const label of ["PRR:", "PR:", "Title:", "Author:", "Branch:", "Ticket:", "Round:"]) assert.ok(frame.includes(label))
       const text = view.renderer.root.getChildren()[0].getChildren().find(node => node.plainText?.includes("Ticket:"))
       assert.ok(text)
@@ -51,6 +54,13 @@ test("sidebar renders progress, context and links, refreshes live, and isolates 
       assert.ok(view.captureCharFrame().includes("◉ Gather context"))
       handler({data: {sessionID: "s1"}, location: context.location})
       await view.waitForFrame(frame => frame.includes("✓ Gather context"))
+      state.steps[5].status = "completed"
+      state.steps[6].status = "in_progress"
+      handler({data: {sessionID: "s1"}, location: context.location})
+      frame = await view.waitForFrame(frame => frame.includes("Open diff investigation"))
+      const y = frame.split("\\n").findIndex(row => row.includes("Open diff investigation"))
+      await view.mockMouse.click(3, y)
+      assert.deepEqual(opens, [["prr.investigation", {presentation: "fullscreen"}]])
       setSession("s2")
       await view.waitForFrame(frame => !frame.includes("DI-1364"))
       setSession("s1")

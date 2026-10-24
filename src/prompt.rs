@@ -67,6 +67,7 @@ pub fn build_review(
             ("{{pr_number}}", &pr_number),
             ("{{pr_title}}", &pr_title),
             ("{{pr_body}}", &str_field(&meta, "body")),
+            ("{{ci_checks}}", &ci_checks_section(&meta)),
             ("{{pr_url}}", &pr_url),
             ("{{pr_author}}", &pr_author),
             ("{{head_branch}}", &head_branch),
@@ -143,6 +144,7 @@ pub fn build_arbiter(context_dir: &str) -> Result<(), Box<dyn std::error::Error>
             ("{{pr_number}}", &pr_number),
             ("{{pr_title}}", &pr_title),
             ("{{pr_body}}", &str_field(&meta, "body")),
+            ("{{ci_checks}}", &ci_checks_section(&meta)),
             ("{{pr_url}}", &pr_url),
             ("{{pr_author}}", &pr_author),
             ("{{head_branch}}", &head_branch),
@@ -269,6 +271,27 @@ fn capitalize(s: &str) -> String {
         None => String::new(),
         Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
     }
+}
+
+fn ci_checks_section(meta: &serde_json::Value) -> String {
+    let Some(checks) = meta["statusCheckRollup"].as_array().filter(|checks| !checks.is_empty()) else {
+        return "No CI check results are available in this saved snapshot. Do not assume CI passed or failed, or reduce confidence solely because these results are unavailable.".into();
+    };
+    let mut section = format!(
+        "GitHub CI snapshot for PR head `{}`. This is saved context, not a live status query.\n\n",
+        meta["headRefOid"].as_str().unwrap_or("unknown")
+    );
+    for check in checks {
+        let name = check["name"].as_str().or_else(|| check["context"].as_str()).unwrap_or("Unnamed check");
+        let status = check["status"].as_str().or_else(|| check["state"].as_str()).unwrap_or("UNKNOWN");
+        let conclusion = check["conclusion"].as_str().filter(|value| !value.is_empty());
+        section.push_str(&format!("- {name}: {status}"));
+        if let Some(conclusion) = conclusion {
+            section.push_str(&format!("; {conclusion}"));
+        }
+        section.push('\n');
+    }
+    section
 }
 
 /// Load and parse `results/pr-metadata.json`.
@@ -685,7 +708,9 @@ mod tests {
             "author": {"login": "testuser"},
             "headRefName": "feat/test",
             "baseRefName": "main",
-            "body": "PROJ-123 test body"
+            "body": "PROJ-123 test body",
+            "headRefOid": "saved-head",
+            "statusCheckRollup": [{"name": "RSpec", "status": "COMPLETED", "conclusion": "SUCCESS"}]
         });
         std::fs::write(
             base.join("results/pr-metadata.json"),
@@ -712,6 +737,9 @@ mod tests {
         assert!(out.contains("Check auth"));
         assert!(out.contains("Prior commit: preserve the API boundary."));
         assert!(!out.contains("{{change_history}}"));
+        assert!(out.contains("GitHub CI snapshot for PR head `saved-head`"));
+        assert!(out.contains("RSpec: COMPLETED; SUCCESS"));
+        assert!(!out.contains("{{ci_checks}}"));
         let tasks = std::fs::read_to_string(base.join("results/reviewer-tasks.md")).unwrap();
         assert!(tasks.contains("Verify rollback"));
     }
@@ -758,6 +786,8 @@ mod tests {
         assert!(out.contains("Check authorization boundaries"));
         assert!(out.contains("No change history snapshot available."));
         assert!(!out.contains("{{change_history}}"));
+        assert!(out.contains("No CI check results are available in this saved snapshot"));
+        assert!(!out.contains("{{ci_checks}}"));
     }
 
     #[test]
@@ -837,7 +867,26 @@ mod tests {
         assert!(REVIEW_TEMPLATE.contains("Leave untouched code alone"));
         assert!(ARBITER_TEMPLATE.contains("leave unrelated old code alone"));
         assert!(ARBITER_TEMPLATE.contains("Agreement alone is not proof"));
-        assert!(ARBITER_TEMPLATE.contains("never justify\nREQUEST_CHANGES"));
+        assert!(ARBITER_TEMPLATE.contains("suggestions alone never justify REQUEST_CHANGES"));
+    }
+
+    #[test]
+    fn ci_context_preserves_failures_pending_checks_and_legacy_statuses() {
+        let meta = serde_json::json!({
+            "headRefOid": "snapshot",
+            "statusCheckRollup": [
+                {"name": "unit", "status": "COMPLETED", "conclusion": "FAILURE"},
+                {"name": "integration", "status": "IN_PROGRESS", "conclusion": ""},
+                {"context": "lint", "state": "SUCCESS"}
+            ]
+        });
+        let section = ci_checks_section(&meta);
+        assert!(section.contains("unit: COMPLETED; FAILURE"));
+        assert!(section.contains("integration: IN_PROGRESS\n"));
+        assert!(section.contains("lint: SUCCESS\n"));
+        for missing in [serde_json::json!({}), serde_json::json!({"statusCheckRollup": []})] {
+            assert!(ci_checks_section(&missing).contains("Do not assume CI passed or failed"));
+        }
     }
 
     #[test]

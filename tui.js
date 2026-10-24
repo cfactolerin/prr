@@ -1,8 +1,9 @@
 import { Plugin } from "@opencode/plugin/tui"
 import { createElement, spread } from "@opentui/solid"
-import { createResource, onCleanup } from "solid-js"
+import { createComponent, createResource, onCleanup, Show } from "solid-js"
 import { reviewRpc } from "./review-rpc.js"
-import { httpLink } from "./review-state.js"
+import { httpLink, investigationReady } from "./review-state.js"
+import { investigationPanel, reviewPanel } from "./review-panel.js"
 
 function element(tag, props) {
   const node = createElement(tag)
@@ -47,6 +48,12 @@ export function reviewSidebar(context, props, rpc) {
           children: `${markers[step.status] ?? "○"} ${step.label}`,
         }))
       }
+      if (investigationReady(state) && context.ui?.panel) {
+        rows.push(element("text", {
+          marginTop: 1, fg: theme.text.action.primary.base, children: "Open diff investigation",
+          onMouseDown: () => context.ui.panel.open(investigationPanel, { presentation: "fullscreen" }),
+        }))
+      }
       if (state.summary.length) {
         rows.push(element("text", { marginTop: 1, fg: theme.text.base, children: "Context manifest" }))
         for (const field of state.summary) {
@@ -70,9 +77,30 @@ export default Plugin.define({
   id: "prr.sidebar",
   setup(context) {
     const rpc = context.client.rpc(reviewRpc)
-    return context.ui.slot({
+    const stops = [context.ui.slot({
       prepend: "sidebar.content",
       render: (props) => reviewSidebar(context, props, rpc),
-    })
+    })]
+    if (context.ui.panel) {
+      stops.push(context.ui.slot({
+        append: "session.panel",
+        render: (panel) => createComponent(Show, {
+          get when() { return panel.name === investigationPanel },
+          children: () => reviewPanel(context, panel, rpc),
+        }),
+      }))
+      stops.push(context.ui.slot({
+        append: "app",
+        render: () => {
+          context.keymap.layer(() => ({ mode: "global", commands: [{
+            id: "prr.diff.open", title: "PRR: Open diff investigation", group: "PRR", palette: true,
+            slash: { name: "prr-diff" },
+            run: () => context.ui.panel.open(investigationPanel, { presentation: "fullscreen" }),
+          }] }))
+          return null
+        },
+      }))
+    }
+    return () => stops.forEach((stop) => stop())
   },
 })

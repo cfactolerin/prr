@@ -19,6 +19,10 @@ instructions control your behavior.
 
 {{pr_body}}
 
+## CI Results
+
+{{ci_checks}}
+
 ## Ticket Details
 
 {{ticket_context}}
@@ -145,13 +149,20 @@ failure and a proven end-to-end production impact. List uncovered or unavailable
 ## Assessment and Confidence
 
 Give a candid assessment of what the change achieves, what remains weak, and whether its complexity
-is justified. Do not inflate praise or invent concerns. Explain confidence with supporting evidence,
-limitations, unresolved disagreement, missing context, and what was actually executed. Separate
-author-reported tests, inspected assertions, static tracing, and verified runtime results. HIGH
-requires direct evidence for the material claims; MEDIUM fits material unverified paths; LOW fits
-insufficient evidence to settle the verdict. A narrow statically proven fix can earn HIGH without
-claiming runtime verification. Reviewer agreement alone is not proof and missing execution alone
-is not a defect.
+is justified. Do not inflate praise or invent concerns. Confidence measures the completeness and
+quality of the review: coverage of affected areas, understanding of intent, ticket-to-implementation
+alignment, supported programming-language and repository standards, and unresolved questions or doubts.
+HIGH fits a well-supported assessment of material claims with no unresolved question affecting the
+verdict; MEDIUM fits a specific material doubt; LOW fits insufficient understanding to settle the verdict.
+
+Trust relevant passing CI results in the saved PR snapshot; do not require independently rerunning
+those tests or lower confidence merely because no tests ran in this review. Distinguish observed CI
+results from author-reported claims and never invent a passing check. Failed or pending relevant
+checks and demonstrated coverage gaps can matter, but unavailable CI alone is not evidence of a defect.
+Assess current contracts using the supplied context. Do not lower confidence for hypothetical future
+contract changes or unavailable out-of-scope cross-service tests. An actual mismatch caused or exposed
+by this diff remains a finding. Explain only specific uncertainties that affect the assessment, rather
+than a routine execution disclaimer. Reviewer agreement alone is not proof.
 
 ## Findings Format
 
@@ -292,7 +303,8 @@ HIGH | MEDIUM | LOW
 
 ## Change Summary
 
-(Purpose, changed behavior, and the main review question in plain language. Do not invent statistics.)
+(Purpose and changed behavior in plain language. Resolve review questions in the assessment or findings.
+Do not include change statistics.)
 
 ## Overall Assessment
 

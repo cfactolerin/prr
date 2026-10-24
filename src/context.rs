@@ -231,7 +231,7 @@ fn fetch_pr_metadata(pr_ref: &pr::PrRef) -> Result<Value, Box<dyn std::error::Er
         .args([
             "pr", "view", &pr_ref.number.to_string(),
             "--repo", &pr_ref.gh_repo(),
-            "--json", "number,title,body,headRefName,headRefOid,baseRefName,author,files,url,commits",
+            "--json", "number,title,body,headRefName,headRefOid,baseRefName,author,files,url,commits,statusCheckRollup",
         ])
         .env("NO_COLOR", "1")
         .output()?;

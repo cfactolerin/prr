@@ -23,6 +23,7 @@ import { tool } from "@opencode-ai/plugin"
 import { parse } from "yaml"
 import { atlassianReadTools, fetchAtlassianContext } from "./atlassian.js"
 import { createReviewState, reviewSteps } from "./review-state.js"
+import { createReviewReader } from "./review-reader.js"
 
 const packageRoot = dirname(fileURLToPath(import.meta.url))
 const assetRoot = join(packageRoot, ".opencode")
@@ -743,7 +744,10 @@ async function setup(ctx) {
   const { reviewRpc } = await import("./review-rpc.js")
   let registration
   const reviewState = createReviewState(ctx.storage, (data) => registration.events.emit("updated", data))
+  const reader = createReviewReader({ state: reviewState, resolveRound: (round) => roundRoot(configuredWorkspace(), round), binary })
   registration = await ctx.rpc.register(reviewRpc, {
+    investigation: reader.investigation,
+    diff: reader.diff,
     get: async ({ sessionID }) => {
       const state = await reviewState.get(sessionID)
       return state ? { steps: state.steps, summary: state.summary } : null

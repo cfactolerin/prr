@@ -10,12 +10,15 @@ APPROVE | REQUEST_CHANGES | COMMENT
 
 HIGH | MEDIUM | LOW
 
-Explain the evidence supporting the level and its limitations. Distinguish inspected code and
-assertions, author-reported tests, and verified runtime execution. Agreement is not proof.
+Base confidence on assessment coverage, understanding of intent, ticket alignment, applicable
+language and repository standards, and unresolved material questions. Trust relevant passing CI
+in the saved context; not rerunning tests locally is not a confidence penalty. Distinguish observed
+checks from author-reported claims. Do not penalize hypothetical future contract changes or unavailable
+out-of-scope cross-service tests. Agreement is not proof.
 
 ## Change Summary
 
-Purpose, changed behavior, and the main review question in plain language.
+Purpose and changed behavior in plain language. Resolve review questions in the assessment or findings.
 
 ## Overall Assessment
 

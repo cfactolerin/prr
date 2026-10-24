@@ -145,7 +145,15 @@ To override automatic ticket detection:
 
 PRR gathers the context and shows it before dispatching either reviewer. You can add focus areas, ask the session to consult another OpenCode agent for additional context at any point, investigate the final findings, edit or reject proposed comments, and choose whether to approve, comment, request changes, or post nothing. User-requested context agents run in the foreground, so their answers remain in the active session context.
 
-In the OpenCode 2 terminal, the sidebar keeps seven review stages and the context manifest summary visible: PRR version, PR, title, author, branches, ticket, and round. After arbitration, **Review briefing** shows the change's purpose, saved-diff file and line counts, candid implementation assessment, readability, backwards compatibility, and the evidence and limits behind confidence. It pauses until you explicitly continue to **Interactive investigation**, including when no findings were identified. You can ask for an explanation or stop without posting.
+In the OpenCode 2 terminal, the sidebar keeps seven review stages and the context manifest summary visible: PRR version, PR, title, author, branches, ticket, and round. After arbitration, **Review briefing** shows what changed, the implementation assessment, and findings needing attention. It pauses until you explicitly choose diff or chat investigation, including when no findings were identified. You can ask for an explanation or stop without posting.
+
+After continuing, click **Open diff investigation** in the sidebar or run `/prr-diff` to open a full-screen side-by-side diff. Select a finding to jump to its code and replace the findings list with its details. Unchanged references outside the diff open context from the saved PR commit; non-code findings show details without inventing an anchor.
+
+**Discuss in chat** sends your question to the review session without accepting or rejecting the finding. Returning to chat preserves the selected finding and vertical scroll position; a new round or changed report resets them. Navigation is read-only and requires no model calls.
+
+Use `o` for files, `b` for findings, `p`/`n` for previous/next finding, arrow or Page Up/Down keys to scroll vertically, and Escape to return to chat. Horizontal mouse scrolling stays synchronized between the before/after panes.
+
+All changed files remain browsable, including binary and metadata-only changes. The viewer requires an OpenCode 2 client with session-panel support; other clients retain chat investigation. Artifacts over 32 MiB are rejected explicitly rather than truncated; chat investigation remains available.
 
 PR and ticket links are clickable in terminals that support hyperlinks. The ticket links to the Jira site selected through MCP or configured for the API fallback. Sidebar state belongs to the review session and survives restarts; older six-stage sessions retain their progress with the new briefing pending. OpenCode 1 retains its built-in todo list with the same seven stages and briefing pause.
 
@@ -155,6 +163,7 @@ PR and ticket links are clickable in terminals that support hyperlinks. The tick
 |---|---|
 | `/prr-setup` | Configure the workspace, verify prerequisites, and preserve or remove existing Jira context |
 | `/prr-start <pr>` | Run native OpenCode and Codex reviews, arbitration, findings review, and optional posting |
+| `/prr-diff` | Open visual investigation of the saved review after continuing from its briefing (OpenCode 2 terminal) |
 | `/prr-cleanup` | Remove review workspaces whose pull requests are closed or merged |
 
 The OpenCode reviewer and arbiter inherit the model selected in the current OpenCode session and need no separate model setting.
@@ -164,15 +173,17 @@ The OpenCode reviewer and arbiter inherit the model selected in the current Open
 1. **Context gathering:** PRR clones the pull request, computes the diff, fetches linked Jira and Confluence context through Atlassian MCP or the Jira API fallback, and indexes repository guidance such as `AGENTS.md` and `README.md`.
 2. **Independent review:** a native OpenCode subagent and Codex CLI receive the same prompt in separate contexts. Neither receives the other's output.
 3. **Arbitration:** a separate OpenCode subagent compares both reviews and may ask either reviewer for path, line, test, or documentation evidence.
-4. **Review briefing:** read the summary, statistics, assessments, and confidence explanation before explicitly continuing to investigation.
-5. **Interactive review:** PRR presents each finding individually so it can be accepted, edited, challenged, or rejected.
+4. **Review briefing:** read what changed, the assessment, and actionable concerns before explicitly continuing to diff or chat investigation.
+5. **Interactive review:** browse side-by-side diffs and linked findings, or investigate in chat. The separate findings walk lets you accept, edit, challenge, or reject comments before posting.
 6. **GitHub posting:** PRR builds a review only from the accepted findings and posts it with `prr post-review` after explicit confirmation and OpenCode's approval prompt for that command. The briefing is not automatically published.
 
 ### Review Policy
 
 Reviewers assess human readability rather than treating line length, method size, or disabled lint rules as automatic defects. New code should use clear practices supported by the configured runtime and dependencies, not repeat a poor legacy pattern for consistency. Improvements to existing code stay within the changed behavior; unrelated code is not modernized for its own sake. Bounded pre-PR commit history helps identify earlier decisions, but dates alone do not establish quality. Optional readability suggestions are low-severity and non-blocking, and must explain a concrete cost, compatible alternative, and tradeoff.
 
-Backwards-compatibility checks distinguish intended behavior changes from unintended regressions and unclear requirements. They cover affected callers, consumers, data contracts, and deployment or migration needs. An intentional break still needs appropriate handling; a refactor does not authorize silent contract changes. Confidence explains the evidence and limitations, distinguishing author-reported tests, static inspection, and verified execution. Older saved reports remain readable, but missing assessments are shown as unassessed rather than inferred.
+Backwards-compatibility checks distinguish intended behavior changes from unintended regressions and unclear requirements. They cover affected callers, consumers, data contracts, and deployment or migration needs. An intentional break still needs appropriate handling; a refactor does not authorize silent contract changes. Supported unintended changes become findings rather than a routine briefing section.
+
+Confidence reflects coverage of affected areas, understanding of intent, ticket alignment, language and repository standards, and unresolved material questions. PRR captures GitHub CI results with the PR context and trusts relevant passing checks without requiring a local rerun. Missing local execution or hypothetical future cross-service changes do not lower confidence by themselves. Older saved reports retain their original verdict and confidence; missing assessments are unassessed rather than inferred.
 
 ## Configuration And Data
 

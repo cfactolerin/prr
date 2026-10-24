@@ -8,6 +8,11 @@ export const reviewSteps = [
   "Interactive investigation",
 ]
 
+export function investigationReady(state) {
+  return state?.steps.find((step) => step.label === "Review briefing")?.status === "completed"
+    && ["in_progress", "completed"].includes(state?.steps.find((step) => step.label === "Interactive investigation")?.status)
+}
+
 export function httpLink(value) {
   try {
     const url = new URL(value)
