@@ -37,13 +37,13 @@ OpenCode 2 does not evaluate permissions for plugin tools and gives plugins no w
 
 OpenCode assets must use quoted `"$PRR_BIN"`; retained legacy assets use `${CLAUDE_PLUGIN_ROOT}/bin/prr-darwin-universal`.
 
-The OpenCode 2 sidebar reads session-scoped review progress and the manifest header through the read-only RPC in `review-rpc.js`. `review-state.js` persists that state in plugin storage; only the orchestrator can update stages through `prr_progress`. The sidebar receives neither private reviewer artifacts nor workspace paths.
+The OpenCode 2 sidebar reads session-scoped review progress and the manifest header through read-only methods in `review-rpc.js`. `review-state.js` persists that state in plugin storage; only the orchestrator can update stages through `prr_progress`. The sidebar receives neither private reviewer artifacts nor workspace paths.
 
 After explicit briefing continuation, `prr_progress` with `step: 7`, `status: "in_progress"`, and `view: "diff"` emits a one-shot diff request. The app-level TUI listener opens `review-panel.js` only for that request's active session and location, independently of sidebar visibility. `/prr-diff` remains a manual entry point.
 
 `review-reader.js` serves the saved final report and individual file diffs only for the session's bound round; clients supply snapshot and file/finding IDs, never filesystem paths. Unchanged references use the saved head commit, not the mutable clone. File links use semantic status colors and plain underlines; dashed underlines are not exposed by OpenTUI.
 
-Navigation is read-only, and discussion returns to the existing chat workflow without accepting findings. OpenCode 1 keeps its native `todowrite` list and chat investigation.
+Navigation is read-only, and discussion returns to the existing chat workflow without accepting findings. The diff's explicit Accept/Reject controls use the narrow `decide` RPC; no RPC can post a review. Snapshot and revision checks protect shared decisions from stale writes. The orchestrator uses `prr_findings` for the same decisions, approved edits, and active-finding focus. It reads this state before confirmation/posting and focuses each displayed chat finding, including when resuming older sessions. Each panel opening follows the active chat finding; within the panel only fresh focus requests change selection, so refreshes do not interrupt manual file browsing. File cycling uses `h`/`l`, findings use `p`/`n`, and arrows keep scrolling. OpenCode 1 keeps its native `todowrite` list and chat investigation.
 
 The visual view's **Continue review** action (`c`) sends a request to resume the investigation menu, including for reviews without findings. Escape and **Back to discussion / Back to chat** only close the panel; they never send a prompt or replace a pending chat question. Neither action accepts findings, completes investigation, or authorizes posting.
 

@@ -17,9 +17,28 @@ const finding = {
   additionalProperties: false,
 }
 
+const findingState = {
+  snapshot: { type: "string" }, revision: { type: "integer", minimum: 0 },
+  active_finding_id: { type: "string" }, focus_request: { type: "string" }, warning: { type: "string" },
+  decisions: { type: "array", items: {
+    type: "object", properties: {
+      finding_id: { type: "string" }, status: { type: "string", enum: ["pending", "accepted", "rejected", "edited"] }, overridden_body: { type: "string" },
+    }, required: ["finding_id", "status"], additionalProperties: false,
+  } },
+}
+
 export const reviewRpc = Rpc.define({
   id: "prr.review",
   methods: {
+    decide: {
+      input: {
+        type: "object", properties: {
+          sessionID: { type: "string" }, snapshot: { type: "string" }, findingID: { type: "string" },
+          revision: { type: "integer", minimum: 0 }, status: { type: "string", enum: ["accepted", "rejected"] },
+        }, required: ["sessionID", "snapshot", "findingID", "revision", "status"], additionalProperties: false,
+      },
+      output: { type: "object", properties: findingState, required: ["snapshot", "revision", "decisions"], additionalProperties: false },
+    },
     pendingDiff: {
       input: session,
       output: { anyOf: [
@@ -32,6 +51,7 @@ export const reviewRpc = Rpc.define({
       output: {
         type: "object",
         properties: {
+          ...findingState,
           snapshot: { type: "string" }, round: { type: "string" }, verdict: { type: "string" }, confidence: { type: "string" }, warnings: { type: "string" },
           findings: { type: "array", items: finding },
           files: { type: "array", items: {
@@ -42,7 +62,7 @@ export const reviewRpc = Rpc.define({
             required: ["id", "path", "oldPath", "status", "binary"], additionalProperties: false,
           } },
         },
-        required: ["snapshot", "round", "verdict", "confidence", "warnings", "findings", "files"], additionalProperties: false,
+        required: ["snapshot", "revision", "decisions", "round", "verdict", "confidence", "warnings", "findings", "files"], additionalProperties: false,
       },
     },
     diff: {

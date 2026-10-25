@@ -134,7 +134,7 @@ function registerToolDefaults(config) {
   config.permission ??= {}
   for (const name of [
     "prr_artifact", "prr_atlassian_context", "prr_bind_round", "prr_capability", "prr_codex", "prr_codex_health",
-    "prr_progress", "prr_read", "prr_write", "prr_stats_summary", "prr_stats_record",
+    "prr_progress", "prr_read", "prr_write", "prr_stats_summary", "prr_stats_record", "prr_findings",
   ]) {
     if (config.permission[name] === undefined) config.permission[name] = "deny"
   }
@@ -566,6 +566,19 @@ const arg = {
 }
 
 const toolDefinitions = {
+  prr_findings: {
+    description: "Read shared finding decisions, focus the current chat finding in the diff, or save an explicit decision. Get the snapshot and revision first; reread before posting. This never authorizes posting.",
+    args: {
+      operation: arg.enum(["get", "focus", "decision"]), snapshot: arg.string({ optional: true }),
+      finding_id: arg.string({ optional: true }), status: arg.enum(["pending", "accepted", "rejected", "edited"], { optional: true }),
+      revision: { type: "integer", min: 0, optional: true }, overridden_body: arg.string({ optional: true }),
+    },
+    execute: async ({ finding_id, overridden_body, ...input }, context, host) => {
+      if (context?.agent !== "prr-orchestrator") throw new Error("Only the PRR orchestrator may synchronize findings")
+      if (!host?.reader) return "Shared finding decisions require OpenCode 2; retain the existing in-memory review state."
+      return JSON.stringify(await host.reader.findings({ ...input, sessionID: requireSession(context), findingID: finding_id, overriddenBody: overridden_body }))
+    },
+  },
   prr_stats_summary: {
     description: "Read local PRR usage, agreement, reviewer attribution, and human-decision statistics. No review code or credentials are returned.",
     args: { query: arg.string({ optional: true }), limit: arg.positiveInt({ max: 100, optional: true }) },
@@ -662,7 +675,7 @@ const toolDefinitions = {
 function zodArgs(args) {
   return Object.fromEntries(Object.entries(args).map(([name, spec]) => {
     let schema = spec.enum ? tool.schema.enum(spec.enum)
-      : spec.type === "integer" ? tool.schema.number().int().positive()
+      : spec.type === "integer" ? tool.schema.number().int().min(spec.min ?? 1)
         : tool.schema.string()
     if (spec.max !== undefined) schema = schema.max(spec.max)
     return [name, spec.optional ? schema.optional() : schema]
@@ -673,7 +686,7 @@ function jsonSchemaArgs(args) {
   const properties = Object.fromEntries(Object.entries(args).map(([name, spec]) => [name, {
     type: spec.type,
     ...spec.enum ? { enum: spec.enum } : {},
-    ...spec.type === "integer" ? { minimum: 1 } : {},
+    ...spec.type === "integer" ? { minimum: spec.min ?? 1 } : {},
     ...spec.max !== undefined ? { maximum: spec.max } : {},
   }]))
   const required = Object.entries(args).filter(([, spec]) => !spec.optional).map(([name]) => name)
@@ -781,10 +794,17 @@ async function setup(ctx) {
     if (diffRequest) await registration.events.emit("openDiff", { sessionID, diffRequest })
   })
   const statistics = createStatistics({ directory: join(homedir(), ".prr/statistics/v1"), binary })
-  const reader = createReviewReader({ state: reviewState, resolveRound: (round) => roundRoot(configuredWorkspace(), round), binary })
+  const reader = createReviewReader({
+    state: reviewState, resolveRound: (round) => roundRoot(configuredWorkspace(), round), binary,
+    onDecision: async ({ sessionID, round, ...decision }) => {
+      const state = await reviewState.get(sessionID)
+      if (state?.statsRun) statistics.decision(state.statsRun, round, decision)
+    },
+  })
   registration = await ctx.rpc.register(reviewRpc, {
     investigation: reader.investigation,
     diff: reader.diff,
+    decide: reader.decide,
     pendingDiff: async ({ sessionID }) => {
       const state = await reviewState.get(sessionID)
       return investigationReady(state) && state.steps[6].status === "in_progress" && state.diffRequest
@@ -808,7 +828,13 @@ async function setup(ctx) {
       if (atlassianReadTools.some((name) => id.endsWith(`_${name}`))) delete event.tools[id]
     }
   }
-  for (const hook of ["context", "compaction", "generate"]) await ctx.session.hook(hook, hideAtlassianReads)
+  for (const hook of ["compaction", "generate"]) await ctx.session.hook(hook, hideAtlassianReads)
+  await ctx.session.hook("context", async (event) => {
+    hideAtlassianReads(event)
+    if (event.agent !== "prr-orchestrator" || !investigationReady(await reviewState.get(event.sessionID))) return
+    event.system ??= []
+    event.system.push({ type: "text", text: "PRR finding decisions are shared between chat and diff through prr_findings. Read them when resuming review and before confirmation or posting; retain rejected findings and exact approved edits. Before each original finding's rich block/menu, call prr_findings focus with its ID and the current snapshot so reopening the diff follows the active chat finding. Save explicit original-finding decisions through prr_findings using the current revision. Never overwrite a newer choice or treat navigation or acceptance as permission to post." })
+  })
 
   const recordedModels = new Set()
   await ctx.session.hook("model.request", (event) => {
@@ -847,7 +873,7 @@ async function setup(ctx) {
               sessionRounds.set(context.sessionID, roundRoot(configuredWorkspace(), saved.round))
             }
           }
-          const host = { ...ctx, reviewState, statistics }
+          const host = { ...ctx, reviewState, statistics, reader }
           const content = await definition.execute(input, { ...context, abort: context.signal }, host)
           if (name === "prr_bind_round" || name === "prr_atlassian_context") {
             const round = sessionRounds.get(context.sessionID)

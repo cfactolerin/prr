@@ -9,6 +9,7 @@ permission:
   question: allow
   todowrite: allow
   prr_progress: allow
+  prr_findings: allow
   prr_stats_summary: allow
   prr_stats_record: allow
   task:

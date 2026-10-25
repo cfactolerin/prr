@@ -12,6 +12,7 @@ const commands = new Map()
 const calls = []
 const errors = []
 let failPrompt = false
+let failDecision = false
 let promptWait
 let eventHandler
 let stopped = false
@@ -24,7 +25,7 @@ const findings = [
   { id: "F-01", title: "Code issue", severity: "MED", trigger: "Logic Bug", anchor: "diff", origin: "introduced", path: "a.rb", line: 45, fileID: "0", why_it_matters: "- **Previous behavior:** Kept `value`.\n- **What's wrong:** The value is wrong.", suggested_fix: "Correct **the value**.", suggested_comment: "Please correct the value." },
   { id: "F-02", title: "Acceptance check", severity: "MED", trigger: "Acceptance Criteria", anchor: "none", origin: "introduced", why_it_matters: "Partner check missing.", suggested_fix: "Record results.", suggested_comment: "Please record results." },
 ]
-const report = { snapshot: "one", round: "r1", verdict: "COMMENT", confidence: "HIGH", warnings: "", findings, files: [
+const report = { snapshot: "one", revision: 0, decisions: [], round: "r1", verdict: "COMMENT", confidence: "HIGH", warnings: "", findings, files: [
   { id: "0", path: "a.rb", status: "modified", binary: false },
   { id: "1", path: "added.rb", status: "added", binary: false },
   { id: "2", path: "deleted.rb", status: "deleted", binary: false },
@@ -32,6 +33,16 @@ const report = { snapshot: "one", round: "r1", verdict: "COMMENT", confidence: "
 ] }
 const rpc = {
   investigation: async () => structuredClone(report),
+  decide: async (input) => {
+    calls.push({ decision: input })
+    if (failDecision) throw new Error("Finding decisions changed; reload them before deciding")
+    assert.equal(input.snapshot, report.snapshot)
+    assert.equal(input.revision, report.revision)
+    report.decisions = [...report.decisions.filter((item) => item.finding_id !== input.findingID), { finding_id: input.findingID, status: input.status }]
+    report.revision++
+    eventHandler({ data: { sessionID: "session" }, location: context.location })
+    return structuredClone(report)
+  },
   diff: async (input) => {
     calls.push(input)
     const path = report.files.find((file) => file.id === input.fileID)?.path ?? "a.rb"
@@ -79,6 +90,8 @@ try {
   assert.equal(calls.length, 1)
   const nodes = (node) => [node, ...(node.getChildren?.() ?? []).flatMap(nodes)]
   const rendered = nodes(view.renderer.root)
+  assert.equal(rendered.filter((node) => node.plainText === "Files [o]").length, 1)
+  assert.ok(!initial.includes("Choose file"))
   for (const [status, path, color] of [["modified", "a.rb", "#ffff00"], ["added", "added.rb", "#00ff00"], ["deleted", "deleted.rb", "#ff0000"], ["renamed", "renamed.rb", "#0088ff"]]) {
     const node = rendered.find((item) => item.plainText === `${status} · ${path}`)
     assert.ok(node, path)
@@ -98,10 +111,13 @@ try {
   await clickText("↑ Previous file")
   await view.waitFor(() => memory.sessions.session.fileID === "0")
   await view.waitForFrame((frame) => frame.includes("BEFORE_START"))
-  await clickText("↑ Previous file")
-  await view.waitFor(() => memory.sessions.session.fileID === "3")
-  await clickText("↓ Next file")
+  assert.equal(commands.get("prr.diff.file.previous").bind, "h")
+  assert.equal(commands.get("prr.diff.file.next").bind, "l")
+  await commands.get("prr.diff.file.previous").run()
+  await view.waitForFrame((frame) => frame.includes("renamed.rb") && memory.sessions.session.fileID === "3" && frame.includes("BEFORE_START"))
+  await commands.get("prr.diff.file.next").run()
   await view.waitFor(() => memory.sessions.session.fileID === "0")
+  await view.flush()
   await view.waitForFrame((frame) => frame.includes("BEFORE_START"))
   const rows = initial.split("\n")
   const codeY = rows.findIndex((row) => row.includes("BEFORE_START"))
@@ -135,9 +151,34 @@ try {
   assert.ok(orientation.fg.equals(RGBA.fromHex("#0088ff")))
   assert.equal(memory.sessions.session.findingID, "F-01")
   assert.ok(!frame.includes("BEFORE_START"))
+  const diffCalls = calls.filter((call) => call.snapshot).length
+  await clickText("Accept [a]")
+  await waitForContent((frame) => frame.includes("Decision: accepted"))
+  assert.equal(closed, false)
+  assert.equal(memory.sessions.session.findingID, "F-01")
+  assert.equal(calls.filter((call) => call.prompt).length, 0)
+  assert.equal(calls.filter((call) => call.snapshot).length, diffCalls, "decision refresh must not rebuild the code view")
+  assert.ok(view.captureCharFrame().includes("after value"))
+  await commands.get("prr.diff.reject").run()
+  await waitForContent((frame) => frame.includes("Decision: rejected"))
+  failDecision = true
+  await commands.get("prr.diff.accept").run()
+  await waitForContent((frame) => frame.includes("Decision: rejected"))
+  assert.deepEqual(errors, ["Finding decisions changed; reload them before deciding"])
+  errors.length = 0
+  failDecision = false
+  report.decisions = [{ finding_id: "F-01", status: "edited", overridden_body: "Approved replacement comment." }]
+  report.revision++
+  eventHandler({ data: { sessionID: "session" }, location: context.location })
+  await waitForContent((frame) => frame.includes("Accept original [a]") && frame.includes("Approved replacement comment."))
+  await commands.get("prr.diff.accept").run()
+  await waitForContent((frame) => frame.includes("Decision: accepted") && !frame.includes("Approved replacement comment."))
   await commands.get("prr.diff.next").run()
   frame = await waitForContent((frame) => frame.includes("Partner check missing.") && frame.includes("no code location"))
   assert.ok(!frame.includes("before value"))
+  await commands.get("prr.diff.reject").run()
+  await waitForContent((frame) => frame.includes("Decision: rejected"))
+  assert.equal(report.decisions.find((item) => item.finding_id === "F-02").status, "rejected")
   await commands.get("prr.diff.previous").run()
   await waitForContent((frame) => frame.includes("Please correct the value."))
   failPrompt = true
@@ -210,7 +251,33 @@ try {
   assert.equal(closed, true)
   setOpen(true)
   await waitForContent((frame) => frame.includes("Partner check missing."))
+  await commands.get("prr.diff.file.next").run()
+  await view.waitFor(() => memory.sessions.session.findingID === null)
+  await commands.get("prr.diff.close").run()
+  report.active_finding_id = "F-02"
+  report.focus_request = "chat-2"
+  setOpen(true)
+  await waitForContent((frame) => frame.includes("Partner check missing."))
+  assert.equal(memory.sessions.session.findingID, "F-02", "chat F-02 overrides the last file browser position")
+  await commands.get("prr.diff.file.next").run()
+  await view.waitFor(() => memory.sessions.session.findingID === null)
+  eventHandler({ data: { sessionID: "session" }, location: context.location })
+  await view.flush()
+  assert.equal(memory.sessions.session.findingID, null, "an unchanged chat focus must not hijack file browsing")
+  await commands.get("prr.diff.close").run()
+  setOpen(true)
+  await waitForContent((frame) => frame.includes("Partner check missing."))
+  assert.equal(memory.sessions.session.findingID, "F-02", "reopening returns to the active chat finding even without a new focus token")
+  report.active_finding_id = "F-01"
+  report.focus_request = "chat-3"
+  eventHandler({ data: { sessionID: "session" }, location: context.location })
+  await waitForContent((frame) => frame.includes("Please correct the value."))
+  assert.equal(memory.sessions.session.findingID, "F-01")
   report.snapshot = "two"
+  report.decisions = []
+  report.revision = 0
+  delete report.active_finding_id
+  delete report.focus_request
   report.findings = []
   report.verdict = "APPROVE"
   eventHandler({ data: { sessionID: "session" }, location: context.location })

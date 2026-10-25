@@ -468,7 +468,7 @@ test("V2 setup registers PRR tools, agents, skills, commands, and binary environ
   await PrrPlugin.setup(ctx)
 
   assert.deepEqual(registered.tools.map((item) => item.name).sort(), [
-    "prr_artifact", "prr_atlassian_context", "prr_bind_round", "prr_capability", "prr_codex", "prr_codex_health", "prr_progress", "prr_read", "prr_stats_record", "prr_stats_summary", "prr_write",
+    "prr_artifact", "prr_atlassian_context", "prr_bind_round", "prr_capability", "prr_codex", "prr_codex_health", "prr_findings", "prr_progress", "prr_read", "prr_stats_record", "prr_stats_summary", "prr_write",
   ])
   for (const item of registered.tools) assert.equal(item.options.codemode, false)
   const read = registered.tools.find((item) => item.name === "prr_read")
@@ -580,6 +580,22 @@ test("V2 automatically records starts, bound rounds, final attribution, model id
   await tool("prr_read").execute({ filePath: promptPath, capability }, { ...context, sessionID: "native", agent: "prr-opencode-reviewer" })
   await registered.sessionHooks["model.request"]({ sessionID: "native", agent: "prr-opencode-reviewer", kind: "primary", model: { id: "actual-model", providerID: "provider" } })
   await tool("prr_artifact").execute({ operation: "copy", sourcePath: output, targetPath: join(round, "results/final-report.md") }, context)
+  writeFileSync(join(round, "results/diff.txt"), "")
+  await tool("prr_progress").execute({ step: 6, status: "completed" }, context)
+  await tool("prr_progress").execute({ step: 7, status: "in_progress" }, context)
+  const requestContext = { sessionID: "review", agent: "prr-orchestrator", tools: {}, system: [] }
+  await registered.sessionHooks.context(requestContext)
+  assert.match(requestContext.system[0].text, /before each original finding/i)
+  assert.match(requestContext.system[0].text, /current revision/)
+  const shared = JSON.parse((await tool("prr_findings").execute({ operation: "get" }, context)).content)
+  assert.equal(tool("prr_findings").input.properties.revision.minimum, 0)
+  await tool("prr_findings").execute({ operation: "focus", snapshot: shared.snapshot, finding_id: "F-01" }, context)
+  const view = await registered.rpc.handlers.investigation({ sessionID: "review" })
+  assert.equal(view.active_finding_id, "F-01")
+  await registered.rpc.handlers.decide({ sessionID: "review", snapshot: shared.snapshot, revision: 0, findingID: "F-01", status: "rejected" })
+  const synchronized = JSON.parse((await tool("prr_findings").execute({ operation: "get" }, context)).content)
+  assert.deepEqual(synchronized.decisions, [{ finding_id: "F-01", status: "rejected" }])
+  await assert.rejects(tool("prr_findings").execute({ operation: "get" }, { ...context, agent: "prr-arbiter" }), /not allowed/)
   await tool("prr_stats_record").execute({ operation: "decision", finding_id: "F-01", status: "rejected", reason: "not_worth_raising" }, context)
   const summary = JSON.parse((await tool("prr_stats_summary").execute({}, { ...context, agent: "prr-stats" })).content)
   assert.equal(summary.tracked_runs, 1)

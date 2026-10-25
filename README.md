@@ -157,7 +157,17 @@ Unchanged references outside the diff open context from the saved PR commit; non
 
 Returning to chat preserves the selected finding and vertical scroll position; a new round or changed report resets them. Browsing files and findings requires no model calls; continuing or discussing sends a request to the review session.
 
-Use `o` for files, `b` for findings, `p`/`n` for previous/next finding, and arrow or Page Up/Down keys to scroll vertically. Escape returns to the existing chat without sending a message; `c` explicitly opens the next-step review menu. Horizontal mouse scrolling stays synchronized between the before/after panes.
+**Accept** (`a`) and **Reject** (`x`) work directly in the diff sidebar without closing it. Decisions
+and approved chat edits are shared with the findings walk and survive view switches. **Accept original**
+replaces an approved edit with the original saved comment. Neither action authorizes posting or
+classifies factual correctness; posting still requires confirmation in chat. Conflicting or stale
+decisions must be refreshed instead of overwriting a newer choice.
+
+The chat walk records its active finding before showing the full finding and menu. Reopening the
+diff follows that finding, including report-only findings, instead of the last browsed file. An
+unchanged focus does not interrupt manual file browsing while the panel stays open.
+
+Use the single **Files [o]** chooser, `h`/`l` for previous/next file, `b` for the findings list, and `p`/`n` for previous/next finding. Arrow or Page Up/Down keys scroll vertically. Escape returns to the existing chat without sending a message; `c` explicitly opens the next-step review menu. Horizontal mouse scrolling stays synchronized between the before/after panes.
 
 **Discuss in chat** opens the selected finding's full one-at-a-time review in the existing
 conversation, without a popup. It shows focused code, why it matters, the suggested fix and comment,

@@ -87,3 +87,13 @@ test("statistics metadata cannot turn a final report into another Q&A round", ()
   assert.match(detection, /JSON is metadata, never a question set/)
   assert.match(detection, /entire trimmed output is one fenced JSON block/)
 })
+
+test("diff decisions remain authoritative through chat confirmation and posting", () => {
+  assert.match(skill, /`prr_findings` is the authoritative state/)
+  assert.match(skill, /before final confirmation,\nand immediately before generating a posting payload/)
+  assert.match(skill, /operation: "focus".*current `snapshot`/)
+  assert.match(skill, /prior Accepted, Rejected, and Edited choices/)
+  assert.match(skill, /Never\nreinstate a rejected finding or replace an approved edit/)
+  assert.match(skill, /refresh that confirmation before\nposting/)
+  assert.match(skill, /`h`\/`l`; `p`\/`n` remain finding navigation/)
+})

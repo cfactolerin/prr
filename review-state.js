@@ -66,6 +66,22 @@ export function createReviewState(storage, emit) {
     reset(sessionID, statsRun) {
       return change(sessionID, () => save(sessionID, { ...initial(), ...(statsRun ? { statsRun } : {}) }))
     },
+    findings(sessionID, round, snapshot, update, verify = () => {}, onSaved) {
+      return change(sessionID, async () => {
+        const state = await get(sessionID)
+        if (state?.round !== round || !investigationReady(state)) throw new Error("The review round changed; refresh findings")
+        await verify()
+        const findings = state.findings?.snapshot === snapshot ? state.findings : { snapshot, revision: 0, decisions: {} }
+        let warning
+        if (update) {
+          update(findings)
+          state.findings = findings
+          await save(sessionID, state)
+          warning = await onSaved?.()
+        }
+        return { ...structuredClone(findings), ...(warning ? { warning } : {}) }
+      })
+    },
     async update(sessionID, step, status, view) {
       if (!Number.isInteger(step) || step < 1 || step > reviewSteps.length
         || !["pending", "in_progress", "completed", "blocked"].includes(status)) {
@@ -94,6 +110,7 @@ export function createReviewState(storage, emit) {
           state.steps[0] = cleanup
           state.steps[1].status = "in_progress"
           delete state.diffRequest
+          delete state.findings
         }
         state.round = round
         state.summary = manifestSummary(manifest)

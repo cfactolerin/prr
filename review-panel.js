@@ -16,6 +16,8 @@ export function reviewPanel(context, panel, rpc) {
   const location = () => context.location ?? context.data.location.default()
   const [revision, setRevision] = createSignal(0)
   const [submitting, setSubmitting] = createSignal(false)
+  const [deciding, setDeciding] = createSignal(false)
+  const [decisions, setDecisions] = createSignal()
   const [report, { refetch }] = createResource(
     () => [panel.sessionID, revision()],
     async ([sessionID]) => ({ sessionID, report: await rpc.investigation({ sessionID }, { location: location() }) }),
@@ -25,11 +27,13 @@ export function reviewPanel(context, panel, rpc) {
       && event.location.workspaceID === location().workspaceID) setRevision((value) => value + 1)
   })
   onCleanup(stop)
-  const data = () => !report.error && report()?.sessionID === panel.sessionID ? report().report : null
+  const latest = () => !report.error && report()?.sessionID === panel.sessionID ? report().report : null
+  const data = createMemo(latest, undefined, { equals: (a, b) => a === b || !!a && !!b && a.snapshot === b.snapshot })
   const view = () => memory.sessions[panel.sessionID]
   const current = () => view()?.snapshot === data()?.snapshot ? view() : null
   let scroll
   let scrollSelection
+  let initializedFocus = false
   const headingColor = context.theme.text.feedback?.info?.base ?? context.theme.text.action.primary.base
   const fixColor = context.theme.text.feedback?.success?.base ?? context.theme.text.action.primary.base
   const style = SyntaxStyle.fromStyles({
@@ -49,10 +53,23 @@ export function reviewPanel(context, panel, rpc) {
     void context.renderer.idle().then(() => style.destroy())
   })
   createEffect(() => {
-    const value = data()
-    if (!value || current()) return
+    const value = latest()
+    if (!value) return
+    const opening = !initializedFocus
+    initializedFocus = true
+    const previous = untrack(view)
+    const known = untrack(decisions)
+    if (known?.snapshot !== value.snapshot || (value.revision ?? 0) >= (known.revision ?? 0)) setDecisions(value)
+    if (previous?.snapshot === value.snapshot && previous.focusRequest === value.focus_request && !(opening && value.active_finding_id)) return
+    if (previous?.snapshot === value.snapshot) untrack(saveScroll)
+    const focused = value.findings.find((item) => item.id === value.active_finding_id)
     updateMemory((draft) => {
-      draft.sessions[panel.sessionID] = { snapshot: value.snapshot, fileID: value.files[0]?.id, findingID: null, offsets: {} }
+      const sameSnapshot = previous?.snapshot === value.snapshot
+      draft.sessions[panel.sessionID] = {
+        ...(sameSnapshot ? previous : { snapshot: value.snapshot, fileID: value.files[0]?.id, findingID: null, offsets: {} }),
+        focusRequest: value.focus_request,
+        ...(focused ? { findingID: focused.id, ...(focused.fileID !== undefined ? { fileID: focused.fileID } : {}) } : {}),
+      }
     })
   })
   const selectionKey = () => current()?.findingID ? `finding:${current().findingID}` : `file:${current()?.fileID}`
@@ -99,7 +116,7 @@ export function reviewPanel(context, panel, rpc) {
   }
   const continueReview = () => {
     if (!data()) return close()
-    return sendToChat("Return from the PRR diff view to the interactive investigation menu for the current saved review. Show the next-step choices using the question tool, including Post review when there are no findings. Do not reopen the diff view or repeat the briefing. This only resumes the menu; it does not accept or reject findings, complete investigation, or authorize posting. If the review has already advanced beyond investigation, preserve its current stage rather than restarting it.")
+    return sendToChat("Return from the PRR diff view to the interactive investigation menu for the current saved review. Read prr_findings with operation=get and preserve all shared decisions and approved edits before continuing. Show the next-step choices using the question tool, including Post review when there are no findings. Do not reopen the diff view or repeat the briefing. This only resumes the menu; it does not accept or reject findings, complete investigation, or authorize posting. If the review has already advanced beyond investigation, preserve its current stage rather than restarting it.")
   }
   const adjacent = (step) => {
     const findings = data()?.findings ?? []
@@ -134,12 +151,30 @@ export function reviewPanel(context, panel, rpc) {
     if (!selected) return
     await sendToChat(`Open the existing one-at-a-time findings review at finding ${JSON.stringify(selected.id)} in the current saved PRR review. Use Phase 8a to parse and verify the saved report without resetting any prior decisions or edits. Show the full Phase 8b/8c finding presentation: focused code with the target marked when anchored, location, origin, Why this matters, Suggested fix, and Suggested comment. Mark reference code as unchanged; for anchor=none show no anchor line without inventing code. Preserve the saved finding text; do not replace this view with a brief summary or an open-ended question. Restore the per-finding question-tool menu: Accept, Reject, Edit, Add finding, Finish findings. Questions and challenges investigate this same finding without deciding or advancing it. The briefing has already been continued; enter or resume the findings review directly, completing step 7 only if this is its first transition from investigation. Do not repeat the briefing, show the investigation-mode chooser, reopen the diff automatically, or reset the review. This opens the finding for discussion, not acceptance, rejection, or permission to post.`, selected.id)
   }
+  const decide = async (status) => {
+    const selected = finding()
+    if (!selected || deciding() || submitting()) return
+    saveScroll()
+    setDeciding(true)
+    try {
+      const result = await rpc.decide({ sessionID: panel.sessionID, snapshot: data().snapshot, revision: decisions()?.revision ?? 0, findingID: selected.id, status }, { location: location() })
+      if (result.snapshot === data()?.snapshot && result.revision >= (decisions()?.revision ?? 0)) setDecisions(result)
+      if (result.warning) context.ui.toast.show({ message: displayText(result.warning), variant: "warning" })
+    } catch (error) {
+      context.ui.toast.show({ message: displayText(error.message), variant: "error" })
+      void refetch()
+    } finally { setDeciding(false) }
+  }
   context.keymap.layer(() => ({ priority: 10, commands: [
     { id: "prr.diff.close", bind: "escape", run: close },
     { id: "prr.diff.continue", bind: "c", run: continueReview },
     { id: "prr.diff.findings", bind: "b", run: () => selectFinding(null) },
     { id: "prr.diff.next", bind: "n", run: () => adjacent(1) },
     { id: "prr.diff.previous", bind: "p", run: () => adjacent(-1) },
+    { id: "prr.diff.file.previous", bind: "h", run: () => adjacentFile(-1) },
+    { id: "prr.diff.file.next", bind: "l", run: () => adjacentFile(1) },
+    { id: "prr.diff.accept", bind: "a", run: () => decide("accepted") },
+    { id: "prr.diff.reject", bind: "x", run: () => decide("rejected") },
     { id: "prr.diff.files", bind: "o", run: async () => {
       const snapshot = data()?.snapshot
       const id = await context.ui.dialog.select({ title: "Changed files", options: (data()?.files ?? []).map((file) => ({ title: displayText(file.path), value: file.id, description: file.status })) })
@@ -153,6 +188,11 @@ export function reviewPanel(context, panel, rpc) {
   ] }))
   const text = (value, props = {}) => element("text", { fg: context.theme.text.base, wrapMode: "word", children: displayText(value), ...props })
   const heading = (value, color = headingColor, props = {}) => text(value, { fg: color, attributes: TextAttributes.BOLD, flexShrink: 0, ...props })
+  const decision = (id) => decisions()?.decisions?.find((item) => item.finding_id === id)
+  const decisionLabel = (id) => element("text", {
+    fg: context.theme.text.muted, flexShrink: 0,
+    get children() { return `Decision: ${displayText(decision(id)?.status ?? "pending")}${deciding() && finding()?.id === id ? " · saving…" : ""}` },
+  })
   const markdown = (value) => element("markdown", {
     content: displayText(value), syntaxStyle: style, fg: context.theme.text.base, conceal: true, concealCode: true, internalBlockMode: "top-level", width: "100%", flexShrink: 0,
   })
@@ -199,7 +239,10 @@ export function reviewPanel(context, panel, rpc) {
       const value = data()
       return [
         heading(`PRR investigation · ${value.round} · ${value.verdict} · ${value.confidence}`),
-        text("[o] Files   [b] Findings   [p/n] Previous/next finding   [d] Discuss   [r] Refresh   [Esc] Back to chat   [c] Continue review", { fg: context.theme.text.muted, flexShrink: 0 }),
+        element("box", { flexDirection: "row", flexShrink: 0, gap: 2, children: [
+          button("Files [o]", () => context.keymap.dispatch("prr.diff.files")),
+          text("[h/l] Cycle files  [b] List  [p/n] Findings  [a/x] Accept/reject  [d] Discuss  [r] Refresh  [Esc] Chat  [c] Continue", { fg: context.theme.text.muted }),
+        ] }),
         ...(value.warnings ? [text(value.warnings, { fg: context.theme.text.action.primary.base })] : []),
         element("box", {
           flexDirection: "row", flexGrow: 1, minHeight: 0,
@@ -207,7 +250,6 @@ export function reviewPanel(context, panel, rpc) {
             element("box", {
               flexDirection: "column", flexGrow: 1, minWidth: 20,
               children: [
-                button("Choose file [o]", () => context.keymap.dispatch("prr.diff.files")),
                 ...(value.files.length ? [element("box", { flexDirection: "row", flexShrink: 0, height: 1, gap: 2, children: [
                   button("↑ Previous file", () => adjacentFile(-1)),
                   button("↓ Next file", () => adjacentFile(1)),
@@ -232,19 +274,30 @@ export function reviewPanel(context, panel, rpc) {
                 button("← All findings [b]", () => selectFinding(null)),
                 heading(`${finding().id} · ${finding().severity} · ${finding().trigger}`, context.theme.text.feedback?.[finding().severity === "HIGH" ? "error" : "warning"]?.base ?? headingColor, { marginTop: 1 }),
                 heading(finding().title),
+                decisionLabel(finding().id),
+                element("box", { flexDirection: "row", flexShrink: 0, gap: 2, children: [
+                  element("text", {
+                    fg: context.theme.text.action.primary.base, attributes: TextAttributes.UNDERLINE, flexShrink: 0, onMouseDown: () => decide("accepted"),
+                    get children() { return decision(finding()?.id)?.status === "edited" ? "Accept original [a]" : "Accept [a]" },
+                  }), button("Reject [x]", () => decide("rejected")),
+                ] }),
                 ...(finding().origin === "pre-existing" ? [text("Pre-existing — not caused by this PR; non-blocking.", { marginTop: 1 })] : []),
                 text(finding().anchor === "none" ? "No code location" : `${finding().path}:${finding().start_line ?? finding().line}${finding().start_line ? `–${finding().line}` : ""}`),
                 heading("Why this matters", headingColor, { marginTop: 1 }), markdown(finding().why_it_matters),
                 heading("Suggested fix", fixColor, { marginTop: 1 }), markdown(finding().suggested_fix),
                 heading("Suggested comment", context.theme.text.action.primary.base, { marginTop: 1 }), markdown(finding().suggested_comment),
+                element("box", { flexDirection: "column", flexShrink: 0, get children() {
+                  const approved = decision(finding()?.id)?.overridden_body
+                  return approved ? [heading("Approved edit", fixColor, { marginTop: 1 }), markdown(approved)] : []
+                } }),
                 button("Previous [p]", () => adjacent(-1)), button("Next [n]", () => adjacent(1)),
                 button("Discuss in chat [d]", discuss),
               ] : [
                 heading("Findings"),
-                ...(!value.findings.length ? [text("No findings. Browse any changed file, then Continue review to choose the next step.")] : value.findings.map((item) => button(
+                ...(!value.findings.length ? [text("No findings. Browse any changed file, then Continue review to choose the next step.")] : value.findings.map((item) => element("box", { flexDirection: "column", flexShrink: 0, children: [button(
                   `${item.severity} · ${item.id} · ${item.title}${item.origin === "pre-existing" ? " (pre-existing)" : ""}${item.anchor === "none" ? " (no code location)" : ""}`,
                   () => selectFinding(item.id),
-                ))),
+                ), decisionLabel(item.id)] }))),
                 heading("Changed files", headingColor, { marginTop: 1 }),
                 ...value.files.map((file) => button(`${file.status} · ${file.path}`, () => selectFile(file.id), {
                   fg: fileColor(file.status),

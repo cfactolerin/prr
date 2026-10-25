@@ -6,7 +6,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { test } from "node:test"
 import { createReviewReader } from "../review-reader.js"
-import { reviewSteps } from "../review-state.js"
+import { createReviewState, reviewSteps } from "../review-state.js"
 
 const binary = fileURLToPath(new URL("../bin/prr-darwin-universal", import.meta.url))
 const report = `## Final Report
@@ -56,7 +56,7 @@ HIGH
 `
 const patch = "diff --git a/a.rb b/a.rb\n--- a/a.rb\n+++ b/a.rb\n@@ -1,2 +1,2 @@\n first\n-old\n+new\n"
 
-function fixture(t) {
+function fixture(t, onDecision) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "prr-view-")))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const round = join(root, "acme-repo-pr-1/r1")
@@ -64,8 +64,12 @@ function fixture(t) {
   writeFileSync(join(round, "results/final-report.md"), report)
   writeFileSync(join(round, "results/diff.txt"), patch)
   let saved = { round, steps: reviewSteps.map((label) => ({ label, status: "completed" })) }
-  const reader = createReviewReader({ state: { get: async (id) => id === "review" ? saved : null }, resolveRound: realpathSync, binary })
-  return { root, round, reader, setState: (value) => { saved = value }, getState: () => saved }
+  const state = createReviewState({
+    get: async (key) => key === "review/review" ? structuredClone(saved) : null,
+    set: async (_key, value) => { saved = structuredClone(value) },
+  }, async () => {})
+  const reader = createReviewReader({ state, resolveRound: realpathSync, binary, onDecision })
+  return { root, round, reader, state, setState: (value) => { saved = value }, getState: () => saved }
 }
 
 test("viewer uses only the explicitly continued session's saved report and file IDs", async (t) => {
@@ -138,4 +142,59 @@ test("reference locations use the saved commit, never the mutable working tree",
   assert.equal(result.mode, "reference")
   assert.ok(result.patch.includes("saved 20"))
   assert.ok(!result.patch.includes("mutable content"))
+})
+
+test("chat focus and diff decisions share durable snapshot-bound state without posting", async (t) => {
+  const recorded = []
+  const { reader, state } = fixture(t, async (value) => { recorded.push(value) })
+  const initial = await reader.findings({ sessionID: "review" })
+  assert.deepEqual(initial.decisions, [])
+  const request = { sessionID: "review", snapshot: initial.snapshot }
+  const focused = await reader.findings({ ...request, operation: "focus", findingID: "F-02" })
+  assert.equal(focused.active_finding_id, "F-02")
+  assert.equal((await reader.investigation({ sessionID: "review" })).focus_request, focused.focus_request)
+  const accepted = await reader.decide({ ...request, revision: 0, findingID: "F-01", status: "accepted" })
+  assert.equal(accepted.revision, 1)
+  assert.deepEqual(accepted.decisions, [{ finding_id: "F-01", status: "accepted" }])
+  assert.equal(accepted.active_finding_id, "F-02", "deciding never changes the active chat finding")
+  const reloaded = createReviewReader({ state, resolveRound: realpathSync, binary })
+  assert.deepEqual((await reloaded.investigation({ sessionID: "review" })).decisions, accepted.decisions)
+  const edited = await reader.findings({ ...request, operation: "decision", revision: 1, findingID: "F-02", status: "edited", overriddenBody: "Approved replacement.\n\nFix: Keep exact text." })
+  assert.equal(edited.decisions.find((item) => item.finding_id === "F-02").overridden_body, "Approved replacement.\n\nFix: Keep exact text.")
+  const nextFocus = await reader.findings({ ...request, operation: "focus", findingID: "F-02" })
+  assert.notEqual(nextFocus.focus_request, focused.focus_request)
+  assert.deepEqual(nextFocus.decisions, edited.decisions)
+  assert.deepEqual(recorded.map(({ finding_id, status }) => ({ finding_id, status })), [{ finding_id: "F-01", status: "accepted" }, { finding_id: "F-02", status: "edited" }])
+  const rejected = await reader.decide({ ...request, revision: 2, findingID: "F-03", status: "rejected" })
+  assert.equal(rejected.decisions.find((item) => item.finding_id === "F-03").status, "rejected")
+  assert.equal((await state.get("review")).steps[6].status, "completed")
+})
+
+test("stale, concurrent, unknown, and unsupported decisions cannot overwrite current choices", async (t) => {
+  const { reader, round } = fixture(t)
+  const { snapshot } = await reader.investigation({ sessionID: "review" })
+  const request = { sessionID: "review", snapshot, revision: 0, findingID: "F-01", status: "accepted" }
+  const settled = await Promise.allSettled([reader.decide(request), reader.decide({ ...request, status: "rejected" })])
+  assert.equal(settled.filter((item) => item.status === "fulfilled").length, 1)
+  assert.match(settled.find((item) => item.status === "rejected").reason.message, /decisions changed/)
+  await assert.rejects(reader.decide({ ...request, revision: 1, findingID: "F-99" }), /not in the saved report/)
+  await assert.rejects(reader.decide({ ...request, revision: 1, status: "posted" }), /only accept or reject/)
+  await assert.rejects(reader.decide({ ...request, revision: 1, status: "edited" }), /only accept or reject/)
+  await assert.rejects(reader.findings({ ...request, operation: "decision", revision: 1, status: "edited", overriddenBody: "" }), /Invalid finding decision/)
+  writeFileSync(join(round, "results/final-report.md"), report.replace("Code concern", "New concern"))
+  await assert.rejects(reader.decide({ ...request, revision: 1 }), /report changed/)
+  const changed = await reader.investigation({ sessionID: "review" })
+  assert.deepEqual(changed.decisions, [])
+  assert.equal(changed.active_finding_id, undefined)
+  writeFileSync(join(round, "results/final-report.md"), report.replace("##### F-02", "##### F-01"))
+  const ambiguous = await reader.investigation({ sessionID: "review" })
+  await assert.rejects(reader.decide({ ...request, snapshot: ambiguous.snapshot, revision: 0 }), /ambiguous/)
+})
+
+test("statistics failure never undoes an explicit saved decision", async (t) => {
+  const { reader } = fixture(t, async () => { throw new Error("Local ledger unavailable") })
+  const { snapshot } = await reader.investigation({ sessionID: "review" })
+  const result = await reader.decide({ sessionID: "review", snapshot, revision: 0, findingID: "F-01", status: "rejected" })
+  assert.match(result.warning, /Decision saved.*Local ledger unavailable/)
+  assert.equal((await reader.findings({ sessionID: "review" })).decisions[0].status, "rejected")
 })

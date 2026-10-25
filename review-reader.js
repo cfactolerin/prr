@@ -22,7 +22,7 @@ function artifact(round, name, optional = false) {
   }
 }
 
-export function createReviewReader({ state, resolveRound, binary }) {
+export function createReviewReader({ state, resolveRound, binary, onDecision = async () => {} }) {
   const cache = new Map()
   async function load(sessionID) {
     const saved = await state.get(sessionID)
@@ -50,10 +50,54 @@ export function createReviewReader({ state, resolveRound, binary }) {
     return result
   }
 
+  async function findingState(sessionID, result, update, onSaved) {
+    const saved = await state.findings(sessionID, result.round, result.snapshot, update, () => {
+      const snapshot = createHash("sha256").update(JSON.stringify([result.round, artifact(result.round, "final-report.md"), artifact(result.round, "diff.txt"), artifact(result.round, "pr-metadata.json", true)])).digest("hex")
+      if (snapshot !== result.snapshot) throw new Error("The saved report changed; refresh findings")
+    }, onSaved)
+    return {
+      snapshot: saved.snapshot, revision: saved.revision,
+      decisions: Object.entries(saved.decisions).map(([finding_id, value]) => ({ finding_id, ...value })),
+      ...(saved.warning ? { warning: saved.warning } : {}),
+      ...(saved.activeFindingID ? { active_finding_id: saved.activeFindingID, focus_request: saved.focusRequest } : {}),
+    }
+  }
+  async function findings({ sessionID, operation = "get", snapshot, findingID, status, overriddenBody, revision }) {
+    const result = await load(sessionID)
+    if (!["get", "focus", "decision"].includes(operation)) throw new Error("Invalid findings operation")
+    if (operation !== "get" && result.snapshot !== snapshot) throw new Error("The saved report changed; refresh findings")
+    if (operation !== "get" && !result.report.findings.some((finding) => finding.id === findingID)) throw new Error("Finding is not in the saved report")
+    if (operation !== "get" && result.report.findings.filter((finding) => finding.id === findingID).length !== 1) throw new Error("Finding ID is ambiguous in the saved report")
+    if (operation === "decision" && (!["pending", "accepted", "rejected", "edited"].includes(status)
+      || !Number.isInteger(revision) || revision < 0
+      || status === "edited" && (typeof overriddenBody !== "string" || !overriddenBody.trim() || overriddenBody.length > 64 * 1024)
+      || status !== "edited" && overriddenBody !== undefined)) throw new Error("Invalid finding decision")
+    const saved = await findingState(sessionID, result, operation === "get" ? undefined : (value) => {
+      if (operation === "focus") {
+        value.activeFindingID = findingID
+        value.focusRequest = crypto.randomUUID()
+      } else {
+        if (value.revision !== revision) throw new Error("Finding decisions changed; reload them before deciding")
+        value.decisions = { ...value.decisions, [findingID]: { status, ...(status === "edited" ? { overridden_body: overriddenBody } : {}) } }
+        value.revision++
+      }
+    }, operation !== "decision" ? undefined : async () => {
+      try { await onDecision({ sessionID, round: result.round, finding_id: findingID, status }) }
+      catch (error) { return `Decision saved. Statistics warning: ${error.message}` }
+    })
+    return saved
+  }
   return {
+    findings,
+    async decide(input) {
+      if (!["accepted", "rejected"].includes(input.status)) throw new Error("The diff view can only accept or reject findings")
+      return findings({ ...input, operation: "decision" })
+    },
     async investigation({ sessionID }) {
       const result = await load(sessionID)
+      const saved = await findingState(sessionID, result)
       return {
+        ...saved,
         snapshot: result.snapshot, round: basename(result.round), verdict: result.report.verdict, confidence: result.report.confidence,
         findings: result.report.findings.map((finding) => ({ ...finding, fileID: result.files.find((file) => file.path === finding.path)?.id })),
         files: result.files.map(({ patch: _patch, ...file }) => file), warnings: result.warnings,
