@@ -11,6 +11,12 @@ function element(tag, props) {
   return node
 }
 
+async function rpcValue(request) {
+  try { return await request() }
+  // Solid resources replace plain-object RPC failures with "Unknown error".
+  catch (error) { throw new Error(error?.message ?? String(error)) }
+}
+
 export function reviewPanel(context, panel, rpc) {
   const [memory, updateMemory] = context.storage.memory("investigation", { initial: { sessions: {} } })
   const location = () => context.location ?? context.data.location.default()
@@ -20,7 +26,7 @@ export function reviewPanel(context, panel, rpc) {
   const [decisions, setDecisions] = createSignal()
   const [report, { refetch }] = createResource(
     () => [panel.sessionID, revision()],
-    async ([sessionID]) => ({ sessionID, report: await rpc.investigation({ sessionID }, { location: location() }) }),
+    async ([sessionID]) => ({ sessionID, report: await rpcValue(() => rpc.investigation({ sessionID }, { location: location() })) }),
   )
   const stop = rpc.events.on("updated", (event) => {
     if (event.data.sessionID === panel.sessionID && event.location.directory === location().directory
@@ -131,7 +137,7 @@ export function reviewPanel(context, panel, rpc) {
     },
     async ({ sessionID, snapshot, key, fileID, findingID }) => ({
       sessionID, snapshot, key,
-      value: await rpc.diff({ sessionID, snapshot, ...(findingID ? { findingID } : fileID !== undefined ? { fileID } : {}) }, { location: location() }),
+      value: await rpcValue(() => rpc.diff({ sessionID, snapshot, ...(findingID ? { findingID } : fileID !== undefined ? { fileID } : {}) }, { location: location() })),
     }),
   )
   const patch = () => {

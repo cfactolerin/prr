@@ -5,7 +5,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { test } from "node:test"
+import { JsonSchema, Schema, SchemaRepresentation } from "effect"
 import { createReviewReader } from "../review-reader.js"
+import { reviewRpc } from "../review-rpc.js"
 import { createReviewState, reviewSteps } from "../review-state.js"
 
 const binary = fileURLToPath(new URL("../bin/prr-darwin-universal", import.meta.url))
@@ -55,6 +57,9 @@ HIGH
 - **Suggested comment:** Record acceptance results.
 `
 const patch = "diff --git a/a.rb b/a.rb\n--- a/a.rb\n+++ b/a.rb\n@@ -1,2 +1,2 @@\n first\n-old\n+new\n"
+const investigationSchema = SchemaRepresentation.toSchema(SchemaRepresentation.fromJsonSchemaDocument(
+  JsonSchema.fromSchemaDraft2020_12(reviewRpc.methods.investigation.output),
+))
 
 function fixture(t, onDecision) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "prr-view-")))
@@ -76,9 +81,12 @@ test("viewer uses only the explicitly continued session's saved report and file 
   const { reader } = fixture(t)
   await assert.rejects(reader.investigation({ sessionID: "other" }), /Continue from the review briefing/)
   const result = await reader.investigation({ sessionID: "review" })
+  Schema.decodeUnknownSync(investigationSchema)(result)
   assert.equal(result.files.length, 1)
   assert.equal(result.findings.length, 3)
   assert.equal(result.findings[0].fileID, "0")
+  assert.equal(Object.hasOwn(result.findings[1], "fileID"), false)
+  assert.equal(Object.hasOwn(result.findings[2], "fileID"), false)
   assert.ok(!JSON.stringify(result).includes("/.prr/"))
   const request = { sessionID: "review", snapshot: result.snapshot }
   assert.equal((await reader.diff({ ...request, fileID: "0" })).patch, patch)

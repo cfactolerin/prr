@@ -13,6 +13,8 @@ const calls = []
 const errors = []
 let failPrompt = false
 let failDecision = false
+let failInvestigation = false
+let failDiff = false
 let promptWait
 let eventHandler
 let stopped = false
@@ -32,7 +34,10 @@ const report = { snapshot: "one", revision: 0, decisions: [], round: "r1", verdi
   { id: "3", path: "renamed.rb", status: "renamed", binary: false },
 ] }
 const rpc = {
-  investigation: async () => structuredClone(report),
+  investigation: async () => {
+    if (failInvestigation) throw { type: "rpc.invalid_output", message: "Saved review response is invalid" }
+    return structuredClone(report)
+  },
   decide: async (input) => {
     calls.push({ decision: input })
     if (failDecision) throw new Error("Finding decisions changed; reload them before deciding")
@@ -44,6 +49,7 @@ const rpc = {
     return structuredClone(report)
   },
   diff: async (input) => {
+    if (failDiff) throw { type: "rpc.invalid_output", message: "Saved diff response is invalid" }
     calls.push(input)
     const path = report.files.find((file) => file.id === input.fileID)?.path ?? "a.rb"
     return input.findingID === "F-02" ? { patch: "", path: "", mode: "none", message: "This finding has no code location." }
@@ -311,6 +317,18 @@ try {
   releasePrompt()
   await continuing
   assert.equal(closed, true)
+  failInvestigation = true
+  setOpen(true)
+  await view.waitForFrame((frame) => frame.includes("Saved review response is invalid"))
+  assert.ok(!view.captureCharFrame().includes("Unknown error"))
+  failInvestigation = false
+  failDiff = true
+  await commands.get("prr.diff.refresh").run()
+  await view.waitForFrame((frame) => frame.includes("Saved diff") && frame.includes("response is invalid"))
+  failDiff = false
+  await commands.get("prr.diff.close").run()
+  setOpen(true)
+  await view.waitForFrame((frame) => frame.includes("No findings.") && !frame.includes("Cannot load diff"))
 } catch (error) {
   console.error(view.captureCharFrame())
   console.error(JSON.stringify({ memory, calls }))

@@ -99,7 +99,10 @@ export function createReviewReader({ state, resolveRound, binary, onDecision = a
       return {
         ...saved,
         snapshot: result.snapshot, round: basename(result.round), verdict: result.report.verdict, confidence: result.report.confidence,
-        findings: result.report.findings.map((finding) => ({ ...finding, fileID: result.files.find((file) => file.path === finding.path)?.id })),
+        findings: result.report.findings.map((finding) => {
+          const file = result.files.find((file) => file.path === finding.path)
+          return { ...finding, ...(file ? { fileID: file.id } : {}) }
+        }),
         files: result.files.map(({ patch: _patch, ...file }) => file), warnings: result.warnings,
       }
     },
