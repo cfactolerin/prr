@@ -553,6 +553,29 @@ test("statistics command preserves an active review agent and cannot mutate deci
   await assert.rejects(registered.tools.find((tool) => tool.name === "prr_stats_record").execute({ operation: "finish", status: "posted" }, { agent: "prr-stats", sessionID: "review" }), /not allowed/)
 })
 
+test("V2 briefing reminders offer the APPROVE shortcut to resumed sessions only", async () => {
+  const { ctx, registered } = fakeV2Context()
+  await PrrPlugin.setup(ctx)
+  const progress = registered.tools.find((tool) => tool.name === "prr_progress")
+  const context = { sessionID: "review", agent: "prr-orchestrator" }
+  await progress.execute({ step: 6, status: "in_progress" }, context)
+  const request = () => ({ ...context, tools: {}, system: [] })
+  const briefing = request()
+  await registered.sessionHooks.context(briefing)
+  assert.match(briefing.system[0].text, /only when the parsed saved verdict is APPROVE/)
+  assert.match(briefing.system[0].text, /neither accepts findings nor authorizes posting/)
+  assert.match(briefing.system[0].text, /COMMENT and REQUEST_CHANGES retain investigation choices/)
+  const reviewer = { ...request(), agent: "prr-opencode-reviewer" }
+  await registered.sessionHooks.context(reviewer)
+  assert.deepEqual(reviewer.system, [])
+  await progress.execute({ step: 6, status: "completed" }, context)
+  await progress.execute({ step: 7, status: "completed" }, context)
+  const posting = request()
+  await registered.sessionHooks.context(posting)
+  assert.ok(posting.system.every((item) => !item.text.includes("At the PRR Review briefing")))
+  assert.equal(registered.rpc.events.filter((event) => event.name === "openDiff").length, 0)
+})
+
 test("V2 automatically records starts, bound rounds, final attribution, model identity, and explicit decisions", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "prr-statistics-flow-"))
   const previousHome = process.env.HOME

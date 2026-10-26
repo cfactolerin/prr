@@ -145,7 +145,13 @@ To override automatic ticket detection:
 
 PRR gathers the context and shows it before dispatching either reviewer. You can add focus areas, ask the session to consult another OpenCode agent for additional context at any point, investigate the final findings, edit or reject proposed comments, and choose whether to approve, comment, request changes, or post nothing. User-requested context agents run in the foreground, so their answers remain in the active session context.
 
-In the OpenCode 2 terminal, the sidebar keeps seven review stages and the context manifest summary visible: PRR version, PR, title, author, branches, ticket, and round. After arbitration, **Review briefing** shows what changed, the implementation assessment, and findings needing attention. It pauses until you explicitly choose diff or chat investigation, including when no findings were identified. You can ask for an explanation or stop without posting.
+In the OpenCode 2 terminal, the sidebar keeps seven review stages and the context manifest summary visible: PRR version, PR, title, author, branches, ticket, and round. After arbitration, **Review briefing** shows what changed, the implementation assessment, and findings needing attention. It pauses for an explicit next step, even when no findings were identified. You can ask for an explanation or stop without posting.
+
+With an **APPROVE** verdict, **Continue to review action** skips investigation and the findings walk.
+It goes directly to the approval/comment/request-changes choice and posting preview, including any
+non-blocking suggestions. Rejected findings and approved edits are preserved; pending suggestions
+are not accepted until you confirm the action, exact body, and proposed comments. Skipping or
+cancelling posting leaves them pending. Other verdicts retain the diff/chat investigation choices.
 
 Choosing **Investigate in diff view** opens the full-screen side-by-side diff directly in the active terminal. The sidebar action and `/prr-diff` remain available to reopen it. Select a finding to jump to its code and replace the findings list with its details.
 
@@ -162,6 +168,8 @@ and approved chat edits are shared with the findings walk and survive view switc
 replaces an approved edit with the original saved comment. Neither action authorizes posting or
 classifies factual correctness; posting still requires confirmation in chat. Conflicting or stale
 decisions must be refreshed instead of overwriting a newer choice.
+Decision buttons and the `a`/`x` hint appear only for a selected finding. Browsing files without
+selecting a finding hides those controls and disables their shortcuts.
 
 The chat walk records its active finding before showing the full finding and menu. Reopening the
 diff follows that finding, including report-only findings, instead of the last browsed file. An

@@ -831,7 +831,13 @@ async function setup(ctx) {
   for (const hook of ["compaction", "generate"]) await ctx.session.hook(hook, hideAtlassianReads)
   await ctx.session.hook("context", async (event) => {
     hideAtlassianReads(event)
-    if (event.agent !== "prr-orchestrator" || !investigationReady(await reviewState.get(event.sessionID))) return
+    if (event.agent !== "prr-orchestrator") return
+    const state = await reviewState.get(event.sessionID)
+    if (["in_progress", "blocked"].includes(state?.steps[5].status)) {
+      event.system ??= []
+      event.system.push({ type: "text", text: "At the PRR Review briefing, offer Continue to review action first only when the parsed saved verdict is APPROVE, even with non-blocking or pre-existing findings. Use the current prr-start skill's Phase 6 DIRECT_APPROVAL path to skip investigation and go directly to the action/body/comment preview. The shortcut neither accepts findings nor authorizes posting; pending comments need explicit confirmation. COMMENT and REQUEST_CHANGES retain investigation choices. Keep the briefing paused until an explicit choice." })
+    }
+    if (!investigationReady(state)) return
     event.system ??= []
     event.system.push({ type: "text", text: "PRR finding decisions are shared between chat and diff through prr_findings. Read them when resuming review and before confirmation or posting; retain rejected findings and exact approved edits. Before each original finding's rich block/menu, call prr_findings focus with its ID and the current snapshot so reopening the diff follows the active chat finding. Save explicit original-finding decisions through prr_findings using the current revision. Never overwrite a newer choice or treat navigation or acceptance as permission to post." })
   })

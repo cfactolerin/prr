@@ -378,16 +378,30 @@ Then use the question tool:
 
 **Options:**
 
+- **Continue to review action** - only when the parsed verdict is `APPROVE`; skip investigation and
+  choose whether to approve, comment, request changes, or post nothing. This does not post anything.
 - **Investigate in diff view** - finish step 6, begin step 7, and open the visual view directly.
 - **Investigate in chat** - finish step 6 and begin the existing chat investigation.
 - **Explain this briefing** - collect the question, explain using the saved report, and ask again.
 - **Stop here** - stop without investigating, accepting findings, or posting.
 
-Do not proceed until the user explicitly selects **Investigate in diff view** or **Investigate in chat**. Explanations and
+For `APPROVE`, list **Continue to review action** first, including when there are non-blocking or
+pre-existing findings. Omit it for `COMMENT` and `REQUEST_CHANGES`; those verdicts retain the existing
+investigation choices. An APPROVE verdict alone never advances the workflow.
+
+Do not proceed until the user explicitly selects **Investigate in diff view**, **Investigate in chat**,
+or the eligible **Continue to review action** option. Explanations and
 custom replies do not complete step 6, accept findings, authorize posting, or start step 7. If an
 answer needs fresh code inspection, offer continuing to investigation rather than doing it during
 this pause. **Stop here** marks step 6 blocked and leaves step 7 pending; a later explicit continuation
-can resume the briefing. Only an explicit investigation choice completes step 6 and starts step 7.
+can resume the briefing. Only an explicit investigation choice starts step 7.
+
+For **Continue to review action**, complete step 6 and mark step 7 completed as bypassed, without
+starting investigation or setting `view`. Run 8a only to parse/verify and merge shared decisions,
+then go directly to Phase 9. Do not show the Phase 7 menu, the findings walk, or 8e confirmation.
+Set `DIRECT_APPROVAL` for this saved round and snapshot. Preserve Rejected findings and exact approved
+edits. Pending findings remain pending: they are proposed comments for the posting preview, not
+accepted decisions. This shortcut never records correctness or authorizes a GitHub write.
 
 For the diff choice on OpenCode 2, complete step 6, then call `prr_progress` with `step: 7`,
 `status: "in_progress"`, and `view: "diff"`. This requests the full-screen diff panel directly in the
@@ -416,6 +430,8 @@ wait for a user question or **Continue review** rather than immediately opening 
 The diff's **Accept** (`a`) and **Reject** (`x`) save explicit decisions in shared, snapshot-bound
 state without leaving the view or authorizing posting. They do not classify factual correctness.
 **Accept original** replaces a prior approved edit with the saved report's original comment.
+Show decision controls and shortcut hints only while a finding is selected. File browsing without
+a selected finding hides these controls and disables `a`/`x`; it never decides another file's finding.
 File cycling uses `h`/`l`; `p`/`n` remain finding navigation and arrows remain scrolling.
 
 For **Discuss in chat**, complete step 7 only on the first transition from Phase 7 to Phase 8;
@@ -525,7 +541,8 @@ for explicit correctness judgments or reasons; ordinary Accept/Reject does not i
 If shared state changes after the final confirmation was shown, refresh that confirmation before
 posting. Switching views, selecting a finding, and accepting findings never authorize posting.
 
-When the parsed report has no findings, skip 8b and 8c and go to 8e. The user can still add one there.
+When the parsed report has no findings, skip 8b and 8c and go to 8e, unless `DIRECT_APPROVAL` goes
+straight to Phase 9. The user can still add a finding at 8e.
 
 ### 8b. Diff-Anchored Findings
 
@@ -637,7 +654,11 @@ Omit **Review more findings** when no finding was ever parsed or added, since th
 
 ### 9a. Regenerate Body
 
-Do not use the arbiter's original review body. Partition Accepted and Edited findings:
+Do not use the arbiter's original review body. Ordinarily, use Accepted and Edited findings only.
+For `DIRECT_APPROVAL`, also include still-Pending findings as proposed comments in the preview,
+without changing their status. Exclude Rejected findings and retain exact approved edits in either
+path. If the saved round or snapshot changes, discard `DIRECT_APPROVAL` and require a fresh briefing.
+Partition the selected findings:
 
 - `inline`: anchor `diff`, origin `introduced`
 - `other`: anchor `reference` or `none`, origin `introduced`
@@ -649,8 +670,8 @@ Normalize `CRITICAL` to HIGH and `MEDIUM` to MED for counts.
 
 For APPROVE:
 
-- No accepted findings: `LGTM!`
-- Any accepted findings: `Approved but with minor improvement suggestions.`
+- No selected findings: `LGTM!`
+- Any selected findings: `Approved but with minor improvement suggestions.`
 
 For COMMENT or REQUEST_CHANGES, find the highest severity in `inline`.
 
@@ -692,6 +713,11 @@ Omit either appended section when it is empty. Match singular/plural and store t
 
 Show the suggested action and generated body. When the report's verdict is REQUEST_CHANGES but no accepted HIGH or MED finding is introduced, suggest **Comment only** instead and say why. Then use the question tool:
 
+For `DIRECT_APPROVAL`, show every proposed inline comment verbatim with its finding ID and location
+alongside the body before asking. Label still-Pending entries as proposed, not accepted. This is a
+single posting preview, not a findings walk. Suggest **Approve**, but keep all four action choices
+below. Choosing the shortcut did not choose an action or confirm the body/comments.
+
 **Question:** Post review?
 
 **Options:**
@@ -714,6 +740,18 @@ Then ask:
 - **Cancel posting** - stop without any GitHub write.
 
 Do not post until action and exact body are confirmed.
+
+For `DIRECT_APPROVAL`, the body confirmation also confirms the displayed proposed comments; say so
+in the question. Offer **Review findings first** alongside the body choices when there are findings;
+it clears `DIRECT_APPROVAL` and enters the existing walk without resetting decisions. On **Skip posting**
+or **Cancel posting**, leave Pending findings pending and do not record acceptance or correctness.
+
+Only after explicit action, exact body, and proposed-comment confirmation, reread shared state.
+If the snapshot or any decision changed since the preview, rebuild it and obtain fresh confirmation;
+never overwrite a concurrent decision. For `DIRECT_APPROVAL`, save acceptance of only the still-Pending
+findings included in the confirmed preview using `prr_findings`, with each returned revision for the
+next write. Do not infer correctness. On a revision conflict, reread and reconfirm before proceeding.
+On OpenCode 1 use the same in-memory decisions and statistics path. Then clear `DIRECT_APPROVAL`.
 
 ### 9c. Resolve Current PR Metadata
 

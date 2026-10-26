@@ -179,8 +179,8 @@ export function reviewPanel(context, panel, rpc) {
     { id: "prr.diff.previous", bind: "p", run: () => adjacent(-1) },
     { id: "prr.diff.file.previous", bind: "h", run: () => adjacentFile(-1) },
     { id: "prr.diff.file.next", bind: "l", run: () => adjacentFile(1) },
-    { id: "prr.diff.accept", bind: "a", run: () => decide("accepted") },
-    { id: "prr.diff.reject", bind: "x", run: () => decide("rejected") },
+    { id: "prr.diff.accept", bind: "a", enabled: () => !!finding() && !deciding() && !submitting(), run: () => decide("accepted") },
+    { id: "prr.diff.reject", bind: "x", enabled: () => !!finding() && !deciding() && !submitting(), run: () => decide("rejected") },
     { id: "prr.diff.files", bind: "o", run: async () => {
       const snapshot = data()?.snapshot
       const id = await context.ui.dialog.select({ title: "Changed files", options: (data()?.files ?? []).map((file) => ({ title: displayText(file.path), value: file.id, description: file.status })) })
@@ -247,7 +247,7 @@ export function reviewPanel(context, panel, rpc) {
         heading(`PRR investigation · ${value.round} · ${value.verdict} · ${value.confidence}`),
         element("box", { flexDirection: "row", flexShrink: 0, gap: 2, children: [
           button("Files [o]", () => context.keymap.dispatch("prr.diff.files")),
-          text("[h/l] Cycle files  [b] List  [p/n] Findings  [a/x] Accept/reject  [d] Discuss  [r] Refresh  [Esc] Chat  [c] Continue", { fg: context.theme.text.muted }),
+          text(`[h/l] Cycle files  [b] List  [p/n] Findings${finding() ? "  [a/x] Accept/reject" : ""}  [d] Discuss  [r] Refresh  [Esc] Chat  [c] Continue`, { fg: context.theme.text.muted }),
         ] }),
         ...(value.warnings ? [text(value.warnings, { fg: context.theme.text.action.primary.base })] : []),
         element("box", {

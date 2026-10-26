@@ -16,13 +16,33 @@ test("workflow stages match sidebar ordering including the briefing pause", () =
 test("briefing requires explicit continuation even with no findings or after re-review", () => {
   const briefing = skill.split("## Phase 6:")[1].split("## Phase 7:")[0]
   assert.match(briefing, /Keep step 6 `in_progress` and step 7 pending/)
-  assert.match(briefing, /Do not proceed until the user explicitly selects \*\*Investigate in diff view\*\* or \*\*Investigate in chat\*\*/)
+  assert.match(briefing, /Do not proceed until the user explicitly selects \*\*Investigate in diff view\*\*, \*\*Investigate in chat\*\*/)
   for (const option of ["Investigate in diff view", "Investigate in chat", "Explain this briefing", "Stop here"]) {
     assert.ok(briefing.includes(`- **${option}**`))
   }
   assert.match(briefing, /accept findings, authorize posting, or start step 7/)
   assert.match(briefing, /including with zero findings/)
   assert.match(skill, /approval of the previous briefing does not carry over/)
+})
+
+test("APPROVE briefing can skip investigation without accepting findings or posting", () => {
+  const briefing = skill.split("## Phase 6:")[1].split("## Phase 7:")[0]
+  const posting = skill.split("## Phase 9:")[1]
+  assert.match(briefing, /\*\*Continue to review action\*\* - only when the parsed verdict is `APPROVE`/)
+  assert.match(briefing, /including when there are non-blocking or\npre-existing findings/)
+  assert.match(briefing, /Omit it for `COMMENT` and `REQUEST_CHANGES`/)
+  assert.match(briefing, /An APPROVE verdict alone never advances/)
+  assert.match(briefing, /mark step 7 completed as bypassed, without\nstarting investigation or setting `view`/)
+  assert.match(briefing, /Do not show the Phase 7 menu, the findings walk, or 8e confirmation/)
+  assert.match(briefing, /Pending findings remain pending/)
+  assert.match(posting, /Exclude Rejected findings and retain exact approved edits/)
+  assert.match(posting, /show every proposed inline comment verbatim/)
+  assert.match(posting, /single posting preview, not a findings walk/)
+  for (const option of ["Approve", "Comment only", "Request changes", "Skip posting"]) assert.ok(posting.includes(`- **${option}**`))
+  assert.match(posting, /On \*\*Skip posting\*\*\nor \*\*Cancel posting\*\*, leave Pending findings pending/)
+  assert.match(posting, /Only after explicit action, exact body, and proposed-comment confirmation, reread shared state/)
+  assert.match(posting, /never overwrite a concurrent decision/)
+  assert.match(posting, /ask` permission creates a separate approval prompt/)
 })
 
 test("briefing is concise, uses saved assessments, and leaves investigation optional", () => {

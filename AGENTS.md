@@ -55,6 +55,8 @@ The arbiter's final report includes a structured `Review Statistics` section, va
 
 The seven stages include a user-gated Review briefing between arbiter synthesis and interactive investigation. Its concise change summary, assessment, and actionable concerns come from the arbiter report; statistics and routine compatibility/testing disclaimers stay out of the briefing. Context gathering supplies GitHub CI status and bounded pre-PR file history.
 
+An APPROVE verdict offers **Continue to review action** to bypass investigation and the findings walk; other verdicts keep the investigation choices. The shortcut previews pending comments without accepting them until explicit action/body/comment confirmation, preserving rejections and edits. It never authorizes posting, and a context reminder exposes this choice to resumed briefing sessions.
+
 Confidence measures assessment coverage, intent and ticket alignment, language/repository standards, and unresolved material questions; not rerunning passing CI locally is not a penalty. New and changed code should use clear supported practices without unrelated legacy modernization. Reviewers assess backwards compatibility and flag supported unintended changes as findings.
 
 ## OpenCode Architecture

@@ -95,6 +95,13 @@ try {
   const initial = await view.waitForFrame((frame) => frame.includes("Code issue") && frame.includes("BEFORE_START") && frame.includes("AFTER_START"))
   assert.equal(calls.length, 1)
   const nodes = (node) => [node, ...(node.getChildren?.() ?? []).flatMap(nodes)]
+  const noDecisionControls = () => {
+    assert.ok(!view.captureCharFrame().includes("[a/x]"))
+    assert.ok(!nodes(view.renderer.root).some((node) => ["Accept [a]", "Accept original [a]", "Reject [x]"].includes(node.plainText)))
+    assert.equal(commands.get("prr.diff.accept").enabled(), false)
+    assert.equal(commands.get("prr.diff.reject").enabled(), false)
+  }
+  noDecisionControls()
   const rendered = nodes(view.renderer.root)
   assert.equal(rendered.filter((node) => node.plainText === "Files [o]").length, 1)
   assert.ok(!initial.includes("Choose file"))
@@ -114,6 +121,11 @@ try {
   await clickText("↓ Next file")
   await view.waitForFrame((frame) => frame.includes("added.rb") && memory.sessions.session.fileID === "1")
   assert.equal(memory.sessions.session.findingID, null)
+  noDecisionControls()
+  const decisionsBeforeBrowse = calls.filter((call) => call.decision).length
+  await commands.get("prr.diff.accept").run()
+  await commands.get("prr.diff.reject").run()
+  assert.equal(calls.filter((call) => call.decision).length, decisionsBeforeBrowse)
   await clickText("↑ Previous file")
   await view.waitFor(() => memory.sessions.session.fileID === "0")
   await view.waitForFrame((frame) => frame.includes("BEFORE_START"))
@@ -156,6 +168,9 @@ try {
   assert.ok(orientation.attributes & TextAttributes.BOLD)
   assert.ok(orientation.fg.equals(RGBA.fromHex("#0088ff")))
   assert.equal(memory.sessions.session.findingID, "F-01")
+  assert.equal(commands.get("prr.diff.accept").enabled(), true)
+  assert.equal(commands.get("prr.diff.reject").enabled(), true)
+  assert.ok(frame.includes("[a/x] Accept/reject"))
   assert.ok(!frame.includes("BEFORE_START"))
   const diffCalls = calls.filter((call) => call.snapshot).length
   await clickText("Accept [a]")
@@ -259,6 +274,8 @@ try {
   await waitForContent((frame) => frame.includes("Partner check missing."))
   await commands.get("prr.diff.file.next").run()
   await view.waitFor(() => memory.sessions.session.findingID === null)
+  await view.flush()
+  noDecisionControls()
   await commands.get("prr.diff.close").run()
   report.active_finding_id = "F-02"
   report.focus_request = "chat-2"
@@ -288,6 +305,7 @@ try {
   report.verdict = "APPROVE"
   eventHandler({ data: { sessionID: "session" }, location: context.location })
   await view.waitForFrame((frame) => frame.includes("No findings."))
+  noDecisionControls()
   assert.equal(memory.sessions.session.findingID, null)
   assert.equal(memory.sessions.session.discussionFindingID, undefined)
   assert.ok(view.captureCharFrame().includes("Back to chat [Esc]"))
