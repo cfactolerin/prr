@@ -200,6 +200,18 @@ All changed files remain browsable, including binary and metadata-only changes. 
 
 PR and ticket links are clickable in terminals that support hyperlinks. The ticket links to the Jira site selected through MCP or configured for the API fallback. Sidebar state belongs to the review session and survives restarts; older six-stage sessions retain their progress with the new briefing pending. OpenCode 1 retains its built-in todo list with the same seven stages and briefing pause.
 
+## Large Reviews
+
+Large UTF-8 source files are read in pages of at most 64 KiB, with continuation cursors that preserve
+long lines and their line numbers. There is no 2 MiB source-file limit for text reads. Images and
+PDFs are not supported by this text reader.
+
+Reviewer prompts reference the full saved diff instead of embedding it. Common context sections
+over 32 KiB are also referenced without truncation. Reviewers receive read-only access to a fixed
+set of evidence files, not each other's outputs. Dispatch prompts have a separate 512 KiB budget;
+this does not guarantee that every model's token budget is sufficient. Rebuild older oversized
+prompts with the current workflow rather than trimming evidence manually.
+
 ## OpenCode Commands
 
 | Command | Description |

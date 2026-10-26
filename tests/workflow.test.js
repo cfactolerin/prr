@@ -117,3 +117,16 @@ test("diff decisions remain authoritative through chat confirmation and posting"
   assert.match(skill, /refresh that confirmation before\nposting/)
   assert.match(skill, /`h`\/`l`; `p`\/`n` remain finding navigation/)
 })
+
+test("large PRs use bounded evidence reads without losing review scope or isolation", () => {
+  assert.match(skill, /not truncated/)
+  assert.match(skill, /Read every page of a prompt before acting on it/)
+  assert.match(skill, /Do not block a review merely because a source diff\/context file exceeds 2 MiB/)
+  assert.match(skill, /separate 512 KiB budget, not a source-file-size limit/)
+  assert.match(skill, /Do not give reviewers access to the whole results directory or to each other's outputs/)
+  const prompt = readFileSync(new URL("../references/prompts/review-prompt.md", import.meta.url), "utf8")
+  assert.ok(!prompt.includes("```diff\n{{diff}}"))
+  assert.match(prompt, /Read every changed-file entry and the saved diff/)
+  assert.match(prompt, /No section is omitted from scope/)
+  assert.match(prompt, /state material coverage gaps/)
+})

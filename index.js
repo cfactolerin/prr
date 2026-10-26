@@ -25,11 +25,13 @@ import { atlassianReadTools, fetchAtlassianContext } from "./atlassian.js"
 import { createReviewState, investigationReady, reviewSteps } from "./review-state.js"
 import { createReviewReader } from "./review-reader.js"
 import { createStatistics } from "./statistics.js"
+import { readTextFile } from "./text-reader.js"
 
 const packageRoot = dirname(fileURLToPath(import.meta.url))
 const assetRoot = join(packageRoot, ".opencode")
 const binary = join(packageRoot, "bin", "prr-darwin-universal")
 const defaultCodexModel = "gpt-6-sol"
+const evidenceNames = ["diff.txt", "changed-files.txt", "repo-docs.md", "change-history.md", "previous-review.md", "pr-metadata.json", "reviewer-tasks.md", "ticket-context.md"]
 const sessionRounds = new Map()
 const capabilities = new Map()
 const atlassianResources = new Map()
@@ -223,10 +225,15 @@ function codexPolicyArgs(repo, additionalPaths = [], executablePaths = codexExec
 async function runCodex({ capability, promptPath, repoPath, outputPath, timeoutSeconds }, context, host) {
   const workspace = configuredWorkspace()
   const paths = codexPaths(workspace, promptPath, repoPath, outputPath)
+  if (statSync(paths.prompt).size > 512 * 1024) throw new Error("Codex dispatch prompt exceeds the 512 KiB PRR budget; rebuild the compact prompt before dispatch")
   const executablePaths = codexExecutablePaths()
   const round = dirname(paths.repo)
   requireCapability(capability, context, round, "codex")
   const contextPath = realpathSync(join(round, "context"))
+  const evidence = join(round, "results", "evidence")
+  if (existsSync(evidence) && realpathSync(evidence) !== evidence) throw new Error("PRR evidence directory must not be a symbolic link")
+  const evidencePaths = evidenceNames.map((name) => join(evidence, name)).filter((path) => existsSync(path))
+  if (evidencePaths.some((path) => realpathSync(path) !== path || !statSync(path).isFile())) throw new Error("PRR evidence must be regular files, not symbolic links")
   const timeout = Math.min(Math.max(timeoutSeconds, 30), 3600) * 1000
   const model = configuredCodexModel()
   let statisticsWarning = ""
@@ -238,7 +245,7 @@ async function runCodex({ capability, promptPath, repoPath, outputPath, timeoutS
     "--ignore-user-config", "--ignore-rules",
     "--disable", "hooks", "--disable", "apps", "--disable", "multi_agent",
     "--strict-config", "-C", paths.repo,
-    ...codexPolicyArgs(paths.repo, [contextPath], executablePaths),
+    ...codexPolicyArgs(paths.repo, [contextPath, ...evidencePaths], executablePaths),
     "--ephemeral", "--color", "never",
     "--output-last-message", paths.output, "-",
   ]
@@ -360,14 +367,15 @@ function requireCapability(token, context, round, role) {
   capability.sessionID ??= sessionID
 }
 
-async function runPrrRead({ capability, filePath, offset = 1, limit = 2000 }, context) {
+async function runPrrRead({ capability, filePath, offset = 1, limit = 2000, cursor }, context) {
   const workspace = configuredWorkspace()
   const { target, round } = roundPath(workspace, filePath)
+  const evidencePaths = evidenceNames.map((name) => join(round, "results", "evidence", name))
   const allowed = {
     "prr-opencode-reviewer": [
-      join(round, "repo"), join(round, "context"), join(round, "results", "reviewers", "opencode"),
+      join(round, "repo"), join(round, "context"), join(round, "results", "reviewers", "opencode"), ...evidencePaths,
     ],
-    "prr-arbiter": [join(round, "repo"), join(round, "context"), join(round, "results", "arbiter")],
+    "prr-arbiter": [join(round, "repo"), join(round, "context"), join(round, "results", "arbiter"), ...evidencePaths],
     "prr-orchestrator": [
       join(round, "repo"),
       join(round, "context"),
@@ -384,20 +392,22 @@ async function runPrrRead({ capability, filePath, offset = 1, limit = 2000 }, co
 
   const stat = statSync(target)
   if (stat.isDirectory()) {
-    return readdirSync(target, { withFileTypes: true })
+    if (cursor !== undefined) throw new Error("Use offset, not a text cursor, for directory listings")
+    const entries = readdirSync(target, { withFileTypes: true })
       .sort((a, b) => a.name.localeCompare(b.name))
-      .slice(offset - 1, offset - 1 + Math.min(limit, 2000))
-      .map((entry) => `${entry.name}${entry.isDirectory() ? "/" : ""}`)
-      .join("\n")
+    const rows = []
+    let bytes = 0
+    for (const entry of entries.slice(offset - 1, offset - 1 + Math.min(limit, 2000))) {
+      const row = `${entry.name}${entry.isDirectory() ? "/" : ""}`
+      bytes += Buffer.byteLength(row, "utf8") + 1
+      if (bytes > 63 * 1024) break
+      rows.push(row)
+    }
+    if (offset - 1 + rows.length < entries.length) rows.push(`[More entries; continue with offset: ${offset + rows.length}]`)
+    return rows.join("\n")
   }
   if (!stat.isFile()) throw new Error("PRR read supports only files and directories")
-  if (stat.size > 2 * 1024 * 1024) throw new Error("PRR read refuses files larger than 2 MiB")
-  const lines = readFileSync(target, "utf8").split("\n")
-  const start = Math.max(offset, 1)
-  return lines
-    .slice(start - 1, start - 1 + Math.min(limit, 2000))
-    .map((line, index) => `${start + index}: ${line.slice(0, 2000)}`)
-    .join("\n")
+  return readTextFile(target, { offset, limit, cursor })
 }
 
 async function runPrrWrite({ capability, filePath, content }, context) {
@@ -631,12 +641,13 @@ const toolDefinitions = {
     execute: runPrrCapability,
   },
   prr_read: {
-    description: "Read a file or directory through PRR role and canonical-path restrictions.",
+    description: "Read UTF-8 text in bounded pages (64 KiB maximum), regardless of source-file size, or list a directory. Continue with the returned cursor; long lines are segmented without dropping text. Role and canonical-path restrictions apply. Not an image/PDF reader.",
     args: {
       capability: arg.string({ optional: true }),
       filePath: arg.string(),
       offset: arg.positiveInt({ optional: true }),
       limit: arg.positiveInt({ max: 2000, optional: true }),
+      cursor: arg.string({ optional: true }),
     },
     execute: runPrrRead,
   },

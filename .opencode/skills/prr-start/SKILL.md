@@ -150,6 +150,18 @@ With tasks, verify `<RESULTS_PATH>/reviewer-tasks.json` contains the confirmed J
 
 The command must create the non-empty `<PROMPT_PATH>`. Stop for a prompt-build failure and offer **Retry prompt build** or **Abort review**.
 
+Prompt assembly saves the full diff and common context in read-only `<RESULTS_PATH>/evidence/`.
+The initial prompt references the full diff; context sections above 32 KiB are also referenced,
+not truncated. Reviewers must inspect that evidence through bounded reads. `prr_read` allows large
+UTF-8 source files but returns at most 64 KiB per call; follow its continuation cursor to avoid
+losing long lines or later sections. Read every page of a prompt before acting on it. Directory
+listings continue with the returned offset. Binary images and PDFs are not text-readable here.
+
+Do not block a review merely because a source diff/context file exceeds 2 MiB. Dispatch prompts
+have a separate 512 KiB budget, not a source-file-size limit. Rebuild an oversized older prompt
+with the current `prompt` command rather than manually truncating it or weakening review scope.
+Do not give reviewers access to the whole results directory or to each other's outputs.
+
 Use `prr_artifact` to copy the completed prompt to `<OPENCODE_DIR>/review-prompt.md` and, when Codex is healthy, `<CODEX_DIR>/review-prompt.md`. Use `prr_artifact` to remove any old private output and shared canonical review file before dispatching. Do not give either reviewer the root `<RESULTS_PATH>`.
 
 ### 4c. Dispatch Concurrently

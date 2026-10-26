@@ -36,9 +36,10 @@ Fetched attachments and linked Confluence pages, when present, are under
 
 ## Diff
 
-```diff
 {{diff}}
-```
+
+Read the relevant saved diff sections to verify each retained claim. In OpenCode, follow `prr_read`
+continuation cursors for large evidence files. A reference is not evidence you have already read.
 
 ---
 

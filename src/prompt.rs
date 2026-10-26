@@ -1,6 +1,7 @@
 //! Prompt assembly — reads context artifacts and interpolates templates.
 
 use std::path::Path;
+use std::io::Read;
 
 const REVIEW_TEMPLATE: &str = include_str!("../references/prompts/review-prompt.md");
 const ARBITER_TEMPLATE: &str = include_str!("../references/prompts/arbiter-prompt.md");
@@ -18,8 +19,11 @@ pub fn build_review(
     context_dir: &str,
     tasks_json: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let base = Path::new(context_dir);
+    let directory = std::fs::canonicalize(context_dir)?;
+    let base = directory.as_path();
     let results = base.join("results");
+    std::fs::write(results.join("reviewer-tasks.md"), parse_tasks(tasks_json))?;
+    prepare_evidence(base)?;
 
     let meta = load_pr_metadata(&results)?;
     let pr_number = meta["number"].as_u64().unwrap_or(0).to_string();
@@ -37,13 +41,13 @@ pub fn build_review(
     let ticket_id = resolved_ticket_id(&results, &meta);
 
     // Optional context files
-    let diff = read_if_exists(&results.join("diff.txt"));
-    let changed_files = read_if_exists(&results.join("changed-files.txt"));
-    let previous_review_raw = read_if_exists(&results.join("previous-review.md"));
-    let ticket_context_raw = read_if_exists(&base.join("context/ticket-context.md"));
+    let diff = evidence_reference(base, "diff.txt");
+    let changed_files = evidence_section(base, "changed-files.txt");
+    let previous_review_raw = evidence_section(base, "previous-review.md");
+    let ticket_context_raw = evidence_section(base, "ticket-context.md");
     let context_path = base.join("context").display().to_string();
 
-    let repo_docs = repo_docs_section(&results);
+    let repo_docs = repo_docs_section(base);
 
     let ticket_context = if ticket_context_raw.trim().is_empty() {
         "No ticket details available.".to_string()
@@ -58,16 +62,15 @@ pub fn build_review(
     };
 
     // Parse tasks JSON (array of strings)
-    let reviewer_tasks = parse_tasks(tasks_json);
-    std::fs::write(results.join("reviewer-tasks.md"), &reviewer_tasks)?;
+    let reviewer_tasks = evidence_section(base, "reviewer-tasks.md");
 
     let prompt = interpolate(
         REVIEW_TEMPLATE,
         &[
             ("{{pr_number}}", &pr_number),
             ("{{pr_title}}", &pr_title),
-            ("{{pr_body}}", &str_field(&meta, "body")),
-            ("{{ci_checks}}", &ci_checks_section(&meta)),
+            ("{{pr_body}}", &bounded_text(&str_field(&meta, "body"), &evidence_reference(base, "pr-metadata.json"))),
+            ("{{ci_checks}}", &bounded_text(&ci_checks_section(&meta), &evidence_reference(base, "pr-metadata.json"))),
             ("{{pr_url}}", &pr_url),
             ("{{pr_author}}", &pr_author),
             ("{{head_branch}}", &head_branch),
@@ -78,7 +81,7 @@ pub fn build_review(
             ("{{repo_docs}}", &repo_docs),
             ("{{previous_review}}", &previous_review),
             ("{{changed_files}}", &changed_files),
-            ("{{change_history}}", &change_history_section(&results)),
+            ("{{change_history}}", &change_history_section(base)),
             ("{{diff}}", &diff),
             ("{{reviewer_tasks}}", &reviewer_tasks),
             ("{{repo}}", &repo),
@@ -86,7 +89,7 @@ pub fn build_review(
     );
 
     let out_path = results.join("review-prompt.md");
-    std::fs::write(&out_path, &prompt)?;
+    write_prompt(&out_path, &prompt)?;
     println!("{}", out_path.display());
     Ok(())
 }
@@ -96,8 +99,10 @@ pub fn build_review(
 /// Collects all `*-review.md` files from `results/` and builds the arbiter
 /// prompt, writing it to `results/arbiter-prompt.md`.
 pub fn build_arbiter(context_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let base = Path::new(context_dir);
+    let directory = std::fs::canonicalize(context_dir)?;
+    let base = directory.as_path();
     let results = base.join("results");
+    prepare_evidence(base)?;
 
     let meta = load_pr_metadata(&results)?;
     let pr_number = meta["number"].as_u64().unwrap_or(0).to_string();
@@ -120,9 +125,9 @@ pub fn build_arbiter(context_dir: &str) -> Result<(), Box<dyn std::error::Error>
     // Q&A round history
     let round_history = collect_round_history(&results);
 
-    let repo_docs = repo_docs_section(&results);
-    let diff = read_if_exists(&results.join("diff.txt"));
-    let ticket_context_raw = read_if_exists(&base.join("context/ticket-context.md"));
+    let repo_docs = repo_docs_section(base);
+    let diff = evidence_reference(base, "diff.txt");
+    let ticket_context_raw = evidence_section(base, "ticket-context.md");
     let ticket_context = if ticket_context_raw.trim().is_empty() {
         "No ticket details available.".to_string()
     } else {
@@ -130,7 +135,7 @@ pub fn build_arbiter(context_dir: &str) -> Result<(), Box<dyn std::error::Error>
     };
     let context_path = base.join("context").display().to_string();
 
-    let saved_tasks = read_if_exists(&results.join("reviewer-tasks.md"));
+    let saved_tasks = evidence_section(base, "reviewer-tasks.md");
     let reviewer_tasks_section = if saved_tasks.trim().is_empty() {
         let manifest = read_if_exists(&base.join("context-manifest.md"));
         extract_tasks_from_manifest(&manifest)
@@ -143,8 +148,8 @@ pub fn build_arbiter(context_dir: &str) -> Result<(), Box<dyn std::error::Error>
         &[
             ("{{pr_number}}", &pr_number),
             ("{{pr_title}}", &pr_title),
-            ("{{pr_body}}", &str_field(&meta, "body")),
-            ("{{ci_checks}}", &ci_checks_section(&meta)),
+            ("{{pr_body}}", &bounded_text(&str_field(&meta, "body"), &evidence_reference(base, "pr-metadata.json"))),
+            ("{{ci_checks}}", &bounded_text(&ci_checks_section(&meta), &evidence_reference(base, "pr-metadata.json"))),
             ("{{pr_url}}", &pr_url),
             ("{{pr_author}}", &pr_author),
             ("{{head_branch}}", &head_branch),
@@ -155,7 +160,7 @@ pub fn build_arbiter(context_dir: &str) -> Result<(), Box<dyn std::error::Error>
             ("{{diff}}", &diff),
             ("{{repo_docs}}", &repo_docs),
             ("{{reviews}}", &reviews),
-            ("{{change_history}}", &change_history_section(&results)),
+            ("{{change_history}}", &change_history_section(base)),
             ("{{round_history}}", &round_history),
             ("{{reviewer_tasks}}", &reviewer_tasks_section),
             ("{{repo}}", &repo),
@@ -163,7 +168,7 @@ pub fn build_arbiter(context_dir: &str) -> Result<(), Box<dyn std::error::Error>
     );
 
     let out_path = results.join("arbiter-prompt.md");
-    std::fs::write(&out_path, &prompt)?;
+    write_prompt(&out_path, &prompt)?;
     println!("{}", out_path.display());
     Ok(())
 }
@@ -178,8 +183,10 @@ pub fn build_question(
     questions_json: &str,
     round: Option<u32>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let base = Path::new(context_dir);
+    let directory = std::fs::canonicalize(context_dir)?;
+    let base = directory.as_path();
     let results = base.join("results");
+    prepare_evidence(base)?;
 
     let meta = load_pr_metadata(&results)?;
     let pr_number = meta["number"].as_u64().unwrap_or(0).to_string();
@@ -193,7 +200,7 @@ pub fn build_question(
         format!("(no prior review found for agent '{agent}')")
     };
 
-    let repo_docs = repo_docs_section(&results);
+    let repo_docs = repo_docs_section(base);
     let context_path = base.join("context").display().to_string();
 
     // Parse questions from JSON (array of strings keyed by agent name, or plain array)
@@ -212,12 +219,13 @@ pub fn build_question(
             ("{{context_path}}", &context_path),
             ("{{previous_review}}", &previous_review),
             ("{{questions}}", &questions),
-            ("{{change_history}}", &change_history_section(&results)),
+            ("{{evidence_path}}", &base.join("results/evidence").display().to_string()),
+            ("{{change_history}}", &change_history_section(base)),
         ],
     );
 
     let out_path = results.join(format!("round-{round_num}-{agent}-question.md"));
-    std::fs::write(&out_path, &prompt)?;
+    write_prompt(&out_path, &prompt)?;
     println!("{}", out_path.display());
     Ok(())
 }
@@ -226,10 +234,9 @@ pub fn build_question(
 // Helper functions
 // ---------------------------------------------------------------------------
 
-/// Inlined root docs plus the area-guide index, or a placeholder when the repo
-/// ships neither. Every prompt that can reach the clone gets this section.
-fn repo_docs_section(results: &Path) -> String {
-    let docs = read_if_exists(&results.join("repo-docs.md"));
+/// Large convention documents remain available without inflating every dispatch.
+fn repo_docs_section(base: &Path) -> String {
+    let docs = evidence_section(base, "repo-docs.md");
     if docs.trim().is_empty() {
         "No docs found.".to_string()
     } else {
@@ -237,13 +244,71 @@ fn repo_docs_section(results: &Path) -> String {
     }
 }
 
-fn change_history_section(results: &Path) -> String {
-    let history = read_if_exists(&results.join("change-history.md"));
+fn change_history_section(base: &Path) -> String {
+    let history = evidence_section(base, "change-history.md");
     if history.trim().is_empty() {
         "No change history snapshot available. Do not infer code age from filesystem timestamps.".into()
     } else {
         history
     }
+}
+
+const INLINE_EVIDENCE_BYTES: u64 = 32 * 1024;
+const PROMPT_BYTES: usize = 512 * 1024;
+
+fn prepare_evidence(base: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let directory = base.join("results/evidence");
+    if directory.symlink_metadata().is_ok_and(|meta| meta.file_type().is_symlink()) {
+        return Err("Evidence directory must not be a symbolic link".into());
+    }
+    std::fs::create_dir_all(&directory)?;
+    for name in ["diff.txt", "changed-files.txt", "repo-docs.md", "change-history.md", "previous-review.md", "pr-metadata.json", "reviewer-tasks.md", "ticket-context.md"] {
+        let source = if name == "ticket-context.md" { base.join("context").join(name) } else { base.join("results").join(name) };
+        let target = directory.join(name);
+        if target.symlink_metadata().is_ok_and(|meta| meta.file_type().is_symlink()) {
+            return Err(format!("Evidence file must not be a symbolic link: {}", target.display()).into());
+        }
+        match source.symlink_metadata() {
+            Ok(meta) if meta.is_file() => { std::fs::copy(&source, &target)?; }
+            Ok(_) => return Err(format!("Evidence source is not a regular file: {}", source.display()).into()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                if target.exists() { std::fs::remove_file(&target)?; }
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
+}
+
+fn evidence_reference(base: &Path, name: &str) -> String {
+    let path = base.join("results/evidence").join(name);
+    match path.metadata() {
+        Ok(meta) => format!("Read the full saved evidence at `{}` ({} bytes) in bounded sections. It is not embedded here; do not treat it as reviewed until read.", path.display(), meta.len()),
+        Err(_) => format!("No saved {name} evidence is available."),
+    }
+}
+
+fn evidence_section(base: &Path, name: &str) -> String {
+    let path = base.join("results/evidence").join(name);
+    let Ok(file) = std::fs::File::open(&path) else { return String::new() };
+    let mut text = String::new();
+    if file.take(INLINE_EVIDENCE_BYTES + 1).read_to_string(&mut text).is_ok() && text.len() <= INLINE_EVIDENCE_BYTES as usize {
+        text
+    } else {
+        evidence_reference(base, name)
+    }
+}
+
+fn bounded_text(text: &str, reference: &str) -> String {
+    if text.len() <= INLINE_EVIDENCE_BYTES as usize { text.to_string() } else { reference.to_string() }
+}
+
+fn write_prompt(path: &Path, prompt: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if prompt.len() > PROMPT_BYTES {
+        return Err("Assembled prompt exceeds the 512 KiB dispatch budget; reduce supplied tasks or review/Q&A text. Saved evidence was not truncated.".into());
+    }
+    std::fs::write(path, prompt)?;
+    Ok(())
 }
 
 /// Returns file contents as a String, or empty string if file doesn't exist.
@@ -733,7 +798,9 @@ mod tests {
         assert!(!out.contains("{{pr_body}}"));
         assert!(out.contains("testuser"));
         assert!(out.contains("feat/test"));
-        assert!(out.contains("diff content"));
+        assert!(!out.contains("diff content"));
+        assert!(out.contains("results/evidence/diff.txt"));
+        assert_eq!(std::fs::read_to_string(base.join("results/evidence/diff.txt")).unwrap(), "diff content");
         assert!(out.contains("Check auth"));
         assert!(out.contains("Prior commit: preserve the API boundary."));
         assert!(!out.contains("{{change_history}}"));
@@ -788,6 +855,68 @@ mod tests {
         assert!(!out.contains("{{change_history}}"));
         assert!(out.contains("No CI check results are available in this saved snapshot"));
         assert!(!out.contains("{{ci_checks}}"));
+    }
+
+    #[test]
+    fn large_evidence_is_preserved_without_expanding_dispatch_prompts() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        std::fs::create_dir_all(base.join("results")).unwrap();
+        std::fs::create_dir_all(base.join("context")).unwrap();
+        let description = "Description evidence 漢字".repeat(10_000);
+        let meta = serde_json::json!({"number": 42, "title": "Large PR", "url": "https://github.com/acme/repo/pull/42", "body": description});
+        std::fs::write(base.join("results/pr-metadata.json"), meta.to_string()).unwrap();
+        let diff = "diff --git a/source b/source\n+complete 🙂 diff evidence\n".repeat(50_000);
+        std::fs::write(base.join("results/diff.txt"), &diff).unwrap();
+        let context = "full convention and ticket evidence 漢字\n".repeat(4000);
+        for name in ["repo-docs.md", "change-history.md", "previous-review.md", "changed-files.txt"] {
+            std::fs::write(base.join("results").join(name), &context).unwrap();
+        }
+        std::fs::write(base.join("context/ticket-context.md"), &context).unwrap();
+        std::fs::write(base.join("results/codex-review.md"), "Current reviewer private evidence").unwrap();
+        build_review(base.to_str().unwrap(), None).unwrap();
+        build_arbiter(base.to_str().unwrap()).unwrap();
+        build_question(base.to_str().unwrap(), "codex", "[\"Verify the caller\"]", Some(1)).unwrap();
+        for name in ["review-prompt.md", "arbiter-prompt.md", "round-1-codex-question.md"] {
+            let prompt = std::fs::read_to_string(base.join("results").join(name)).unwrap();
+            assert!(prompt.len() < 64 * 1024, "{name} unnecessarily embeds large evidence");
+            assert!(!prompt.contains("complete 🙂 diff evidence"));
+            assert!(prompt.contains("results/evidence/repo-docs.md"));
+        }
+        assert_eq!(std::fs::read_to_string(base.join("results/evidence/diff.txt")).unwrap(), diff);
+        assert_eq!(std::fs::read_to_string(base.join("results/evidence/ticket-context.md")).unwrap(), context);
+        assert!(!base.join("results/evidence/codex-review.md").exists());
+        let reviewer = std::fs::read_to_string(base.join("results/review-prompt.md")).unwrap();
+        assert!(!reviewer.contains("Current reviewer private evidence"));
+        assert!(!reviewer.contains("Description evidence"));
+        assert!(reviewer.contains("results/evidence/pr-metadata.json"));
+        std::fs::remove_file(base.join("results/previous-review.md")).unwrap();
+        prepare_evidence(base).unwrap();
+        assert!(!base.join("results/evidence/previous-review.md").exists());
+    }
+
+    #[test]
+    fn dispatch_budget_fails_explicitly_instead_of_truncating_instructions() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("prompt.md");
+        assert!(write_prompt(&path, &"x".repeat(PROMPT_BYTES + 1)).is_err());
+        assert!(!path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn evidence_exports_reject_symbolic_links() {
+        use std::os::unix::fs::symlink;
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        std::fs::create_dir(base.join("results")).unwrap();
+        symlink(base.join("results"), base.join("results/evidence")).unwrap();
+        assert!(prepare_evidence(base).is_err());
+        std::fs::remove_file(base.join("results/evidence")).unwrap();
+        std::fs::create_dir(base.join("results/evidence")).unwrap();
+        std::fs::write(base.join("results/diff.txt"), "saved diff").unwrap();
+        symlink(base.join("results/diff.txt"), base.join("results/evidence/diff.txt")).unwrap();
+        assert!(prepare_evidence(base).is_err());
     }
 
     #[test]

@@ -59,9 +59,14 @@ that the code alone doesn't show. Verify a guide against the code and diff befor
 
 ## Diff
 
-```diff
 {{diff}}
-```
+
+Read every changed-file entry and the saved diff in bounded sections before assessing the PR.
+Use `prr_read` continuation cursors in OpenCode; in Codex use bounded file reads such as `sed -n`
+or byte ranges, never dump the full diff in one tool result. Line ranges alone do not bound long
+or minified lines; use byte ranges for those. Read oversized referenced context
+the same way. No section is omitted from scope because it is not embedded. Track unreviewed areas
+and state material coverage gaps rather than claiming a complete review. Images/PDFs are not text.
 
 ## Reviewer Tasks
 

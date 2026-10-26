@@ -71,6 +71,16 @@ The OpenCode workflow has a restricted setup agent plus two review harnesses and
 
 Do not replace the native reviewer with a nested `opencode run`. Keep reviewer and arbiter contexts separate. The OpenCode distribution uses reviewer keys `opencode` and `codex`; legacy configuration still supports a configurable reviewer list.
 
+`text-reader.js` streams UTF-8 text in pages of at most 64 KiB, independent of source-file size.
+Continuation cursors retain byte position and real line numbers, including long-line segments,
+and reject stale or cross-file use. Images/PDFs are rejected rather than decoded as text.
+
+Rust prompt assembly exports a fixed set of common evidence files under `results/evidence/`.
+The full diff is referenced, not embedded; other common sections above 32 KiB are also referenced
+without truncation. Native tools and Codex grant only those evidence files, never the results root
+or current peer reviews. Dispatch prompts have a separate 512 KiB byte budget. Reviewers must
+finish paged prompt reads and inspect referenced evidence before claiming coverage.
+
 ## Rust Binary Subcommands
 
 | Subcommand | Description |

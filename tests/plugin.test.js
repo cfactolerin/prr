@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
@@ -167,12 +167,16 @@ test("Codex wrapper defaults the model, validates paths and strips process secre
   const repo = join(round, "repo")
   const role = join(round, "results", "reviewers", "codex")
   const contextDirectory = join(round, "context")
+  const evidenceDirectory = join(round, "results", "evidence")
   const bin = join(root, "bin")
   const prompt = join(role, "review-prompt.md")
   const output = join(role, "review.md")
   mkdirSync(repo, { recursive: true })
   mkdirSync(role, { recursive: true })
+  mkdirSync(join(round, "results/reviewers/opencode"), { recursive: true })
   mkdirSync(contextDirectory, { recursive: true })
+  mkdirSync(evidenceDirectory)
+  writeFileSync(join(evidenceDirectory, "diff.txt"), "saved diff evidence\n".repeat(150_000))
   mkdirSync(bin, { recursive: true })
   writeFileSync(prompt, "Review this change.")
   writeFileSync(join(contextDirectory, "requirement.txt"), "must preserve compatibility\n")
@@ -243,6 +247,27 @@ fs.writeFileSync(process.argv[index + 1], JSON.stringify({
       { agent: "prr-opencode-reviewer", sessionID: "reviewer-session" },
     )
     assert.match(code, /const answer = 42/)
+    const evidence = await hooks.tool.prr_read.execute(
+      { capability: opencodeCapability, filePath: join(evidenceDirectory, "diff.txt") },
+      { agent: "prr-opencode-reviewer", sessionID: "reviewer-session" },
+    )
+    assert.match(evidence, /saved diff evidence/)
+    assert.ok(Buffer.byteLength(evidence) <= 64 * 1024)
+    assert.match(evidence, /continue with cursor/)
+    symlinkSync(prompt, join(evidenceDirectory, "peer-review.md"))
+    writeFileSync(join(evidenceDirectory, "unknown-review.md"), "private reviewer text")
+    await assert.rejects(hooks.tool.prr_read.execute(
+      { capability: opencodeCapability, filePath: join(evidenceDirectory, "unknown-review.md") },
+      { agent: "prr-opencode-reviewer", sessionID: "reviewer-session" },
+    ), /not allowed/)
+    await assert.rejects(hooks.tool.prr_read.execute(
+      { capability: opencodeCapability, filePath: join(evidenceDirectory, "peer-review.md") },
+      { agent: "prr-opencode-reviewer", sessionID: "reviewer-session" },
+    ), /not allowed/)
+    await assert.rejects(hooks.tool.prr_write.execute(
+      { capability: opencodeCapability, filePath: join(evidenceDirectory, "diff.txt"), content: "replace" },
+      { agent: "prr-opencode-reviewer", sessionID: "reviewer-session" },
+    ), /stay in its round results/)
     const requirement = await hooks.tool.prr_read.execute(
       { capability: opencodeCapability, filePath: join(contextDirectory, "requirement.txt") },
       { agent: "prr-opencode-reviewer", sessionID: "reviewer-session" },
@@ -321,6 +346,9 @@ fs.writeFileSync(process.argv[index + 1], JSON.stringify({
     assert.ok(captured.args.some((arg) => arg.includes("shell_environment_policy.filters")))
     assert.ok(captured.args.some((arg) => arg.includes('PATH="/usr/bin:/bin:/usr/sbin:/sbin"')))
     assert.ok(captured.args.every((arg) => !arg.includes('"/opt/homebrew"="read"')))
+    assert.ok(captured.args.some((arg) => arg.includes(`${JSON.stringify(realpathSync(join(evidenceDirectory, "diff.txt")))}="read"`)))
+    assert.ok(captured.args.every((arg) => !arg.includes(`${JSON.stringify(realpathSync(evidenceDirectory))}="read"`)))
+    assert.ok(captured.args.every((arg) => !arg.includes(`${JSON.stringify(join(round, "results"))}="read"`)))
 
     writeFileSync(fakeCodex, `#!${process.execPath}\nsetTimeout(() => {}, 10000)\n`)
     const controller = new AbortController()
@@ -335,6 +363,8 @@ fs.writeFileSync(process.argv[index + 1], JSON.stringify({
     await assert.rejects(cancelled, /abort/i)
 
     writeFileSync(prompt, "x".repeat(1024 * 1024))
+    await assert.rejects(hooks.tool.prr_codex.execute({ capability: codexCapability, promptPath: prompt, repoPath: repo, outputPath: output, timeoutSeconds: 30 }, { agent: "prr-codex-reviewer", sessionID: "codex-session" }), /rebuild the compact prompt/)
+    writeFileSync(prompt, "x".repeat(128 * 1024))
     writeFileSync(fakeCodex, `#!${process.execPath}\nprocess.exit(1)\n`)
     await assert.rejects(
       hooks.tool.prr_codex.execute({
