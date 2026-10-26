@@ -17,6 +17,12 @@ async function rpcValue(request) {
   catch (error) { throw new Error(error?.message ?? String(error)) }
 }
 
+function colorLuminance(value) {
+  const color = typeof value === "string" ? RGBA.fromHex(value) : value
+  return [color.r, color.g, color.b].map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+    .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0)
+}
+
 export function reviewPanel(context, panel, rpc) {
   const [memory, updateMemory] = context.storage.memory("investigation", { initial: { sessions: {} } })
   const location = () => context.location ?? context.data.location.default()
@@ -50,9 +56,7 @@ export function reviewPanel(context, panel, rpc) {
     "markup.raw": { fg: context.theme.text.action.primary.base },
     "markup.link": { fg: context.theme.text.action.primary.base, underline: true },
   }, context.renderer.nativeScene)
-  const foreground = typeof context.theme.text.base === "string" ? RGBA.fromHex(context.theme.text.base) : context.theme.text.base
-  const luminance = [foreground.r, foreground.g, foreground.b].map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
-    .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0)
+  const luminance = colorLuminance(context.theme.text.base)
   const issueBackground = luminance > 0.179 ? "#174b73" : "#b9ddff"
   onCleanup(() => {
     saveScroll()
@@ -85,6 +89,7 @@ export function reviewPanel(context, panel, rpc) {
     updateMemory((draft) => { draft.sessions[panel.sessionID].offsets[selectionKey()] = offset })
   }
   const finding = () => data()?.findings.find((item) => item.id === current()?.findingID)
+  const hasFindings = () => (data()?.findings.length ?? 0) > 0
   const selectFinding = (id) => {
     saveScroll()
     if (!current()) return
@@ -174,9 +179,9 @@ export function reviewPanel(context, panel, rpc) {
   context.keymap.layer(() => ({ priority: 10, commands: [
     { id: "prr.diff.close", bind: "escape", run: close },
     { id: "prr.diff.continue", bind: "c", run: continueReview },
-    { id: "prr.diff.findings", bind: "b", run: () => selectFinding(null) },
-    { id: "prr.diff.next", bind: "n", run: () => adjacent(1) },
-    { id: "prr.diff.previous", bind: "p", run: () => adjacent(-1) },
+    { id: "prr.diff.findings", bind: "b", enabled: hasFindings, run: () => selectFinding(null) },
+    { id: "prr.diff.next", bind: "n", enabled: hasFindings, run: () => adjacent(1) },
+    { id: "prr.diff.previous", bind: "p", enabled: hasFindings, run: () => adjacent(-1) },
     { id: "prr.diff.file.previous", bind: "h", run: () => adjacentFile(-1) },
     { id: "prr.diff.file.next", bind: "l", run: () => adjacentFile(1) },
     { id: "prr.diff.accept", bind: "a", enabled: () => !!finding() && !deciding() && !submitting(), run: () => decide("accepted") },
@@ -186,7 +191,7 @@ export function reviewPanel(context, panel, rpc) {
       const id = await context.ui.dialog.select({ title: "Changed files", options: (data()?.files ?? []).map((file) => ({ title: displayText(file.path), value: file.id, description: file.status })) })
       if (snapshot === data()?.snapshot && id !== undefined && data()?.files.some((file) => file.id === id)) selectFile(id)
     } },
-    { id: "prr.diff.discuss", bind: "d", run: discuss },
+    { id: "prr.diff.discuss", bind: "d", enabled: () => !!finding() && !submitting(), run: discuss },
     { id: "prr.diff.refresh", bind: "r", run: () => { saveScroll(); void refetch() } },
     ...[["up", -3], ["down", 3], ["pageup", -20], ["pagedown", 20]].map(([bind, y]) => ({
       id: `prr.diff.scroll.${bind}`, bind, run: () => scroll?.scrollBy({ x: 0, y }),
@@ -214,6 +219,16 @@ export function reviewPanel(context, panel, rpc) {
       modified: feedback?.warning?.base,
       renamed: feedback?.info?.base,
     })[status] ?? theme.text.action.primary.base
+  }
+  const fileBackground = (status) => {
+    const foreground = colorLuminance(fileColor(status))
+    const bright = foreground > 0.179
+    const base = RGBA.fromHex(bright ? "#26364a" : "#dce8f5")
+    for (const weight of [0, 0.25, 0.5, 0.75, 1]) {
+      const background = RGBA.fromValues(...[base.r, base.g, base.b].map((channel) => channel * (1 - weight) + (bright ? 0 : weight)))
+      const levels = [foreground, colorLuminance(background)].sort((a, b) => a - b)
+      if ((levels[1] + 0.05) / (levels[0] + 0.05) >= 4.5) return background
+    }
   }
   const diffNode = createMemo(() => {
     const value = patch()
@@ -247,7 +262,7 @@ export function reviewPanel(context, panel, rpc) {
         heading(`PRR investigation · ${value.round} · ${value.verdict} · ${value.confidence}`),
         element("box", { flexDirection: "row", flexShrink: 0, gap: 2, children: [
           button("Files [o]", () => context.keymap.dispatch("prr.diff.files")),
-          text(`[h/l] Cycle files  [b] List  [p/n] Findings${finding() ? "  [a/x] Accept/reject" : ""}  [d] Discuss  [r] Refresh  [Esc] Chat  [c] Continue`, { fg: context.theme.text.muted }),
+          text(`[h/l] Cycle files${hasFindings() ? "  [b] List  [p/n] Findings" : ""}${finding() ? "  [a/x] Accept/reject  [d] Discuss" : ""}  [r] Refresh  [Esc] Chat  [c] Continue`, { fg: context.theme.text.muted }),
         ] }),
         ...(value.warnings ? [text(value.warnings, { fg: context.theme.text.action.primary.base })] : []),
         element("box", {
@@ -256,10 +271,6 @@ export function reviewPanel(context, panel, rpc) {
             element("box", {
               flexDirection: "column", flexGrow: 1, minWidth: 20,
               children: [
-                ...(value.files.length ? [element("box", { flexDirection: "row", flexShrink: 0, height: 1, gap: 2, children: [
-                  button("↑ Previous file", () => adjacentFile(-1)),
-                  button("↓ Next file", () => adjacentFile(1)),
-                ] })] : []),
                 text(patch()?.path || "No code selected", { flexShrink: 0 }),
                 element("box", { flexDirection: "row", flexShrink: 0, children: [
                   text("Before", { width: "50%", fg: context.theme.text.muted }),
@@ -305,10 +316,17 @@ export function reviewPanel(context, panel, rpc) {
                   () => selectFinding(item.id),
                 ), decisionLabel(item.id)] }))),
                 heading("Changed files", headingColor, { marginTop: 1 }),
-                ...value.files.map((file) => button(`${file.status} · ${file.path}`, () => selectFile(file.id), {
-                  fg: fileColor(file.status),
-                  attributes: TextAttributes.UNDERLINE | (current()?.fileID === file.id ? TextAttributes.BOLD : 0),
-                })),
+                ...value.files.map((file) => {
+                  const selected = current()?.fileID === file.id
+                  const background = selected ? fileBackground(file.status) : undefined
+                  return element("box", {
+                    width: "100%", flexShrink: 0, backgroundColor: background,
+                    children: button(`${selected ? "▶" : " "} ${file.status} · ${file.path}`, () => selectFile(file.id), {
+                      fg: fileColor(file.status), bg: background, width: "100%",
+                      attributes: TextAttributes.UNDERLINE | (selected ? TextAttributes.BOLD : 0),
+                    }),
+                  })
+                }),
               ],
             }),
           ],

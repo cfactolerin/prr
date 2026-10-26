@@ -155,7 +155,7 @@ cancelling posting leaves them pending. Other verdicts retain the diff/chat inve
 
 Choosing **Investigate in diff view** opens the full-screen side-by-side diff directly in the active terminal. The sidebar action and `/prr-diff` remain available to reopen it. Select a finding to jump to its code and replace the findings list with its details.
 
-File links are underlined and colored by status: added and deleted files use the theme's diff colors, modified files use its warning color, and renamed files use its information color. Status labels remain visible without color, and the selected file is bold. OpenTUI supports plain underlines, not dashed ones.
+File links are underlined and colored by status: added and deleted files use the theme's diff colors, modified files use its warning color, and renamed files use its information color. The selected file has a full-row highlight and a **▶** marker as well as bold text. Its status color stays visible, with the background adjusted for readable contrast. OpenTUI supports plain underlines, not dashed ones.
 
 Unchanged references outside the diff open context from the saved PR commit; non-code findings show details without inventing an anchor. Automatic opening applies only to a fresh explicit choice in the active session; progress refreshes, returning to chat, and plugin reloads do not reopen a closed panel.
 
@@ -170,6 +170,8 @@ classifies factual correctness; posting still requires confirmation in chat. Con
 decisions must be refreshed instead of overwriting a newer choice.
 Decision buttons and the `a`/`x` hint appear only for a selected finding. Browsing files without
 selecting a finding hides those controls and disables their shortcuts.
+Finding-list and previous/next-finding hints are hidden when there are no findings. **Discuss** is
+available only for a selected finding; file browsing and **Continue review** remain available.
 
 The chat walk records its active finding before showing the full finding and menu. Reopening the
 diff follows that finding, including report-only findings, instead of the last browsed file. An
@@ -186,7 +188,7 @@ keep browsing, then use **Back to discussion** or Escape to return without repla
 with another menu. **Discuss** always opens the selected finding's full view, even if the chat has
 since advanced to another finding. The selected finding and diff position are retained.
 
-**↑ Previous file** and **↓ Next file** cycle from the current file and wrap at either end. Choosing
+**h/l** cycle from the current file and wrap at either end; **Files [o]** jumps directly to a file. Choosing
 another file leaves finding details and restores that file's saved vertical position; arrow keys
 remain available for scrolling the diff.
 

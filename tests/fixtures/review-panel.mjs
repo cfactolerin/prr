@@ -7,6 +7,9 @@ import { createComponent, createSignal, Show } from "solid-js"
 import { reviewPanel } from "../../review-panel.js"
 
 const [memory, setMemory] = createStore({ sessions: {} })
+const colors = process.env.PRR_LIGHT_THEME
+  ? { modified: "#8a5a00", added: "#096c2b", deleted: "#a51d2d", renamed: "#175ca3" }
+  : { modified: "#ffff00", added: "#00ff00", deleted: "#ff0000", renamed: "#0088ff" }
 const updateMemory = (update) => setMemory(produce(update))
 const commands = new Map()
 const calls = []
@@ -61,8 +64,8 @@ const context = {
   location: { directory: "/repo" },
   storage: { memory: () => [memory, updateMemory] },
   theme: {
-    text: { base: process.env.PRR_LIGHT_THEME ? "#172b4d" : "#ffffff", muted: "#aaaaaa", action: { primary: { base: "#00ffff" } }, feedback: { success: { base: "#00ff00" }, warning: { base: "#ffff00" }, info: { base: "#0088ff" } } },
-    diff: { text: { added: "#00ff00", removed: "#ff0000" } },
+    text: { base: process.env.PRR_LIGHT_THEME ? "#172b4d" : "#ffffff", muted: "#aaaaaa", action: { primary: { base: "#00ffff" } }, feedback: { success: { base: colors.added }, warning: { base: colors.modified }, info: { base: colors.renamed } } },
+    diff: { text: { added: RGBA.fromHex(colors.added), removed: colors.deleted } },
   },
   keymap: {
     layer: (factory) => { for (const command of factory().commands) commands.set(command.id, command) },
@@ -102,13 +105,19 @@ try {
     assert.equal(commands.get("prr.diff.reject").enabled(), false)
   }
   noDecisionControls()
+  assert.ok(initial.includes("[b] List  [p/n] Findings"))
+  assert.ok(!initial.includes("[d] Discuss"))
+  assert.equal(commands.get("prr.diff.discuss").enabled(), false)
+  for (const id of ["findings", "next", "previous"]) assert.equal(commands.get(`prr.diff.${id}`).enabled(), true)
   const rendered = nodes(view.renderer.root)
   assert.equal(rendered.filter((node) => node.plainText === "Files [o]").length, 1)
   assert.ok(!initial.includes("Choose file"))
-  for (const [status, path, color] of [["modified", "a.rb", "#ffff00"], ["added", "added.rb", "#00ff00"], ["deleted", "deleted.rb", "#ff0000"], ["renamed", "renamed.rb", "#0088ff"]]) {
-    const node = rendered.find((item) => item.plainText === `${status} · ${path}`)
+  assert.ok(!initial.includes("Previous file"))
+  assert.ok(!initial.includes("Next file"))
+  for (const [status, path] of [["modified", "a.rb"], ["added", "added.rb"], ["deleted", "deleted.rb"], ["renamed", "renamed.rb"]]) {
+    const node = rendered.find((item) => item.plainText === `${status === "modified" ? "▶" : " "} ${status} · ${path}`)
     assert.ok(node, path)
-    assert.ok(node.fg.equals(RGBA.fromHex(color)), `${status} color`)
+    assert.ok(node.fg.equals(RGBA.fromHex(colors[status])), `${status} color`)
     assert.ok(node.attributes & TextAttributes.UNDERLINE, `${path} is clickable`)
   }
   assert.ok(!(rendered.find((item) => item.plainText === "Changed files").attributes & TextAttributes.UNDERLINE))
@@ -118,25 +127,63 @@ try {
     assert.ok(y >= 0, label)
     await view.mockMouse.click(frame[y].indexOf(label) + 2, y)
   }
-  await clickText("↓ Next file")
+  const selectedFile = async (id) => {
+    const file = report.files.find((item) => item.id === id)
+    await view.waitForFrame((frame) => frame.includes(`▶ ${file.status} · ${file.path}`))
+    const rows = nodes(view.renderer.root).filter((node) => report.files.some((item) => node.plainText?.endsWith(`${item.status} · ${item.path}`)))
+    const selected = rows.filter((node) => node.plainText.startsWith("▶ "))
+    assert.equal(selected.length, 1)
+    const row = selected[0]
+    assert.equal(row.plainText, `▶ ${file.status} · ${file.path}`)
+    assert.ok(row.fg.equals(RGBA.fromHex(colors[file.status])), "selection preserves the status color")
+    assert.ok(row.bg.a > 0)
+    assert.ok(rows.filter((node) => node !== row).every((node) => node.bg.a === 0))
+    const luminance = (color) => [color.r, color.g, color.b].map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+      .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0)
+    const levels = [luminance(row.fg), luminance(row.bg)].sort((a, b) => a - b)
+    assert.ok((levels[1] + 0.05) / (levels[0] + 0.05) >= 4.5, `${file.status} selection contrast`)
+    const spans = view.captureSpans().lines.flatMap((line) => line.spans)
+    assert.ok(spans.some((span) => span.text.includes(`▶ ${file.status}`) && span.bg.equals(row.bg)), "selected background is rendered")
+    let column = 0
+    const end = row.x + row.width - 1
+    const lastCell = view.captureSpans().lines[row.y].spans.find((span) => {
+      column += span.width
+      return column > end
+    })
+    assert.ok(lastCell.bg.equals(row.bg), "highlight fills the selected row, including trailing space")
+  }
+  await selectedFile("0")
+  await clickText("added · added.rb")
+  await selectedFile("1")
+  await commands.get("prr.diff.files").run()
+  await selectedFile("0")
+  await commands.get("prr.diff.file.next").run()
   await view.waitForFrame((frame) => frame.includes("added.rb") && memory.sessions.session.fileID === "1")
   assert.equal(memory.sessions.session.findingID, null)
+  await selectedFile("1")
   noDecisionControls()
   const decisionsBeforeBrowse = calls.filter((call) => call.decision).length
   await commands.get("prr.diff.accept").run()
   await commands.get("prr.diff.reject").run()
   assert.equal(calls.filter((call) => call.decision).length, decisionsBeforeBrowse)
-  await clickText("↑ Previous file")
+  await commands.get("prr.diff.file.previous").run()
   await view.waitFor(() => memory.sessions.session.fileID === "0")
   await view.waitForFrame((frame) => frame.includes("BEFORE_START"))
+  await selectedFile("0")
   assert.equal(commands.get("prr.diff.file.previous").bind, "h")
   assert.equal(commands.get("prr.diff.file.next").bind, "l")
   await commands.get("prr.diff.file.previous").run()
   await view.waitForFrame((frame) => frame.includes("renamed.rb") && memory.sessions.session.fileID === "3" && frame.includes("BEFORE_START"))
+  await selectedFile("3")
+  await commands.get("prr.diff.file.previous").run()
+  await selectedFile("2")
+  await commands.get("prr.diff.file.next").run()
+  await selectedFile("3")
   await commands.get("prr.diff.file.next").run()
   await view.waitFor(() => memory.sessions.session.fileID === "0")
   await view.flush()
   await view.waitForFrame((frame) => frame.includes("BEFORE_START"))
+  await selectedFile("0")
   const rows = initial.split("\n")
   const codeY = rows.findIndex((row) => row.includes("BEFORE_START"))
   for (let index = 0; index < 6; index++) await view.mockMouse.scroll(20, codeY, "right")
@@ -149,7 +196,7 @@ try {
   assert.ok(!frame.includes("**"))
   assert.ok(!frame.includes("`value`"))
   const details = nodes(view.renderer.root)
-  for (const [label, color] of [["F-01 · MED · Logic Bug", "#ffff00"], ["Why this matters", "#0088ff"], ["Suggested fix", "#00ff00"], ["Suggested comment", "#00ffff"]]) {
+  for (const [label, color] of [["F-01 · MED · Logic Bug", colors.modified], ["Why this matters", colors.renamed], ["Suggested fix", colors.added], ["Suggested comment", "#00ffff"]]) {
     const node = details.find((item) => item.plainText === label)
     assert.ok(node.fg.equals(RGBA.fromHex(color)), label)
     assert.ok(node.attributes & TextAttributes.BOLD, label)
@@ -166,11 +213,13 @@ try {
   assert.ok((lightness[1] + 0.05) / (lightness[0] + 0.05) >= 4.5, "issue text contrast")
   const orientation = spans.find((span) => span.text.includes("Previous behavior:"))
   assert.ok(orientation.attributes & TextAttributes.BOLD)
-  assert.ok(orientation.fg.equals(RGBA.fromHex("#0088ff")))
+  assert.ok(orientation.fg.equals(RGBA.fromHex(colors.renamed)))
   assert.equal(memory.sessions.session.findingID, "F-01")
   assert.equal(commands.get("prr.diff.accept").enabled(), true)
   assert.equal(commands.get("prr.diff.reject").enabled(), true)
   assert.ok(frame.includes("[a/x] Accept/reject"))
+  assert.ok(frame.includes("[d] Discuss"))
+  assert.equal(commands.get("prr.diff.discuss").enabled(), true)
   assert.ok(!frame.includes("BEFORE_START"))
   const diffCalls = calls.filter((call) => call.snapshot).length
   await clickText("Accept [a]")
@@ -306,6 +355,13 @@ try {
   eventHandler({ data: { sessionID: "session" }, location: context.location })
   await view.waitForFrame((frame) => frame.includes("No findings."))
   noDecisionControls()
+  for (const hint of ["[b] List", "[p/n] Findings", "[d] Discuss"]) assert.ok(!view.captureCharFrame().includes(hint))
+  for (const id of ["findings", "next", "previous", "discuss"]) assert.equal(commands.get(`prr.diff.${id}`).enabled(), false)
+  const callsWithoutFindings = calls.length
+  for (const id of ["findings", "next", "previous", "discuss"]) await commands.get(`prr.diff.${id}`).run()
+  assert.equal(calls.length, callsWithoutFindings, "unavailable finding shortcuts have no effect")
+  assert.ok(view.captureCharFrame().includes("[h/l] Cycle files"))
+  assert.ok(view.captureCharFrame().includes("[c] Continue"))
   assert.equal(memory.sessions.session.findingID, null)
   assert.equal(memory.sessions.session.discussionFindingID, undefined)
   assert.ok(view.captureCharFrame().includes("Back to chat [Esc]"))

@@ -432,6 +432,8 @@ state without leaving the view or authorizing posting. They do not classify fact
 **Accept original** replaces a prior approved edit with the saved report's original comment.
 Show decision controls and shortcut hints only while a finding is selected. File browsing without
 a selected finding hides these controls and disables `a`/`x`; it never decides another file's finding.
+With zero findings, hide the finding-list and `p`/`n` navigation hints and disable those shortcuts.
+Show **Discuss** (`d`) only for a selected finding. File browsing and **Continue review** remain available.
 File cycling uses `h`/`l`; `p`/`n` remain finding navigation and arrows remain scrolling.
 
 For **Discuss in chat**, complete step 7 only on the first transition from Phase 7 to Phase 8;
