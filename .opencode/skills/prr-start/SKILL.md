@@ -220,6 +220,11 @@ Use a separate `prr-arbiter` task context for each synthesis pass. Never place t
 
 Initialize `ROUND=0`. A Q&A round is one set of reviewer questions and answers. Permit at most `arbiter_rounds` Q&A rounds.
 
+Use `arbiter_rounds` from the preflight `config runtime` output for every round comparison; never
+substitute a fixed default. Before each arbiter dispatch, mark the next Q&A round as final only
+when `ROUND < arbiter_rounds` and `ROUND + 1 == arbiter_rounds`. With a limit of zero, skip Q&A and
+request a final report immediately; do not describe the initial synthesis as a final Q&A round.
+
 ### 5a. Build Arbiter Prompt
 
 Run:
@@ -242,7 +247,10 @@ Dispatch `prr-arbiter` through task:
 Arbiter prompt: <ARBITER_DIR>/prompt.md
 Capability: <ARBITER_CAPABILITY>
 Output path: <ARBITER_DIR>/output.md
+Q&A rounds completed: <ROUND>
+Configured Q&A round limit: <arbiter_rounds from config runtime>
 Another Q&A round allowed: <yes if ROUND is less than arbiter_rounds, otherwise no>
+Next Q&A round is final: <yes only if ROUND < arbiter_rounds and ROUND + 1 == arbiter_rounds, otherwise no>
 
 Read the prompt and write either the questions JSON block or the final report. If another round is not allowed, write the final report even if disagreement remains and identify unresolved uncertainty in it.
 ```
@@ -269,7 +277,7 @@ When valid non-empty question arrays exist and `ROUND < arbiter_rounds`:
 "$PRR_BIN" prompt --question "<ROUND_DIR>" --agent "<REVIEWER_KEY>" --questions-file "<RESULTS_PATH>/questions-round-<ROUND>.json" --round "<ROUND>"
 ```
 
-4. The resulting path is `<RESULTS_PATH>/round-<ROUND>-<REVIEWER_KEY>-question.md`. Use `prr_artifact` to copy it into that reviewer's private directory with the same filename and remove any prior private answer before dispatch.
+4. The resulting path is `<RESULTS_PATH>/round-<ROUND>-<REVIEWER_KEY>-question.md`. The binary reads the configured `arbiter_rounds` and adds the final-position instruction when this is the last permitted Q&A round. Preserve it for both reviewers. Use `prr_artifact` to copy the prompt into that reviewer's private directory with the same filename and remove any prior private answer before dispatch.
 5. Dispatch all requested answers concurrently where supported, each in its reviewer-specific context.
 
 For `opencode`, call `prr_capability` for role `opencode` and use the fresh token for this task, then dispatch `prr-opencode-reviewer` through task:

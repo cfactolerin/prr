@@ -154,6 +154,15 @@ only agents that produced a review.
 Do not pad with unnecessary questions, but do not skip boundary or language-guideline questions to
 avoid extra rounds. Getting the review right matters more than speed.
 
+When the dispatch marks the next Q&A round as final, ask each questioned reviewer for a closing
+assessment of every disputed finding, including this instruction in their questions:
+
+> {{final_qa_guidance}}
+
+Use the configured Q&A limit supplied by the dispatch, not an assumed default. This is the last
+opportunity to request evidence, not a requirement to reach agreement. After those answers, finalize
+without further questions and preserve material unresolved uncertainty in the assessment.
+
 **Keep every question answerable using the cloned repo or the supplied PRR context.**
 
 Reviewers may run under different harnesses and permission boundaries, but the clone and the

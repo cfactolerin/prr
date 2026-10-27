@@ -1,6 +1,10 @@
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { test } from "node:test"
+import { fileURLToPath } from "node:url"
 import { reviewSteps } from "../review-state.js"
 
 const skill = readFileSync(new URL("../.opencode/skills/prr-start/SKILL.md", import.meta.url), "utf8")
@@ -106,6 +110,42 @@ test("statistics metadata cannot turn a final report into another Q&A round", ()
   assert.match(detection, /starting with `## Final Report` is a final report/)
   assert.match(detection, /JSON is metadata, never a question set/)
   assert.match(detection, /entire trimmed output is one fenced JSON block/)
+})
+
+test("the final Q&A round uses the configured limit without forcing consensus", () => {
+  const arbitration = skill.split("## Phase 5:")[1].split("## Phase 6:")[0]
+  assert.match(arbitration, /`arbiter_rounds` from the preflight `config runtime` output/)
+  assert.match(arbitration, /`ROUND < arbiter_rounds` and `ROUND \+ 1 == arbiter_rounds`/)
+  assert.match(arbitration, /With a limit of zero, skip Q&A/)
+  assert.match(arbitration, /Configured Q&A round limit: <arbiter_rounds from config runtime>/)
+  assert.match(arbitration, /Next Q&A round is final:/)
+  assert.match(arbitration, /Preserve it for both reviewers/)
+  assert.match(arbitration, /Another Q&A round allowed: no/)
+  const arbiter = readFileSync(new URL("../.opencode/agents/prr-arbiter.md", import.meta.url), "utf8")
+  assert.match(arbiter, /When the next Q&A round is final/)
+  assert.match(arbiter, /final position, supporting evidence, severity, and remaining/)
+  assert.match(arbiter, /Revisions must follow evidence, not pressure to agree/)
+})
+
+test("question prompts read non-default Q&A limits from configuration", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "prr-qa-config-"))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const round = join(root, "round")
+  mkdirSync(join(root, ".prr"))
+  mkdirSync(join(round, "results"), { recursive: true })
+  writeFileSync(join(round, "results/pr-metadata.json"), JSON.stringify({ number: 1, title: "Test PR" }))
+  const binary = fileURLToPath(new URL("../bin/prr-darwin-universal", import.meta.url))
+  const env = { ...process.env, HOME: root }
+  for (const [limit, number, final] of [[1, 1, true], [5, 3, false], [5, 5, true]]) {
+    writeFileSync(join(root, ".prr/config.yml"), `arbiter_rounds: ${limit}\n`)
+    for (const agent of ["opencode", "codex"]) {
+      execFileSync(binary, ["prompt", "--question", round, "--agent", agent, "--questions", '["Verify F-01."]', "--round", String(number)], { env })
+      const prompt = readFileSync(join(round, `results/round-${number}-${agent}-question.md`), "utf8")
+      assert.ok(prompt.includes(`Q&A round: ${number} of ${limit}.`))
+      assert.equal(prompt.includes("This is the final Q&A round; no further clarification will follow."), final)
+      assert.equal(prompt.includes("do not agree merely to reach consensus"), final)
+    }
+  }
 })
 
 test("diff decisions remain authoritative through chat confirmation and posting", () => {

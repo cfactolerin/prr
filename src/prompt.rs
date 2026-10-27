@@ -6,6 +6,7 @@ use std::io::Read;
 const REVIEW_TEMPLATE: &str = include_str!("../references/prompts/review-prompt.md");
 const ARBITER_TEMPLATE: &str = include_str!("../references/prompts/arbiter-prompt.md");
 const QUESTION_TEMPLATE: &str = include_str!("../references/prompts/arbiter-question-prompt.md");
+const FINAL_QA_GUIDANCE: &str = "This is the final Q&A round; no further clarification will follow. For each disputed finding, state your final position, supporting evidence, severity, and remaining uncertainty. Revise your conclusion when warranted, but do not agree merely to reach consensus.";
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -162,6 +163,7 @@ pub fn build_arbiter(context_dir: &str) -> Result<(), Box<dyn std::error::Error>
             ("{{reviews}}", &reviews),
             ("{{change_history}}", &change_history_section(base)),
             ("{{round_history}}", &round_history),
+            ("{{final_qa_guidance}}", FINAL_QA_GUIDANCE),
             ("{{reviewer_tasks}}", &reviewer_tasks_section),
             ("{{repo}}", &repo),
         ],
@@ -182,6 +184,17 @@ pub fn build_question(
     agent: &str,
     questions_json: &str,
     round: Option<u32>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let config = crate::config::Config::load()?;
+    build_question_with_limit(context_dir, agent, questions_json, round, config.arbiter_rounds)
+}
+
+fn build_question_with_limit(
+    context_dir: &str,
+    agent: &str,
+    questions_json: &str,
+    round: Option<u32>,
+    arbiter_rounds: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let directory = std::fs::canonicalize(context_dir)?;
     let base = directory.as_path();
@@ -208,6 +221,11 @@ pub fn build_question(
 
     // Determine round number
     let round_num = round.unwrap_or_else(|| next_round_number(&results, agent));
+    let mut round_guidance = format!("Q&A round: {round_num} of {arbiter_rounds}.");
+    if u64::from(round_num) >= arbiter_rounds {
+        round_guidance.push_str("\n\n");
+        round_guidance.push_str(FINAL_QA_GUIDANCE);
+    }
 
     let prompt = interpolate(
         QUESTION_TEMPLATE,
@@ -219,6 +237,7 @@ pub fn build_question(
             ("{{context_path}}", &context_path),
             ("{{previous_review}}", &previous_review),
             ("{{questions}}", &questions),
+            ("{{round_guidance}}", &round_guidance),
             ("{{evidence_path}}", &base.join("results/evidence").display().to_string()),
             ("{{change_history}}", &change_history_section(base)),
         ],
@@ -855,6 +874,9 @@ mod tests {
         assert!(!out.contains("{{change_history}}"));
         assert!(out.contains("No CI check results are available in this saved snapshot"));
         assert!(!out.contains("{{ci_checks}}"));
+        assert!(out.contains("When the dispatch marks the next Q&A round as final"));
+        assert!(out.contains(FINAL_QA_GUIDANCE));
+        assert!(!out.contains("{{final_qa_guidance}}"));
     }
 
     #[test]
@@ -955,6 +977,33 @@ mod tests {
         assert!(out.contains("My prior review text."));
         assert!(out.contains("No change history snapshot available."));
         assert!(!out.contains("{{change_history}}"));
+        assert!(!out.contains("{{round_guidance}}"));
+    }
+
+    #[test]
+    fn final_qa_guidance_follows_configured_limits_for_both_reviewers() {
+        for limit in [1, 2, 5] {
+            for agent in ["opencode", "codex"] {
+                for automatic in [false, true] {
+                    let dir = tempfile::tempdir().unwrap();
+                    let results = dir.path().join("results");
+                    std::fs::create_dir(&results).unwrap();
+                    std::fs::write(results.join("pr-metadata.json"), r#"{"number":1,"title":"Test PR"}"#).unwrap();
+                    for round in 1..=limit {
+                        build_question_with_limit(
+                            dir.path().to_str().unwrap(), agent, r#"["Verify F-01."]"#,
+                            if automatic { None } else { Some(round) }, u64::from(limit),
+                        ).unwrap();
+                        let prompt = std::fs::read_to_string(results.join(format!("round-{round}-{agent}-question.md"))).unwrap();
+                        assert!(prompt.contains(&format!("Q&A round: {round} of {limit}.")));
+                        assert_eq!(prompt.contains(FINAL_QA_GUIDANCE), round == limit,
+                            "{agent}: round {round}, configured limit {limit}, automatic={automatic}");
+                        assert!(prompt.contains("1. Verify F-01."));
+                        assert!(!prompt.contains("{{round_guidance}}"));
+                    }
+                }
+            }
+        }
     }
 
     #[test]
