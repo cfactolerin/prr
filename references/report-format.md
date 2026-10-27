@@ -88,6 +88,12 @@ Each finding carries:
 - **Suggested fix** — what to change and why that change rather than another. Read by the reviewer.
 - **Suggested comment** — the problem, then the fix as an instruction. Posted to the PR as-is. Read by the author.
 
+Use exactly one primary location per finding. Put other file/line citations in `Why this matters`
+or `Suggested fix`, not in `Location`. A `diff` location must include an added line; a range may
+include unchanged context only within the same diff hunk. Prefer the smallest useful range.
+For older reports with semicolon-separated locations, the first remains the navigation and inline
+comment anchor; the remaining citations are preserved in the location text.
+
 The last three are prose in short paragraphs: 1-3 sentences and 50-100 words each, broken with a blank line when a value needs more. Bullets inside them are for genuinely parallel items only — an argument stays sentences. The agent prompts carry the full writing rules.
 
 `Why this matters` slot 1 — orientation. Chosen by what the diff did to

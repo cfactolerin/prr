@@ -114,6 +114,30 @@ test("briefing gates, changed snapshots, and new rounds invalidate navigation", 
   await assert.rejects(reader.diff({ sessionID: "review", snapshot: next.snapshot, fileID: "0" }), /changed; refresh/)
 })
 
+test("multiple citations and ranges containing context keep findings on their changed file", async (t) => {
+  const { reader, round } = fixture(t)
+  writeFileSync(join(round, "results/final-report.md"), report
+    .replace("a.rb:2", "`a.rb:2`; `reference.rb:20`")
+    .replace("- **Anchor:** reference", "- **Anchor:** diff")
+    .replace("reference.rb:20\n", "a.rb:3-5\n"))
+  const sidebar = "diff --git a/docs/_sidebar.md b/docs/_sidebar.md\n--- a/docs/_sidebar.md\n+++ b/docs/_sidebar.md\n@@ -1 +1 @@\n-old link\n+new link\n"
+  const changed = "diff --git a/a.rb b/a.rb\n--- a/a.rb\n+++ b/a.rb\n@@ -1,2 +1,5 @@\n first\n+new\n+heading\n \n+instructions\n"
+  writeFileSync(join(round, "results/diff.txt"), sidebar + changed)
+  const result = await reader.investigation({ sessionID: "review" })
+  Schema.decodeUnknownSync(investigationSchema)(result)
+  assert.equal(result.warnings, "")
+  assert.deepEqual(result.findings.slice(0, 2).map(({ anchor, path, fileID }) => ({ anchor, path, fileID })), [
+    { anchor: "diff", path: "a.rb", fileID: "1" },
+    { anchor: "diff", path: "a.rb", fileID: "1" },
+  ])
+  for (const findingID of ["F-01", "F-02"]) {
+    const diff = await reader.diff({ sessionID: "review", snapshot: result.snapshot, findingID })
+    assert.equal(diff.mode, "diff")
+    assert.equal(diff.path, "a.rb")
+    assert.equal(diff.patch, changed)
+  }
+})
+
 test("viewer rejects symlinked artifacts instead of exposing arbitrary files", async (t) => {
   const { reader, root, round } = fixture(t)
   const path = join(round, "results/final-report.md")

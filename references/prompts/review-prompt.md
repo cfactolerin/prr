@@ -190,6 +190,10 @@ Each finding also carries an `Anchor` label:
 - `reference` — Location is on an unchanged line (the AC requires fixing it, or the diff relies on it). Won't be posted inline.
 - `none` — Cross-cutting finding with no single anchor line (e.g., "no integration test for X"). Won't be posted inline.
 
+Use exactly one primary location per finding. Put other file/line citations in `Why this matters`
+or `Suggested fix`, not in `Location`. A `diff` location must include an added line; a range may
+include unchanged context only within the same diff hunk. Prefer the smallest useful range.
+
 ### `Origin` — introduced or pre-existing
 
 Each finding also carries an `Origin` label. It tells the reviewer whether

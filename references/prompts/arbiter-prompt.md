@@ -408,6 +408,10 @@ for supported problems. If no issue is identified, state the checked scope, not 
 
 Every finding carries a `Trigger` (pick exactly one from the closed list: Acceptance Criteria, Code Change, Code Quality, Logic Bug, Security, Performance, Missing Test, Missing Doc / Error Handling), an `Anchor` (`diff` if on a diff line, `reference` if on unchanged code, `none` for cross-cutting), an `Origin` (`introduced` or `pre-existing`, per the rules above), and the five required fields below.
 
+Use exactly one primary location per finding. Put other file/line citations in `Why this matters`
+or `Suggested fix`, not in `Location`. A `diff` location must include an added line; a range may
+include unchanged context only within the same diff hunk. Prefer the smallest useful range.
+
 The scope rule: a finding may appear only if it is caused/exposed by the diff or required by the ticket AC. Drop everything else.
 
 #### Trigger: Acceptance Criteria

@@ -122,8 +122,8 @@ pub fn parse_report_inner(content: &str, diff: Option<&str>) -> ParsedReport {
     let mut findings = parse_findings_section(content);
 
     if let Some(diff_text) = diff {
-        let added = parse_diff_added_lines(diff_text);
-        verify_anchors(&mut findings, &added);
+        let hunks = parse_diff_hunks(diff_text);
+        verify_anchors(&mut findings, &hunks);
     }
 
     let (findings, line_comments) = if !findings.is_empty() {
@@ -222,15 +222,18 @@ fn extract_section(content: &str, heading: &str) -> Option<String> {
 
 fn verify_anchors(
     findings: &mut [Finding],
-    added: &HashMap<String, HashSet<u64>>,
+    hunks: &HashMap<String, Vec<DiffHunk>>,
 ) {
     for f in findings.iter_mut() {
         if f.from_legacy { continue; }
         let Some(path) = f.path.as_deref() else { continue; };
         let Some(line) = f.line else { continue; };
         let start = f.start_line.unwrap_or(line);
-        let in_diff = (start..=line).all(|l| {
-            added.get(path).map(|set| set.contains(&l)).unwrap_or(false)
+        let in_diff = hunks.get(path).is_some_and(|file_hunks| {
+            file_hunks.iter().any(|hunk| {
+                start >= hunk.start && start <= line && line < hunk.end
+                    && hunk.added.iter().any(|added| (start..=line).contains(added))
+            })
         });
         match (f.anchor, in_diff) {
             (Anchor::Diff, false) => {
@@ -594,31 +597,43 @@ fn parse_anchor(s: &str) -> Option<Anchor> {
 }
 
 /// Parse a Location string like "path/to/file:42" or "path:100-105"
-/// or "path:610, 623". Strips surrounding backticks. Returns
+/// or "path:610, 623". Older reports may append semicolon-separated
+/// citations; only the first location is the navigation and posting anchor.
+/// Strips surrounding backticks. Returns
 /// (path, end_line, optional_start_line). Returns None if no ":N"
 /// suffix or N is unparseable.
 fn parse_location(loc: &str) -> Option<(String, u64, Option<u64>)> {
-    let trimmed = loc.trim().trim_matches('`');
+    let primary = loc.split(';').next()?;
+    let trimmed = primary.trim().trim_matches('`');
     let (path, rest) = trimmed.rsplit_once(':')?;
     let (end, start) = parse_line_ref(rest);
     if end == 0 { return None; }
     Some((path.to_string(), end, start))
 }
 
-/// Walk a unified diff and return, per new-file path, the set of
-/// line numbers in the new file that were added (lines starting
-/// with `+`, excluding the `+++` file header).
-pub fn parse_diff_added_lines(diff: &str) -> HashMap<String, HashSet<u64>> {
-    let mut out: HashMap<String, HashSet<u64>> = HashMap::new();
+struct DiffHunk {
+    start: u64,
+    end: u64,
+    added: HashSet<u64>,
+}
+
+fn parse_diff_hunks(diff: &str) -> HashMap<String, Vec<DiffHunk>> {
+    let mut out: HashMap<String, Vec<DiffHunk>> = HashMap::new();
     let hunk_re = Regex::new(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@").unwrap();
 
     let mut current_path: Option<String> = None;
     let mut current_line: u64 = 0;
+    let mut in_hunk = false;
 
     for line in diff.lines() {
-        // New-file header
-        if let Some(rest) = line.strip_prefix("+++ ") {
-            let path = rest.trim_start_matches("b/").trim();
+        if line.starts_with("diff --git ") {
+            current_path = None;
+            in_hunk = false;
+            continue;
+        }
+        if !in_hunk && line.starts_with("+++ ") {
+            let rest = &line[4..];
+            let path = rest.strip_prefix("b/").unwrap_or(rest).trim();
             if path == "/dev/null" {
                 current_path = None;
             } else {
@@ -627,39 +642,30 @@ pub fn parse_diff_added_lines(diff: &str) -> HashMap<String, HashSet<u64>> {
             current_line = 0;
             continue;
         }
-        // Old-file header — ignore for new-file accounting
-        if line.starts_with("--- ") {
-            continue;
-        }
-
-        // Hunk header
         if let Some(caps) = hunk_re.captures(line) {
             current_line = caps[1].parse().unwrap_or(0);
-            continue;
-        }
-
-        if current_path.is_none() || current_line == 0 {
-            continue;
-        }
-        let path = current_path.as_ref().unwrap();
-
-        if let Some(c) = line.chars().next() {
-            match c {
-                '+' => {
-                    out.entry(path.clone()).or_default().insert(current_line);
-                    current_line += 1;
-                }
-                ' ' => {
-                    current_line += 1;
-                }
-                '-' => {
-                    // removed; new-file line unchanged
-                }
-                _ => {
-                    // "\ No newline at end of file" or other; ignore
-                }
+            if let Some(path) = &current_path {
+                out.entry(path.clone()).or_default().push(DiffHunk {
+                    start: current_line,
+                    end: current_line,
+                    added: HashSet::new(),
+                });
             }
+            in_hunk = true;
+            continue;
         }
+
+        if !in_hunk { continue; }
+        let Some(hunk) = current_path.as_ref()
+            .and_then(|path| out.get_mut(path))
+            .and_then(|file_hunks| file_hunks.last_mut()) else { continue; };
+        if line.starts_with('+') {
+            hunk.added.insert(current_line);
+            current_line += 1;
+        } else if line.starts_with(' ') {
+            current_line += 1;
+        }
+        hunk.end = current_line;
     }
     out
 }
@@ -1820,13 +1826,13 @@ REQUEST_CHANGES
     #[test]
     fn test_diff_added_lines_per_file() {
         let diff = "diff --git a/src/foo.rs b/src/foo.rs\nindex abc..def 100644\n--- a/src/foo.rs\n+++ b/src/foo.rs\n@@ -10,3 +10,5 @@ fn x() {\n     let a = 1;\n+    let b = 2;\n+    let c = 3;\n     let d = 4;\ndiff --git a/lib/bar.rb b/lib/bar.rb\nnew file mode 100644\n--- /dev/null\n+++ b/lib/bar.rb\n@@ -0,0 +1,2 @@\n+puts \"hi\"\n+puts \"bye\"\n";
-        let map = parse_diff_added_lines(diff);
-        let foo = map.get("src/foo.rs").unwrap();
+        let map = parse_diff_hunks(diff);
+        let foo = &map.get("src/foo.rs").unwrap()[0].added;
         assert!(foo.contains(&11));
         assert!(foo.contains(&12));
         assert!(!foo.contains(&10));
         assert!(!foo.contains(&13));
-        let bar = map.get("lib/bar.rb").unwrap();
+        let bar = &map.get("lib/bar.rb").unwrap()[0].added;
         assert!(bar.contains(&1));
         assert!(bar.contains(&2));
     }
@@ -1903,6 +1909,66 @@ REQUEST_CHANGES
         let diff = "--- a/src/foo.rs\n+++ b/src/foo.rs\n@@ -10,1 +10,3 @@\n line\n+added1\n+added2\n";
         let report = parse_report_inner(content, Some(diff));
         assert_eq!(report.findings[0].anchor, Anchor::Reference);
+    }
+
+    fn anchored_report(location: &str, anchor: &str) -> String {
+        format!("## Findings\n\n### Trigger: Logic Bug\n\n#### F-01 — Documentation prerequisite\n\n\
+            - **Severity:** MED\n- **Anchor:** {anchor}\n- **Origin:** introduced\n\
+            - **Location:** {location}\n- **Why this matters:** A prerequisite is missing.\n\
+            - **Suggested fix:** Document it.\n- **Suggested comment:** Include the prerequisite.\n")
+    }
+
+    #[test]
+    fn multiple_location_citations_use_the_first_anchor_without_losing_evidence() {
+        let location = "`docs/ddex.md:110`; `docs/fuga-xml.md:5`";
+        let diff = "diff --git a/docs/ddex.md b/docs/ddex.md\n--- a/docs/ddex.md\n+++ b/docs/ddex.md\n@@ -109 +109,2 @@\n context\n+changed\ndiff --git a/docs/fuga-xml.md b/docs/fuga-xml.md\n--- a/docs/fuga-xml.md\n+++ b/docs/fuga-xml.md\n@@ -4 +4,2 @@\n context\n+changed too\n";
+        let report = parse_report_inner(&anchored_report(location, "diff"), Some(diff));
+        let finding = &report.findings[0];
+        assert_eq!(finding.anchor, Anchor::Diff);
+        assert_eq!(finding.path.as_deref(), Some("docs/ddex.md"));
+        assert_eq!(finding.line, Some(110));
+        assert!(finding.location.as_deref().unwrap().contains("docs/fuga-xml.md:5"));
+        assert_eq!(report.line_comments.len(), 1);
+        assert_eq!(report.line_comments[0].path, "docs/ddex.md");
+        assert_eq!(report.line_comments[0].line, 110);
+
+        let reference = parse_report_inner(&anchored_report("`docs/ddex.md:109`; `docs/fuga-xml.md:5`", "diff"), Some(diff));
+        assert_eq!(reference.findings[0].anchor, Anchor::Reference);
+        assert!(reference.line_comments.is_empty(), "secondary citations must not move the anchor");
+    }
+
+    #[test]
+    fn changed_range_can_include_unchanged_context_in_the_same_hunk() {
+        let diff = "diff --git a/docs/guide.md b/docs/guide.md\n--- a/docs/guide.md\n+++ b/docs/guide.md\n@@ -249 +249,3 @@\n+heading\n \n+changed instructions\n";
+        for anchor in ["diff", "reference"] {
+            let report = parse_report_inner(&anchored_report("docs/guide.md:249-251", anchor), Some(diff));
+            assert_eq!(report.findings[0].anchor, Anchor::Diff);
+            assert_eq!(report.line_comments.len(), 1);
+            assert_eq!(report.line_comments[0].start_line, Some(249));
+            assert_eq!(report.line_comments[0].line, 251);
+        }
+        for location in ["docs/guide.md:250", "docs/guide.md:248-251", "docs/guide.md:249-252", "docs/guide.md:251-249"] {
+            let report = parse_report_inner(&anchored_report(location, "diff"), Some(diff));
+            assert_eq!(report.findings[0].anchor, Anchor::Reference, "{location}");
+            assert!(report.line_comments.is_empty());
+        }
+    }
+
+    #[test]
+    fn changed_ranges_cannot_cross_diff_hunks() {
+        let diff = "--- a/docs/guide.md\n+++ b/docs/guide.md\n@@ -10 +10,2 @@\n context\n+changed\n@@ -12 +12,2 @@\n context\n+changed\n";
+        let report = parse_report_inner(&anchored_report("docs/guide.md:11-13", "diff"), Some(diff));
+        assert_eq!(report.findings[0].anchor, Anchor::Reference);
+        assert!(report.line_comments.is_empty());
+    }
+
+    #[test]
+    fn diff_content_that_looks_like_file_headers_keeps_its_line_numbers() {
+        let diff = "diff --git a/b/guide.md b/b/guide.md\n--- a/b/guide.md\n+++ b/b/guide.md\n@@ -10,2 +10,3 @@\n--- removed separator\n+++ added separator\n context\n+changed\n";
+        let report = parse_report_inner(&anchored_report("b/guide.md:10-12", "diff"), Some(diff));
+        assert_eq!(report.findings[0].anchor, Anchor::Diff);
+        assert_eq!(report.line_comments[0].path, "b/guide.md");
+        assert_eq!(report.line_comments[0].line, 12);
     }
 
     #[test]
