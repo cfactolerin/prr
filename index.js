@@ -767,10 +767,6 @@ function v2Agents() {
     const agent = { ...metadata, prompt: body }
     allowWorkspace(agent, workspace, name)
     const permissions = v2Permissions(agent.permission)
-    if (name === "prr-orchestrator") {
-      // MCP executors check the caller even when invoked internally by the context bridge.
-      permissions.push(...atlassianReadTools.map((tool) => ({ action: `*_${tool}`, resource: "*", effect: "allow" })))
-    }
     return { name, agent, permissions }
   })
 }

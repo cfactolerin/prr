@@ -126,7 +126,7 @@ The committed binary lets users install the OpenCode plugin without a Rust toolc
 
 OpenCode 2 context gathering uses `context-open-code --defer-atlassian`, then the bound-round `prr_atlassian_context` tool. The tool discovers connected MCP servers and invokes only supported Atlassian read tools. The Rust importer saves reviewer context and uses configured REST credentials when needed. Reviewers and the arbiter never receive direct MCP access. OpenCode 1 and standalone context commands retain REST fetching.
 
-MCP executors enforce permissions even when a plugin calls them internally. The V2 orchestrator therefore has narrow grants for the bridge's four read-tool names. Session hooks remove those tools from PRR model requests, so ticket and page reads still go through the bound-round bridge. Keep the grants and request filtering synchronized; do not grant Atlassian discovery or write tools.
+MCP executors enforce permissions even when a plugin calls them internally. The orchestrator's Markdown definition therefore declares narrow grants for the bridge's four read-tool names. Keep them in that definition, not only in the plugin transform: project-local agent discovery appends its permissions after the plugin's rules, including its blanket deny. Session hooks remove those tools from V2 PRR model requests, so ticket and page reads still go through the bound-round bridge. Keep the grants and request filtering synchronized; do not grant Atlassian discovery or write tools.
 
 ## Versioning
 

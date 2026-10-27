@@ -3,6 +3,8 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, 
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
+import { parse } from "yaml"
+import { atlassianReadTools } from "../atlassian.js"
 import PrrPlugin from "../index.js"
 
 function fakeV2Context({ agents = [], sessionAgent = "build", model } = {}) {
@@ -53,6 +55,20 @@ function fakeV2Context({ agents = [], sessionAgent = "build", model } = {}) {
 function toolPermission(registered, agent, action) {
   return registered.agents.get(agent).permissions.findLast((rule) => rule.action === action || rule.action === "*"
     || rule.action.startsWith("*_") && action.endsWith(rule.action.slice(1)))?.effect
+}
+
+function localAgentPermissions(name) {
+  const source = readFileSync(new URL(`../.opencode/agents/${name}.md`, import.meta.url), "utf8")
+  const { permission } = parse(source.match(/^---\n([\s\S]*?)\n---\n/)[1])
+  return Object.entries(permission).flatMap(([key, rule]) => {
+    const action = { bash: "shell", task: "subagent" }[key] ?? key
+    const entries = typeof rule === "string" ? [["*", rule]] : Object.entries(rule)
+    return entries.map(([resource, effect]) => ({ action, resource, effect }))
+  })
+}
+
+function discoverLocalAgents(registered) {
+  for (const [name, agent] of registered.agents) agent.permissions.push(...localAgentPermissions(name))
 }
 
 test("registers PRR commands, agents, skills, and binary environment", async () => {
@@ -683,6 +699,40 @@ test("V2 MCP read permissions belong only to the orchestrator and are hidden fro
   }
 })
 
+test("project-local agent discovery preserves only the bridge's four Atlassian read grants", async () => {
+  const { ctx, registered } = fakeV2Context()
+  await PrrPlugin.setup(ctx)
+  discoverLocalAgents(registered)
+
+  const orchestrator = registered.agents.get("prr-orchestrator")
+  assert.deepEqual(localAgentPermissions(orchestrator.id).filter((rule) => rule.action.startsWith("*_")),
+    atlassianReadTools.map((name) => ({ action: `*_${name}`, resource: "*", effect: "allow" })))
+  for (const name of atlassianReadTools) {
+    for (const server of ["atlassian", "company_atlassian"]) {
+      const action = `${server}_${name}`
+      assert.equal(toolPermission(registered, orchestrator.id, action), "allow", action)
+      for (const agent of registered.agents.keys()) {
+        if (agent !== orchestrator.id) assert.equal(toolPermission(registered, agent, action), "deny")
+      }
+    }
+  }
+  for (const action of ["atlassian_executeWrite", "atlassian_editJiraIssue", "atlassian_discover", "atlassian_getGraphObject", "unrelated"]) {
+    assert.equal(toolPermission(registered, orchestrator.id, action), "deny", action)
+  }
+  const tools = Object.fromEntries(atlassianReadTools.map((name) => [`atlassian_${name}`, {}]))
+  await registered.sessionHooks.context({ agent: orchestrator.id, tools })
+  assert.deepEqual(tools, {})
+})
+
+test("an already discovered orchestrator keeps Atlassian read grants without replacing user overrides", async () => {
+  const agent = { id: "prr-orchestrator", system: "Custom instructions", permissions: localAgentPermissions("prr-orchestrator") }
+  const { ctx, registered } = fakeV2Context({ agents: [agent] })
+  await PrrPlugin.setup(ctx)
+  assert.equal(registered.agents.get(agent.id).system, "Custom instructions")
+  for (const name of atlassianReadTools) assert.equal(toolPermission(registered, agent.id, `atlassian_${name}`), "allow")
+  assert.equal(toolPermission(registered, agent.id, "atlassian_executeWrite"), "deny")
+})
+
 test("V2 tools refuse agents whose PRR rules do not allow them", async () => {
   const { ctx, registered } = fakeV2Context()
   await PrrPlugin.setup(ctx)
@@ -848,6 +898,7 @@ test("V2 context tool retries unavailable MCP context and caches successful impo
       } },
     ]
     await PrrPlugin.setup(ctx)
+    discoverLocalAgents(registered)
     const context = { agent: "prr-orchestrator", sessionID: "atlassian-test", signal: new AbortController().signal }
     const fetch = registered.tools.find((item) => item.name === "prr_atlassian_context")
     await assert.rejects(fetch.execute({ roundPath: round }, context), /not bound/)

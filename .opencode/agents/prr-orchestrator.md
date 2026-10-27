@@ -44,6 +44,10 @@ permission:
   prr_write: allow
   prr_artifact: allow
   prr_atlassian_context: allow
+  "*_getAccessibleAtlassianResources": allow
+  "*_getJiraIssue": allow
+  "*_getConfluenceContent": allow
+  "*_getConfluencePage": allow
   prr_bind_round: allow
   prr_capability: allow
   prr_codex_health: allow
