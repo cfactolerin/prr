@@ -464,6 +464,10 @@ not a brief summary or a generic "what do you want to investigate?" question. A 
 challenge keeps the user on that finding; investigate it and show the same per-finding menu again.
 Do not substitute the overall investigation menu or ask the user to choose diff or chat again.
 Reopening the diff is navigation, not a new briefing or investigation.
+An explicit **Discuss in chat** action supersedes the prior finding's unanswered decision menu.
+The panel queues the selected finding's request, then cancels only that old finding menu with
+navigation feedback so the session can continue. This is not a decision on either finding. Honor
+the newly selected finding even when the previous one is still Pending; do not restore the old menu.
 **Back to discussion / Back to chat** (Escape) closes the panel
 without sending a message, restarting the workflow, or replacing any pending chat question.
 
@@ -598,7 +602,8 @@ Replace `<PRE_EXISTING_NOTE>` with `> **Pre-existing.** This predates the PR. As
 
 Use the parsed URL when present; otherwise show plain `path#Lline`. Read context from `<REPO_PATH>/<path>`. Do not rewrap, flatten, or relabel the why-it-matters and suggested-fix values.
 
-Then make exactly one question-tool call about that finding with options:
+Then make exactly one question-tool call about that finding, with header `Finding <ID>` and the
+finding ID in the question, using these options:
 
 - **Accept** - keep it unchanged.
 - **Reject** - remove it.
@@ -630,7 +635,7 @@ After diff findings, walk `anchor == "reference"` and `anchor == "none"` with th
 
 For `reference`, show the location and code context, marked as unchanged reference code. For `none`, show `(no anchor line)`. Show why-it-matters, suggested fix, and suggested comment exactly as in 8b.
 
-Use the same explicit options. Accept means include it in the regenerated review body; Reject removes it; Edit stores replacement body-summary text. Custom responses keep the user on the same finding.
+Use the same `Finding <ID>` question header, finding ID in the question, and explicit options. Accept means include it in the regenerated review body; Reject removes it; Edit stores replacement body-summary text. Custom responses keep the user on the same finding.
 
 ### 8d. Add a Finding
 

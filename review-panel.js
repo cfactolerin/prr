@@ -23,6 +23,16 @@ function colorLuminance(value) {
     .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0)
 }
 
+function isFindingMenu(form, findingIDs) {
+  if (form.metadata?.kind !== "question" || !form.metadata?.tool?.id || form.fields?.length !== 1) return false
+  const field = form.fields[0]
+  if (field.type !== "string") return false
+  const words = `${field.title ?? ""} ${field.description ?? ""}`.split(/[^a-zA-Z0-9_-]+/)
+  const options = new Set(field.options?.map((option) => option.value))
+  return findingIDs.some((id) => words.includes(id)) && options.size === 5
+    && ["Accept", "Reject", "Edit", "Add finding", "Finish findings"].every((option) => options.has(option))
+}
+
 export function reviewPanel(context, panel, rpc) {
   const [memory, updateMemory] = context.storage.memory("investigation", { initial: { sessions: {} } })
   const location = () => context.location ?? context.data.location.default()
@@ -114,7 +124,26 @@ export function reviewPanel(context, panel, rpc) {
     const snapshot = data()?.snapshot
     setSubmitting(true)
     try {
-      await context.client.session.prompt({ sessionID: panel.sessionID, text }, { location: location() })
+      const options = { location: location() }
+      const forms = discussionFindingID
+        ? (await context.client.session.form.list({ sessionID: panel.sessionID }, options)).filter((form) => form.sessionID === panel.sessionID)
+        : []
+      if (forms.some((form) => !isFindingMenu(form, data()?.findings.map((item) => item.id) ?? []))) {
+        throw new Error("Resolve the pending question in chat before switching findings.")
+      }
+      if (data()?.snapshot !== snapshot) throw new Error("The saved review changed; refresh before discussing a finding.")
+      await context.client.session.prompt({ sessionID: panel.sessionID, text, delivery: "steer" }, options)
+      for (const form of forms) {
+        try {
+          // A bare dismissal stops the session; feedback lets the queued handoff continue.
+          await context.client.session.form.cancel({
+            sessionID: panel.sessionID, formID: form.id,
+            message: `The user selected Discuss in chat for ${discussionFindingID}. This supersedes this finding menu without accepting, rejecting, or editing any finding. Follow the queued discussion request and show the selected finding's full presentation and menu.`,
+          }, options)
+        } catch (error) {
+          if (!["FormAlreadySettledError", "FormNotFoundError"].includes(error?._tag)) throw error
+        }
+      }
       panel.close()
       if (discussionFindingID && view()?.snapshot === snapshot) updateMemory((draft) => {
         draft.sessions[panel.sessionID].discussionFindingID = discussionFindingID

@@ -93,6 +93,9 @@ test("diff discussion restores the full finding view and per-finding menu withou
   const investigation = skill.split("## Phase 7:")[1].split("## Phase 8:")[0]
   assert.match(investigation, /resumes the one-at-a-time findings review at the selected finding, without a popup question/)
   assert.match(investigation, /complete step 7 only on the first transition from Phase 7 to Phase 8/)
+  assert.match(investigation, /supersedes the prior finding's unanswered decision menu/)
+  assert.match(investigation, /even when the previous one is still Pending/)
+  assert.match(skill, /header `Finding <ID>`/)
   assert.match(investigation, /full 8b\/8c presentation/)
   assert.match(investigation, /Include focused code and all finding fields/)
   for (const option of ["Accept", "Reject", "Edit", "Add finding", "Finish findings"]) assert.ok(investigation.includes(`**${option}**`))

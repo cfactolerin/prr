@@ -19,6 +19,14 @@ let failDecision = false
 let failInvestigation = false
 let failDiff = false
 let promptWait
+let pendingForms = []
+const queuedPrompts = []
+const deliveredPrompts = []
+const findingForm = (id) => ({
+  id: `form-${id}`, sessionID: "session", metadata: { kind: "question", tool: { messageID: "message", id: "question" } },
+  fields: [{ key: "q0", type: "string", title: `Finding ${id}`, description: `How should ${id} be handled?`,
+    options: ["Accept", "Reject", "Edit", "Add finding", "Finish findings"].map((value) => ({ value, label: value })), custom: true }],
+})
 let eventHandler
 let stopped = false
 let closed = false
@@ -79,6 +87,21 @@ const context = {
     calls.push({ prompt: input })
     if (failPrompt) throw new Error("Cannot reach the review session")
     await promptWait
+    const target = pendingForms.some((form) => form.sessionID === input.sessionID) ? queuedPrompts : deliveredPrompts
+    target.push(input)
+  }, form: {
+    list: async ({ sessionID }, options) => {
+      assert.deepEqual(options.location, context.location)
+      return structuredClone(pendingForms.filter((form) => form.sessionID === sessionID))
+    },
+    cancel: async (input, options) => {
+      assert.deepEqual(options.location, context.location)
+      assert.equal(input.sessionID, "session")
+      assert.ok(input.message, "cancellation needs feedback so the session continues rather than stops")
+      calls.push({ cancelledForm: input })
+      pendingForms = pendingForms.filter((form) => form.id !== input.formID)
+      if (!pendingForms.some((form) => form.sessionID === input.sessionID)) deliveredPrompts.push(...queuedPrompts.splice(0))
+    },
   } } },
 }
 const panel = { name: "prr.investigation", sessionID: "session", width: 140, focused: true, close: () => { closed = true; setOpen(false) } }
@@ -314,10 +337,54 @@ try {
   await waitForContent((frame) => frame.includes("Please correct the value."))
   await commands.get("prr.diff.next").run()
   await waitForContent((frame) => frame.includes("Partner check missing."))
+  report.decisions = []
+  report.revision++
+  eventHandler({ data: { sessionID: "session" }, location: context.location })
+  await waitForContent((frame) => frame.includes("Decision: pending"))
+  pendingForms = [findingForm("F-01")]
+  const promptsBeforeSwitch = calls.filter((call) => call.prompt).length
+  const cancellationsBeforeSwitch = calls.filter((call) => call.cancelledForm).length
+  closed = false
+  await commands.get("prr.diff.close").run()
+  assert.equal(closed, true)
+  assert.equal(pendingForms.length, 1, "Escape preserves the old question")
+  assert.equal(calls.filter((call) => call.prompt).length, promptsBeforeSwitch)
+  assert.equal(calls.filter((call) => call.cancelledForm).length, cancellationsBeforeSwitch)
+  setOpen(true)
+  await waitForContent((frame) => frame.includes("Partner check missing."))
+  closed = false
+  failPrompt = true
+  await commands.get("prr.diff.discuss").run()
+  assert.equal(closed, false)
+  assert.equal(pendingForms.length, 1, "a failed handoff preserves the old question")
+  assert.equal(calls.filter((call) => call.cancelledForm).length, cancellationsBeforeSwitch)
+  assert.deepEqual(errors, ["Cannot reach the review session"])
+  errors.length = 0
+  failPrompt = false
+  pendingForms[0].fields[0].options = [{ value: "Approve", label: "Approve" }]
+  const beforeUnrelated = calls.filter((call) => call.prompt).length
+  await commands.get("prr.diff.discuss").run()
+  assert.equal(closed, false)
+  assert.equal(calls.filter((call) => call.prompt).length, beforeUnrelated)
+  assert.equal(pendingForms.length, 1, "unrelated questions must not be cancelled")
+  assert.deepEqual(errors, ["Resolve the pending question in chat before switching findings."])
+  errors.length = 0
+  pendingForms = [findingForm("F-01"), { ...findingForm("F-01"), id: "other-session-form", sessionID: "other" }]
+  const decisionsBeforeSwitch = structuredClone(report.decisions)
+  const revisionBeforeSwitch = report.revision
   await commands.get("prr.diff.discuss").run()
   const unanchored = calls.filter((call) => call.prompt).at(-1).prompt.text
   assert.match(unanchored, /one-at-a-time findings review at finding "F-02"/)
   assert.match(unanchored, /for anchor=none show no anchor line without inventing code/)
+  assert.match(deliveredPrompts.at(-1).text, /one-at-a-time findings review at finding "F-02"/)
+  assert.equal(queuedPrompts.length, 0, "F-02 discussion must not remain queued behind F-01")
+  assert.deepEqual(pendingForms.map((form) => form.id), ["other-session-form"])
+  assert.equal(calls.filter((call) => call.cancelledForm).at(-1).cancelledForm.formID, "form-F-01")
+  assert.match(calls.filter((call) => call.cancelledForm).at(-1).cancelledForm.message, /without accepting, rejecting, or editing/)
+  assert.ok(calls.findLastIndex((call) => call.prompt) < calls.findLastIndex((call) => call.cancelledForm), "enqueue before unblocking the old question")
+  assert.equal(calls.filter((call) => call.prompt).at(-1).prompt.delivery, "steer")
+  assert.deepEqual(report.decisions, decisionsBeforeSwitch)
+  assert.equal(report.revision, revisionBeforeSwitch)
   assert.equal(closed, true)
   setOpen(true)
   await waitForContent((frame) => frame.includes("Partner check missing."))
