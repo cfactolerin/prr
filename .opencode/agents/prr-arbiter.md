@@ -1,7 +1,7 @@
 ---
 description: Synthesizes independent PR reviews, asks targeted follow-up questions, and writes the final report.
 mode: subagent
-hidden: true
+hidden: false
 permission:
   "*": deny
   task: deny

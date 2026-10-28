@@ -506,6 +506,25 @@ test("exports one definition that OpenCode V1 and V2 both accept", () => {
   assert.equal(typeof PrrPlugin.setup, "function")
 })
 
+test("review roles remain discoverable subagents in V1 and V2", async () => {
+  const hooks = await PrrPlugin.server()
+  const config = {}
+  hooks.config(config)
+  const { ctx, registered } = fakeV2Context()
+  await PrrPlugin.setup(ctx)
+
+  const catalog = [...registered.agents.values()].filter((agent) => !agent.hidden && agent.mode !== "primary")
+  for (const name of ["prr-opencode-reviewer", "prr-codex-reviewer", "prr-arbiter"]) {
+    assert.equal(config.agent[name].mode, "subagent")
+    assert.notEqual(config.agent[name].hidden, true)
+    assert.ok(catalog.some((agent) => agent.id === name), `${name} must appear in the subagent catalog`)
+    assert.ok(registered.agents.get("prr-orchestrator").permissions.some((rule) =>
+      rule.action === "subagent" && rule.resource === name && rule.effect === "allow"))
+    assert.equal(toolPermission(registered, name, "subagent"), "deny")
+    assert.equal(toolPermission(registered, name, "shell"), "deny")
+  }
+})
+
 test("V2 setup registers PRR tools, agents, skills, commands, and binary environment", async () => {
   const { ctx, registered } = fakeV2Context({
     agents: [{ id: "build", name: "build", mode: "primary", hidden: false, permissions: [] }],
@@ -553,7 +572,7 @@ test("V2 setup registers PRR tools, agents, skills, commands, and binary environ
   assert.ok(setup.permissions.some((rule) => rule.action === "shell"
     && rule.resource === "bash -lc 'codex login status'" && rule.effect === "allow"))
   const codexReviewer = registered.agents.get("prr-codex-reviewer")
-  assert.equal(codexReviewer.hidden, true)
+  assert.equal(codexReviewer.hidden, false)
   assert.ok(codexReviewer.permissions.some((rule) => rule.action === "external_directory"
     && !rule.resource.startsWith("~") && rule.resource.endsWith("/.prr/workspace/*/r*/repo/**")))
 

@@ -1,7 +1,7 @@
 ---
 description: Independently reviews a PR or answers arbiter follow-up questions using the inherited host model.
 mode: subagent
-hidden: true
+hidden: false
 permission:
   "*": deny
   task: deny

@@ -9,6 +9,16 @@ import { reviewSteps } from "../review-state.js"
 
 const skill = readFileSync(new URL("../.opencode/skills/prr-start/SKILL.md", import.meta.url), "utf8")
 
+test("role dispatch uses the host tool and requires evidence before declaring roles unavailable", () => {
+  const dispatch = skill.split("## Review Role Dispatch")[1].split("## Preflight")[0]
+  assert.match(dispatch, /`subagent` on OpenCode 2 and `task` on OpenCode 1/)
+  for (const name of ["prr-opencode-reviewer", "prr-codex-reviewer", "prr-arbiter"]) assert.ok(dispatch.includes(`\`${name}\``))
+  assert.match(dispatch, /Do not infer that a role is unavailable merely because it is absent from a displayed catalog/)
+  assert.match(dispatch, /attempt the prescribed call with the exact role ID/)
+  assert.match(dispatch, /dispatch tool itself is missing or a call returns an explicit unknown-agent or unavailable-role error/)
+  assert.match(dispatch, /Never substitute general-purpose agents or perform reviewer or arbiter work in the primary thread/)
+})
+
 test("workflow stages match sidebar ordering including the briefing pause", () => {
   const list = skill.split("Track these items in order:")[1].split("For phases")[0]
   assert.deepEqual([...list.matchAll(/^\d+\. (.+)$/gm)].map((match) => match[1]), reviewSteps)

@@ -73,6 +73,8 @@ The OpenCode workflow has a restricted setup agent plus two review harnesses and
 
 Do not replace the native reviewer with a nested `opencode run`. Keep reviewer and arbiter contexts separate. The OpenCode distribution uses reviewer keys `opencode` and `codex`; legacy configuration still supports a configurable reviewer list.
 
+Keep the reviewer and arbiter definitions visible (`hidden: false`). OpenCode 2 excludes hidden agents from the subagent catalog even though they remain callable by ID. Dispatch uses `subagent` on OpenCode 2 and `task` on OpenCode 1; catalog omission alone is not evidence that a role is unavailable.
+
 `text-reader.js` streams UTF-8 text in pages of at most 64 KiB, independent of source-file size.
 Continuation cursors retain byte position and real line numbers, including long-line segments,
 and reject stale or cross-file use. Images/PDFs are rejected rather than decoded as text.

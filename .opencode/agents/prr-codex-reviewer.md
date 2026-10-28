@@ -1,7 +1,7 @@
 ---
 description: Dispatches Codex CLI for an independent PR review or arbiter follow-up answer.
 mode: subagent
-hidden: true
+hidden: false
 permission:
   "*": deny
   task: deny

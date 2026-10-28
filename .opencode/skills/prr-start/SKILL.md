@@ -20,6 +20,12 @@ At any point in this workflow, if the user explicitly asks for additional contex
 
 Wait for the task result in the current primary thread and use that result in the response and subsequent decisions. Foreground task results remain in this session's context; do not use a background task when the user asks to include the result in the conversation. Do not use `prr-opencode-reviewer` or `prr-arbiter` for ad-hoc requests; those roles remain reserved for the prescribed review flow.
 
+## Review Role Dispatch
+
+Use the host's dispatch tool: `subagent` on OpenCode 2 and `task` on OpenCode 1. Later references to task calls mean that host tool. The review roles are `prr-opencode-reviewer`, `prr-codex-reviewer`, and `prr-arbiter`; pass the exact role ID to the dispatch tool.
+
+Do not infer that a role is unavailable merely because it is absent from a displayed catalog. When the dispatch tool is available, attempt the prescribed call with the exact role ID. Report a role as unavailable only when the dispatch tool itself is missing or a call returns an explicit unknown-agent or unavailable-role error. Report other dispatch failures as their actual errors and follow the phase's failure handling. Never substitute general-purpose agents or perform reviewer or arbiter work in the primary thread.
+
 ## Preflight
 
 1. Run exactly `"$PRR_BIN" config runtime` as one standalone shell command and parse its JSON output. Do not prepend `printf`, `echo`, `pwd`, `env`, or any other command; do not use `&&`, `;`, a pipe, `bash -lc`, or retry with a different form. Never read `~/.prr/config.yml`; it may contain credentials.
