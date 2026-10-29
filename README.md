@@ -35,34 +35,80 @@ PRR does not read or store GitHub or Codex credentials. Optional Jira credential
 
 PRR runs Codex with user configuration, hooks, rules, apps, web search, and subagents disabled. Its filesystem permission profile can read the cloned repository and required system runtimes, but denies other user files.
 
-## Install For OpenCode
+## macOS Installation
 
 Install PRR directly from GitHub without an npm account, npm publication, manual clone, or Rust toolchain. The repository includes the plugin assets and a universal macOS binary. OpenCode installs its JavaScript dependencies automatically from the npm registry, so registry access is still needed, but an npm login is not.
 
-### 1. Check Prerequisites
+### 1. Set Up OpenCode, External Tools, And Atlassian MCP
 
-Install the tools listed under [Requirements](#requirements), authenticate `gh` and Codex, and select a working model in OpenCode for the native reviewer and arbiter. Confirm the executables are available in your terminal:
+**OpenCode and GPT-6.1 Sol**
+
+Install [OpenCode 2](https://opencode.ai), launch `opencode`, then:
+
+1. Run `/connect` and select **OpenAI**.
+2. Authenticate using your company-provided account or API credentials. For a company ChatGPT account, choose **Sign in with ChatGPT**.
+3. Run `/models` and select **GPT-6.1 Sol**.
+
+PRR's native reviewer and arbiter inherit the active OpenCode model.
+
+**GitHub and Codex**
+
+Install `git`, [GitHub CLI](https://cli.github.com/), and [Codex CLI](https://github.com/openai/codex) **0.155.0 or newer**, then authenticate in your terminal:
 
 ```bash
-opencode --version
-git --version
-gh auth status
-codex --version
-codex login status
+gh auth login
+codex login
 ```
 
-If the PRR repository is private, your Git credentials must have access to it. GitHub CLI authentication alone does not configure SSH access. Use one of the authenticated installation options in the next step if needed; never put a token in a plugin URL or OpenCode configuration.
+Codex authentication is separate from OpenCode's provider connection.
 
-### 2. Install From GitHub
+**Atlassian MCP**
+
+For Jira and Confluence context, run in your terminal:
+
+```bash
+opencode mcp add atlassian --global --url https://mcp.atlassian.com/v2/mcp
+```
+
+Inside OpenCode, run `/mcps`, select **atlassian**, and complete the browser sign-in. Confirm it shows **connected**. Skip this if Atlassian MCP is already connected; it is optional for reviews without Jira or Confluence context.
+
+### 2. Install PRR
 
 Run this in your terminal from any directory to install PRR globally from the `main` branch:
 
 ```bash
 opencode plugin add 'github:cfactolerin/prr#main'
-opencode plugin list
 ```
 
-For a private repository, choose **one** of these alternatives instead of the shortcut above.
+OpenCode watches configuration changes and installs missing packages in the background. If the repository is private, use one of the [private-repository installation options](#private-repository-installation) below.
+
+### 3. Configure PRR
+
+Inside OpenCode, with **GPT-6.1 Sol** selected, run:
+
+```text
+/prr-setup
+```
+
+Setup verifies `gh`, `git`, and Codex, then configures the review workspace. It defaults to `~/.prr/workspace` and stores settings in `~/.prr/config.yml`.
+
+PRR uses the connected Atlassian MCP server first; separate Jira API credentials are optional fallback settings. Setup can preserve or remove existing Jira settings. Add new credentials outside the model session.
+
+PRR supplies its own binary path; you do not need to install `prr` separately or set `PRR_BIN` yourself.
+
+### 4. Start A Review
+
+Inside OpenCode, run:
+
+```text
+/prr-start https://github.com/owner/repo/pull/42
+```
+
+See [Start A Review](#start-a-review) for short references and ticket overrides.
+
+### Private-Repository Installation
+
+Your Git credentials must have access to the PRR repository. GitHub CLI authentication alone does not configure SSH access. Choose **one** of these alternatives instead of the hosted shortcut; never put a token in a plugin URL or OpenCode configuration.
 
 **SSH:** configure your GitHub SSH key, verify repository access, then install:
 
@@ -94,34 +140,11 @@ Instead of `opencode plugin add`, add the GitHub package to `~/.config/opencode/
 
 Preserve existing settings and unrelated plugin entries. For a private repository, use the SSH or HTTPS package specification above as the array entry. To install only for one project, put the same `plugins` entry in that project's `opencode.json(c)` instead of the global file.
 
-### 3. Load The Plugin
-
-OpenCode watches configuration changes and installs missing packages in the background. Restart the service to ensure the plugin is loaded, then open OpenCode:
-
-```bash
-opencode service restart
-opencode
-```
-
-### 4. Configure PRR
-
-Inside OpenCode, run:
-
-```text
-/prr-setup
-```
-
-Setup verifies `gh`, `git`, and Codex, then configures the review workspace. It defaults to `~/.prr/workspace` and stores settings in `~/.prr/config.yml`.
-
-Jira is optional. PRR uses a connected Atlassian MCP server first, with configured Jira API credentials as a fallback. Setup can preserve or remove existing Jira settings. Add new credentials outside the model session.
-
-After setup succeeds, use [Start A Review](#start-a-review). PRR supplies its own binary path; you do not need to install `prr` separately or set `PRR_BIN` yourself.
-
 ### Installation Troubleshooting
 
 - **`opencode plugin add` is unavailable:** the CLI instructions require OpenCode 2. Upgrade OpenCode before following this guide. The plugin also retains compatibility with OpenCode 1.18.29+, but its configuration differs.
 - **Repository not found or permission denied:** verify the matching `git ls-remote` command succeeds with an account or SSH key that can access the repository. Use the explicit SSH or HTTPS installation URL rather than the hosted shortcut.
-- **`/prr-setup` is missing:** check `opencode plugin list`, ensure there is only one PRR entry, and run `opencode service restart`. Check that your current project's configuration has not disabled the plugin.
+- **`/prr-setup` is missing:** check `opencode plugin list`, ensure there is only one PRR entry, and run `/reload` inside OpenCode. Check that your current project's configuration has not disabled the plugin.
 
 See the [OpenCode plugin guide](https://opencode.ai/v2/docs/plugins) for package installation and configuration details.
 
