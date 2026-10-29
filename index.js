@@ -30,7 +30,7 @@ import { readTextFile } from "./text-reader.js"
 const packageRoot = dirname(fileURLToPath(import.meta.url))
 const assetRoot = join(packageRoot, ".opencode")
 const binary = join(packageRoot, "bin", "prr-darwin-universal")
-const defaultCodexModel = "gpt-6.1-sol"
+const defaultCodexModel = "gpt-6-sol"
 const evidenceNames = ["diff.txt", "changed-files.txt", "repo-docs.md", "change-history.md", "previous-review.md", "pr-metadata.json", "reviewer-tasks.md", "ticket-context.md"]
 const sessionRounds = new Map()
 const capabilities = new Map()
@@ -79,9 +79,7 @@ function configuredCodexModel() {
   if (typeof config.codex_model !== "string" || config.codex_model.trim() === "") {
     throw new Error("codex_model must be a non-empty string in ~/.prr/config.yml")
   }
-  const model = config.codex_model.trim()
-  // Upgrade the retired default before health checks as well as reviews.
-  return model === "gpt-6-sol" ? defaultCodexModel : model
+  return config.codex_model.trim()
 }
 
 const prrCommandNames = ["prr-setup", "prr-start", "prr-cleanup", "prr-stats"]

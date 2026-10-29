@@ -23,7 +23,7 @@ fn default_codex_timeout() -> u64 {
 }
 
 fn default_codex_model() -> String {
-    "gpt-6.1-sol".into()
+    "gpt-6-sol".into()
 }
 
 fn deserialize_codex_model<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -32,11 +32,7 @@ where
 {
     match serde_json::Value::deserialize(deserializer)? {
         serde_json::Value::String(model) if !model.trim().is_empty() => {
-            // The retired default must be upgraded before setup's health check.
-            Ok(match model.trim() {
-                "gpt-6-sol" => default_codex_model(),
-                model => model.to_string(),
-            })
+            Ok(model.trim().to_string())
         }
         _ => Err(serde::de::Error::custom("codex_model must be a non-empty string")),
     }
@@ -360,7 +356,7 @@ mod tests {
         assert_eq!(cfg.agents, vec!["claude".to_string()]);
         assert_eq!(cfg.claude_timeout, 600);
         assert_eq!(cfg.codex_timeout, 900);
-        assert_eq!(cfg.codex_model, "gpt-6.1-sol");
+        assert_eq!(cfg.codex_model, "gpt-6-sol");
         assert_eq!(cfg.gemini_timeout, 300);
         assert_eq!(cfg.opencode_timeout, 900);
         assert_eq!(cfg.gemini_model, "gemini-2.5-flash");
@@ -375,16 +371,17 @@ mod tests {
     }
 
     #[test]
-    fn test_retired_codex_default_is_upgraded_before_setup_and_saved() {
-        let mut cfg: Config = serde_yaml::from_str("codex_model: ' gpt-6-sol '").unwrap();
-        assert_eq!(cfg.codex_model, "gpt-6.1-sol");
-        cfg.configure_for_opencode("~/reviews", false);
+    fn test_codex_model_choices_are_not_rewritten() {
+        for model in ["gpt-6-sol", "gpt-6.1-sol"] {
+            let mut cfg: Config = serde_yaml::from_str(&format!("codex_model: ' {model} '")).unwrap();
+            assert_eq!(cfg.codex_model, model);
+            cfg.configure_for_opencode("~/reviews", false);
 
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.yml");
-        cfg.save_to_path(&path).unwrap();
-        assert!(std::fs::read_to_string(&path).unwrap().contains("codex_model: gpt-6.1-sol"));
-        assert_eq!(Config::load_from_path(&path).unwrap().codex_model, "gpt-6.1-sol");
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("config.yml");
+            cfg.save_to_path(&path).unwrap();
+            assert_eq!(Config::load_from_path(&path).unwrap().codex_model, model);
+        }
     }
 
     #[test]
@@ -395,7 +392,7 @@ mod tests {
         let path = dir.path().join("config.yml");
         cfg.save_to_path(&path).unwrap();
         let loaded = Config::load_from_path(&path).unwrap();
-        assert_eq!(loaded.codex_model, "gpt-6.1-sol");
+        assert_eq!(loaded.codex_model, "gpt-6-sol");
         assert_eq!(loaded.opencode_model, "openai/gpt-6.1-sol");
     }
 
@@ -422,7 +419,7 @@ mod tests {
         assert_eq!(cfg.agents, vec!["claude", "codex"]);
         assert_eq!(cfg.claude_timeout, 900);
         assert_eq!(cfg.codex_timeout, 900);
-        assert_eq!(cfg.codex_model, "gpt-6.1-sol");
+        assert_eq!(cfg.codex_model, "gpt-6-sol");
     }
 
     #[test]

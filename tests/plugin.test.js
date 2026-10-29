@@ -217,8 +217,8 @@ if (process.argv[1] !== fs.realpathSync(process.argv[1])) {
   process.exit(42)
 }
 const modelIndex = process.argv.indexOf("--model")
-if (modelIndex === -1 || process.argv[modelIndex + 1] !== "gpt-6.1-sol") {
-  process.stderr.write("Codex must use GPT-6.1 Sol for reviews and health checks\\n")
+if (modelIndex === -1 || process.argv[modelIndex + 1] !== "gpt-6-sol") {
+  process.stderr.write("Codex must use GPT-6 Sol for reviews and health checks\\n")
   process.exit(43)
 }
 const index = process.argv.indexOf("--output-last-message")
@@ -357,7 +357,7 @@ fs.writeFileSync(process.argv[index + 1], JSON.stringify({
     const captured = JSON.parse(readFileSync(output, "utf8"))
     assert.equal(captured.secret, null)
     assert.equal(captured.codexHome, process.env.CODEX_HOME)
-    assert.equal(captured.args[captured.args.indexOf("--model") + 1], "gpt-6.1-sol")
+    assert.equal(captured.args[captured.args.indexOf("--model") + 1], "gpt-6-sol")
     assert.ok(captured.args.includes("--ignore-user-config"))
     assert.ok(captured.args.some((arg) => arg.includes("shell_environment_policy.filters")))
     assert.ok(captured.args.some((arg) => arg.includes('PATH="/usr/bin:/bin:/usr/sbin:/sbin"')))
@@ -421,6 +421,10 @@ test("Codex reviews and health checks read the configured model on each call", a
 const fs = require("node:fs")
 const model = process.argv[process.argv.indexOf("--model") + 1]
 fs.writeFileSync(${JSON.stringify(capture)}, model)
+if (model === "unavailable-model") {
+  process.stderr.write("The configured model is not supported when using Codex with a ChatGPT account.\\n")
+  process.exit(1)
+}
 const outputIndex = process.argv.indexOf("--output-last-message")
 if (outputIndex === -1) process.stdout.write("HELLO\\n")
 else fs.writeFileSync(process.argv[outputIndex + 1], model)
@@ -441,8 +445,8 @@ else fs.writeFileSync(process.argv[outputIndex + 1], model)
     const health = () => hooks.tool.prr_codex_health.execute({})
 
     for (const [yaml, expected] of [
-      ["codex_timeout: 900", "gpt-6.1-sol"],
-      ["codex_model: ' gpt-6-sol '", "gpt-6.1-sol"],
+      ["codex_timeout: 900", "gpt-6-sol"],
+      ["codex_model: ' gpt-6-sol '", "gpt-6-sol"],
       ["codex_model: gpt-6.1-sol", "gpt-6.1-sol"],
       ["codex_model: custom-codex-model", "custom-codex-model"],
       ["codex_model: ' another-model '", "another-model"],
@@ -453,6 +457,13 @@ else fs.writeFileSync(process.argv[outputIndex + 1], model)
       await review()
       assert.equal(readFileSync(output, "utf8"), expected)
     }
+
+    const unavailable = "codex_model: unavailable-model"
+    writeFileSync(configPath, unavailable)
+    await assert.rejects(health(), /not supported when using Codex with a ChatGPT account/)
+    await assert.rejects(review(), /not supported when using Codex with a ChatGPT account/)
+    assert.equal(readFileSync(capture, "utf8"), "unavailable-model")
+    assert.equal(readFileSync(configPath, "utf8"), unavailable)
 
     for (const yaml of [
       "codex_model: ''", "codex_model: '  '", "codex_model: null",
