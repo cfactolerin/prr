@@ -21,7 +21,9 @@ Use these values for every OpenCode installation:
 
 Only the workspace and optional Jira fields are interactive. Do not offer different reviewers, models, timeouts, or arbitration rounds.
 
-`codex_model` defaults to `gpt-6-sol` and is configurable in `~/.prr/config.yml`. Preserve an existing choice during setup; do not overwrite it with the default.
+`codex_model` defaults to `gpt-6.1-sol` and is configurable in `~/.prr/config.yml`. The binary and Codex tools automatically upgrade the retired `gpt-6-sol` default before prerequisite checks; saving setup persists the replacement. Preserve any other existing choice; do not overwrite it with the default.
+
+OpenCode's native reviewer and arbiter inherit the active session model, not `opencode_model` in PRR's YAML. Recommend **GPT-6.1 Sol** through `/models`. For a persistent default, tell users to merge `"model": "openai/gpt-6.1-sol"` into their existing `~/.config/opencode/opencode.json(c)` while preserving unrelated settings. Setup must not edit OpenCode configuration or pin reviewer/arbiter models.
 
 ## 1. Read Existing Settings
 
@@ -91,7 +93,7 @@ Add `--clear-jira` when the user selected **Skip Jira** or **Configure Jira late
 
 ## 6. Confirm
 
-Report the config path, selected workspace, fixed reviewers, Codex model and timeout, arbitration rounds, Jira status, and successful prerequisite checks. Explain that `codex_model` can be changed in `~/.prr/config.yml` without restarting OpenCode.
+Report the config path, selected workspace, fixed reviewers, Codex model and timeout, arbitration rounds, Jira status, and successful prerequisite checks. Show `codex_model: gpt-6.1-sol` as the default YAML setting for `~/.prr/config.yml`; users with a custom choice should keep it unless they want to change it. Explain that this setting affects only Codex CLI and can be changed without restarting OpenCode. Never suggest replacing the whole YAML file or changing Codex's own user configuration.
 
 Repeat the plaintext-token warning when Jira is configured. Explain that review clones and artifacts are stored under the workspace.
 

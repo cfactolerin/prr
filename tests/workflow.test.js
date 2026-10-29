@@ -9,6 +9,17 @@ import { reviewSteps } from "../review-state.js"
 
 const skill = readFileSync(new URL("../.opencode/skills/prr-start/SKILL.md", import.meta.url), "utf8")
 
+test("setup documents current model defaults without pinning native review roles", () => {
+  const setup = readFileSync(new URL("../.opencode/skills/prr-setup/SKILL.md", import.meta.url), "utf8")
+  assert.match(setup, /`codex_model` defaults to `gpt-6\.1-sol`/)
+  assert.match(setup, /automatically upgrade the retired `gpt-6-sol` default before prerequisite checks/)
+  assert.match(setup, /Preserve any other existing choice/)
+  assert.match(setup, /inherit the active session model, not `opencode_model`/)
+  assert.match(setup, /"model": "openai\/gpt-6\.1-sol"/)
+  assert.match(setup, /Show `codex_model: gpt-6\.1-sol`/)
+  assert.match(setup, /Setup must not edit OpenCode configuration or pin reviewer\/arbiter models/)
+})
+
 test("role dispatch uses the host tool and requires evidence before declaring roles unavailable", () => {
   const dispatch = skill.split("## Review Role Dispatch")[1].split("## Preflight")[0]
   assert.match(dispatch, /`subagent` on OpenCode 2 and `task` on OpenCode 1/)

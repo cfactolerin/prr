@@ -217,8 +217,8 @@ if (process.argv[1] !== fs.realpathSync(process.argv[1])) {
   process.exit(42)
 }
 const modelIndex = process.argv.indexOf("--model")
-if (modelIndex === -1 || process.argv[modelIndex + 1] !== "gpt-6-sol") {
-  process.stderr.write("Codex must use GPT-6 Sol for reviews and health checks\\n")
+if (modelIndex === -1 || process.argv[modelIndex + 1] !== "gpt-6.1-sol") {
+  process.stderr.write("Codex must use GPT-6.1 Sol for reviews and health checks\\n")
   process.exit(43)
 }
 const index = process.argv.indexOf("--output-last-message")
@@ -357,7 +357,7 @@ fs.writeFileSync(process.argv[index + 1], JSON.stringify({
     const captured = JSON.parse(readFileSync(output, "utf8"))
     assert.equal(captured.secret, null)
     assert.equal(captured.codexHome, process.env.CODEX_HOME)
-    assert.equal(captured.args[captured.args.indexOf("--model") + 1], "gpt-6-sol")
+    assert.equal(captured.args[captured.args.indexOf("--model") + 1], "gpt-6.1-sol")
     assert.ok(captured.args.includes("--ignore-user-config"))
     assert.ok(captured.args.some((arg) => arg.includes("shell_environment_policy.filters")))
     assert.ok(captured.args.some((arg) => arg.includes('PATH="/usr/bin:/bin:/usr/sbin:/sbin"')))
@@ -441,7 +441,9 @@ else fs.writeFileSync(process.argv[outputIndex + 1], model)
     const health = () => hooks.tool.prr_codex_health.execute({})
 
     for (const [yaml, expected] of [
-      ["codex_timeout: 900", "gpt-6-sol"],
+      ["codex_timeout: 900", "gpt-6.1-sol"],
+      ["codex_model: ' gpt-6-sol '", "gpt-6.1-sol"],
+      ["codex_model: gpt-6.1-sol", "gpt-6.1-sol"],
       ["codex_model: custom-codex-model", "custom-codex-model"],
       ["codex_model: ' another-model '", "another-model"],
     ]) {

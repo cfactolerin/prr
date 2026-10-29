@@ -135,7 +135,7 @@ Phases 7 and 8 (line comment review, posting to GitHub) are interactive flows th
 
 Read `~/.prr/config.yml` and extract the `agents` list. This determines which agents to dispatch. Possible values: `claude`, `codex`, `gemini`, `opencode` — in any combination.
 
-Also read `gemini_model` (default: `gemini-2.5-flash`), `opencode_model` (default: `openai/gpt-6-astra`), `google_cloud_project` (default: `fuga-prod`), `google_cloud_location` (default: `europe-west4`), and `arbiter_rounds` (default: 3) for later use.
+Also read `gemini_model` (default: `gemini-2.5-flash`), `opencode_model` (default: `openai/gpt-6.1-sol`), `google_cloud_project` (default: `fuga-prod`), `google_cloud_location` (default: `europe-west4`), and `arbiter_rounds` (default: 3) for later use.
 
 `opencode_model` is `<OPENCODE_MODEL>` below, and `opencode_timeout`
 (default: 900) is `<OPENCODE_TIMEOUT>`. Read the model again after the health
