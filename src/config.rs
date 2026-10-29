@@ -55,7 +55,7 @@ fn default_opencode_model() -> String {
 }
 
 fn default_arbiter_rounds() -> u64 {
-    3
+    5
 }
 
 fn default_google_cloud_project() -> String {
@@ -361,7 +361,7 @@ mod tests {
         assert_eq!(cfg.opencode_timeout, 900);
         assert_eq!(cfg.gemini_model, "gemini-2.5-flash");
         assert_eq!(cfg.opencode_model, "openai/gpt-6.1-sol");
-        assert_eq!(cfg.arbiter_rounds, 3);
+        assert_eq!(cfg.arbiter_rounds, 5);
     }
 
     #[test]
@@ -394,6 +394,7 @@ mod tests {
         let loaded = Config::load_from_path(&path).unwrap();
         assert_eq!(loaded.codex_model, "gpt-6-sol");
         assert_eq!(loaded.opencode_model, "openai/gpt-6.1-sol");
+        assert_eq!(loaded.arbiter_rounds, 5);
     }
 
     #[test]
@@ -420,6 +421,16 @@ mod tests {
         assert_eq!(cfg.claude_timeout, 900);
         assert_eq!(cfg.codex_timeout, 900);
         assert_eq!(cfg.codex_model, "gpt-6-sol");
+    }
+
+    #[test]
+    fn test_arbiter_rounds_default_and_overrides() {
+        let cfg: Config = serde_yaml::from_str("codex_timeout: 900").unwrap();
+        assert_eq!(cfg.arbiter_rounds, 5);
+        for rounds in [0, 1, 3, 8] {
+            let cfg: Config = serde_yaml::from_str(&format!("arbiter_rounds: {rounds}")).unwrap();
+            assert_eq!(cfg.arbiter_rounds, rounds);
+        }
     }
 
     #[test]
@@ -484,11 +495,13 @@ mod tests {
         cfg.jira_api_token = "secret".into();
         cfg.codex_model = "custom-codex-model".into();
 
+        cfg.arbiter_rounds = 3;
         cfg.configure_for_opencode("~/reviews", false);
         assert_eq!(cfg.workspace_path, "~/reviews");
         assert_eq!(cfg.agents, vec!["opencode", "codex"]);
         assert_eq!(cfg.jira_api_token, "secret");
         assert_eq!(cfg.codex_model, "custom-codex-model");
+        assert_eq!(cfg.arbiter_rounds, 5);
 
         cfg.configure_for_opencode("~/reviews", true);
         assert!(cfg.jira_base_url.is_empty());

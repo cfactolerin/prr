@@ -330,8 +330,10 @@ agents:
   - codex
 codex_model: gpt-6-sol
 codex_timeout: 900
-arbiter_rounds: 3
+arbiter_rounds: 5
 ```
+
+Arbitration permits up to five Q&A rounds and ends earlier when the arbiter has enough evidence for a final report. Existing explicit limits remain in effect until changed or `/prr-setup` reapplies the setup defaults.
 
 `workspace_path` is configurable. If setup selects a workspace outside `~/.prr/workspace`, restart OpenCode so the plugin can refresh the subagents' external-directory permissions.
 

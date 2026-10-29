@@ -17,7 +17,7 @@ Use these values for every OpenCode installation:
 | `agents` | `opencode`, `codex` |
 | `workspace_path` | `~/.prr/workspace` by default |
 | `codex_timeout` | `900` |
-| `arbiter_rounds` | `3` |
+| `arbiter_rounds` | `5` |
 
 Only the workspace and optional Jira fields are interactive. Do not offer different reviewers, models, timeouts, or arbitration rounds.
 

@@ -152,7 +152,7 @@ test("the final Q&A round uses the configured limit without forcing consensus", 
   assert.match(arbiter, /Revisions must follow evidence, not pressure to agree/)
 })
 
-test("question prompts read non-default Q&A limits from configuration", (t) => {
+test("question prompts use five Q&A rounds by default and honor configured limits", (t) => {
   const root = mkdtempSync(join(tmpdir(), "prr-qa-config-"))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const round = join(root, "round")
@@ -161,12 +161,12 @@ test("question prompts read non-default Q&A limits from configuration", (t) => {
   writeFileSync(join(round, "results/pr-metadata.json"), JSON.stringify({ number: 1, title: "Test PR" }))
   const binary = fileURLToPath(new URL("../bin/prr-darwin-universal", import.meta.url))
   const env = { ...process.env, HOME: root }
-  for (const [limit, number, final] of [[1, 1, true], [5, 3, false], [5, 5, true]]) {
-    writeFileSync(join(root, ".prr/config.yml"), `arbiter_rounds: ${limit}\n`)
+  for (const [limit, number, final] of [[undefined, 4, false], [undefined, 5, true], [1, 1, true], [3, 3, true], [5, 3, false], [5, 5, true]]) {
+    writeFileSync(join(root, ".prr/config.yml"), limit === undefined ? "codex_timeout: 900\n" : `arbiter_rounds: ${limit}\n`)
     for (const agent of ["opencode", "codex"]) {
       execFileSync(binary, ["prompt", "--question", round, "--agent", agent, "--questions", '["Verify F-01."]', "--round", String(number)], { env })
       const prompt = readFileSync(join(round, `results/round-${number}-${agent}-question.md`), "utf8")
-      assert.ok(prompt.includes(`Q&A round: ${number} of ${limit}.`))
+      assert.ok(prompt.includes(`Q&A round: ${number} of ${limit ?? 5}.`))
       assert.equal(prompt.includes("This is the final Q&A round; no further clarification will follow."), final)
       assert.equal(prompt.includes("do not agree merely to reach consensus"), final)
     }

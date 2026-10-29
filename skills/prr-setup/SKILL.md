@@ -24,7 +24,7 @@ Read `~/.prr/config.yml` if it exists. Note the current values — they will be 
 | `gemini_timeout` | `300` |
 | `opencode_timeout` | `900` |
 | `gemini_model` | `gemini-2.5-flash` |
-| `arbiter_rounds` | `3` |
+| `arbiter_rounds` | `5` |
 | `google_cloud_project` | `fuga-prod` |
 | `google_cloud_location` | `europe-west4` |
 | `jira_base_url` | _(empty)_ |
@@ -63,7 +63,7 @@ codex_timeout: 900
 gemini_timeout: 300
 opencode_timeout: 900
 gemini_model: gemini-2.5-flash
-arbiter_rounds: 3
+arbiter_rounds: 5
 google_cloud_project: <value>
 google_cloud_location: <value>
 jira_base_url: <value>
