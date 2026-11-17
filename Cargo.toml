@@ -1,6 +1,6 @@
 [package]
 name = "prr"
-version = "0.34.0"
+version = "0.35.0"
 edition = "2021"
 description = "AI-powered pull request review engine for PRR plugins"
 
@@ -16,6 +16,7 @@ html2text = "0.12"
 shellexpand = "3"
 dirs = "5"
 tempfile = "3"
+sha2 = "0.10"
 
 [profile.release]
 strip = true

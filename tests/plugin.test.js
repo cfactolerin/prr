@@ -193,6 +193,9 @@ test("Codex wrapper defaults the model, validates paths and strips process secre
   mkdirSync(contextDirectory, { recursive: true })
   mkdirSync(evidenceDirectory)
   writeFileSync(join(evidenceDirectory, "diff.txt"), "saved diff evidence\n".repeat(150_000))
+  for (const name of ["previous-decisions.md", "github-discussions.md"]) {
+    writeFileSync(join(evidenceDirectory, name), `Shared ${name} evidence`)
+  }
   mkdirSync(bin, { recursive: true })
   writeFileSync(prompt, "Review this change.")
   writeFileSync(join(contextDirectory, "requirement.txt"), "must preserve compatibility\n")
@@ -270,6 +273,12 @@ fs.writeFileSync(process.argv[index + 1], JSON.stringify({
     assert.match(evidence, /saved diff evidence/)
     assert.ok(Buffer.byteLength(evidence) <= 64 * 1024)
     assert.match(evidence, /continue with cursor/)
+    for (const name of ["previous-decisions.md", "github-discussions.md"]) {
+      assert.match(await hooks.tool.prr_read.execute(
+        { capability: opencodeCapability, filePath: join(evidenceDirectory, name) },
+        { agent: "prr-opencode-reviewer", sessionID: "reviewer-session" },
+      ), /Shared .* evidence/)
+    }
     symlinkSync(prompt, join(evidenceDirectory, "peer-review.md"))
     writeFileSync(join(evidenceDirectory, "unknown-review.md"), "private reviewer text")
     await assert.rejects(hooks.tool.prr_read.execute(

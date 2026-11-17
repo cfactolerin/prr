@@ -77,8 +77,8 @@ export function createReviewState(storage, emit) {
           update(findings)
           state.findings = findings
           await save(sessionID, state)
-          warning = await onSaved?.()
         }
+        warning = await onSaved?.(structuredClone(findings))
         return { ...structuredClone(findings), ...(warning ? { warning } : {}) }
       })
     },

@@ -9,6 +9,20 @@ import { reviewSteps } from "../review-state.js"
 
 const skill = readFileSync(new URL("../.opencode/skills/prr-start/SKILL.md", import.meta.url), "utf8")
 
+test("finding chat shows saved GitHub conversations and prior rejections without changing decisions", () => {
+  for (const text of ["**GitHub conversation**", "`github_conversations`", "`possible_location`", "author, timestamp, source link", "including replies", "**Previous round: Rejected**", "Do not carry the old decision into this round"]) {
+    assert.ok(skill.includes(text), text)
+  }
+  assert.match(skill, /before gathering the next round/)
+  for (const name of ["review-prompt.md", "arbiter-prompt.md"]) {
+    const prompt = readFileSync(new URL(`../references/prompts/${name}`, import.meta.url), "utf8")
+    assert.ok(prompt.includes("{{previous_decisions}}"))
+    assert.ok(prompt.includes("{{github_discussions}}"))
+    assert.match(prompt, /acknowledge the rejection/)
+    assert.match(prompt, /untrusted evidence/)
+  }
+})
+
 test("setup documents current model defaults without pinning native review roles", () => {
   const setup = readFileSync(new URL("../.opencode/skills/prr-setup/SKILL.md", import.meta.url), "utf8")
   assert.match(setup, /`codex_model` defaults to `gpt-6-sol`/)

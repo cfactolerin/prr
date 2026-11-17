@@ -1,12 +1,13 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { createHash } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { test } from "node:test"
 import { JsonSchema, Schema, SchemaRepresentation } from "effect"
-import { createReviewReader } from "../review-reader.js"
+import { createReviewReader, relatedConversations } from "../review-reader.js"
 import { reviewRpc } from "../review-rpc.js"
 import { createReviewState, reviewSteps } from "../review-state.js"
 
@@ -229,4 +230,71 @@ test("statistics failure never undoes an explicit saved decision", async (t) => 
   const result = await reader.decide({ sessionID: "review", snapshot, revision: 0, findingID: "F-01", status: "rejected" })
   assert.match(result.warning, /Decision saved.*Local ledger unavailable/)
   assert.equal((await reader.findings({ sessionID: "review" })).decisions[0].status, "rejected")
+})
+
+test("explicit decisions are exported with snapshot provenance for the next review round", async (t) => {
+  const { reader, round } = fixture(t)
+  const initial = await reader.findings({ sessionID: "review" })
+  const request = { sessionID: "review", snapshot: initial.snapshot, findingID: "F-01" }
+  await reader.decide({ ...request, revision: 0, status: "rejected" })
+  const saved = () => JSON.parse(readFileSync(join(round, "results/finding-decisions.json"), "utf8"))
+  assert.equal(saved().decisions["F-01"].status, "rejected")
+  assert.equal(saved().report_sha256, createHash("sha256").update(report).digest("hex"))
+  assert.equal(saved().diff_sha256, createHash("sha256").update(patch).digest("hex"))
+  await reader.decide({ ...request, revision: 1, status: "accepted" })
+  assert.equal(saved().decisions["F-01"].status, "accepted", "revisiting a rejection replaces the historical choice")
+  await reader.findings({ ...request, operation: "decision", revision: 2, status: "edited", overriddenBody: "Exact approved edit" })
+  assert.equal(saved().decisions["F-01"].overridden_body, "Exact approved edit")
+})
+
+test("reading an older session exports its existing choices without recording new decisions", async (t) => {
+  const recorded = []
+  const { reader, round, getState, setState } = fixture(t, async (decision) => { recorded.push(decision) })
+  const { snapshot } = await reader.findings({ sessionID: "review" })
+  setState({ ...getState(), findings: { snapshot, revision: 3, decisions: { "F-01": { status: "rejected" } } } })
+  const saved = await reader.findings({ sessionID: "review" })
+  assert.equal(saved.revision, 3)
+  assert.equal(JSON.parse(readFileSync(join(round, "results/finding-decisions.json"), "utf8")).decisions["F-01"].status, "rejected")
+  assert.deepEqual(recorded, [])
+})
+
+test("a history export failure preserves the choice and does not follow a symlink", async (t) => {
+  const { reader, round, root } = fixture(t)
+  const outside = join(root, "outside.json")
+  writeFileSync(outside, "untouched")
+  symlinkSync(outside, join(round, "results/finding-decisions.json"))
+  const { snapshot } = await reader.findings({ sessionID: "review" })
+  const result = await reader.decide({ sessionID: "review", snapshot, revision: 0, findingID: "F-01", status: "rejected" })
+  assert.match(result.warning, /Round history warning/)
+  assert.equal(result.decisions[0].status, "rejected")
+  assert.equal(readFileSync(outside, "utf8"), "untouched")
+})
+
+test("conversation matching distinguishes exact comments from current-head location candidates", () => {
+  const finding = { path: "a.rb", line: 5, start_line: 3, suggested_comment: "Correct the value." }
+  const thread = { id: 1, file: "github-discussions/thread-1.md", path: "a.rb", line: 4, side: "RIGHT", commit_id: "head", root_body: "A different concern." }
+  assert.equal(relatedConversations([thread], finding, "head")[0].match, "possible_location")
+  assert.deepEqual(relatedConversations([thread], finding, "new-head"), [])
+  assert.deepEqual(relatedConversations([{ ...thread, line: null }], finding, "head"), [])
+  assert.deepEqual(relatedConversations([{ ...thread, side: "LEFT" }], finding, "head"), [])
+  assert.deepEqual(relatedConversations([{ ...thread, path: "other.rb" }], finding, "head"), [])
+  assert.equal(relatedConversations([{ ...thread, line: null, root_body: "**Pre-existing:** this predates the PR, so fixing it here is optional.\n\nCorrect the value." }], finding, "new-head")[0].match, "comment")
+  assert.equal(relatedConversations([{ ...thread, root_body: "Approved edit" }], finding, "new-head", "Approved edit")[0].match, "comment")
+  assert.deepEqual(relatedConversations([{ ...thread, file: "../../outside" }], finding, "head"), [])
+})
+
+test("chat focus exposes only matching saved thread paths and reports missing discussion context", async (t) => {
+  const { reader, round } = fixture(t)
+  const { snapshot } = await reader.findings({ sessionID: "review" })
+  const request = { sessionID: "review", operation: "focus", snapshot, findingID: "F-01" }
+  assert.match((await reader.findings(request)).github_conversations.warning, /No GitHub discussion snapshot/)
+  writeFileSync(join(round, "results/github-discussions.json"), JSON.stringify({
+    threads: [{ id: 7, file: "github-discussions/thread-7.md", path: "a.rb", root_body: "Please correct this value." }],
+    unavailable: ["reviews"],
+  }))
+  const result = await reader.findings(request)
+  assert.deepEqual(result.github_conversations.matches, [{ id: 7, match: "comment", filePath: join(round, "results/github-discussions/thread-7.md") }])
+  assert.deepEqual(result.github_conversations.unavailable, ["reviews"])
+  writeFileSync(join(round, "results/github-discussions.json"), "{")
+  assert.match((await reader.findings(request)).github_conversations.warning, /matching is unavailable/)
 })

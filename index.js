@@ -31,7 +31,7 @@ const packageRoot = dirname(fileURLToPath(import.meta.url))
 const assetRoot = join(packageRoot, ".opencode")
 const binary = join(packageRoot, "bin", "prr-darwin-universal")
 const defaultCodexModel = "gpt-6-sol"
-const evidenceNames = ["diff.txt", "changed-files.txt", "repo-docs.md", "change-history.md", "previous-review.md", "pr-metadata.json", "reviewer-tasks.md", "ticket-context.md"]
+const evidenceNames = ["diff.txt", "changed-files.txt", "repo-docs.md", "change-history.md", "previous-review.md", "previous-decisions.md", "github-discussions.md", "pr-metadata.json", "reviewer-tasks.md", "ticket-context.md"]
 const sessionRounds = new Map()
 const capabilities = new Map()
 const atlassianResources = new Map()
@@ -577,7 +577,7 @@ const arg = {
 
 const toolDefinitions = {
   prr_findings: {
-    description: "Read shared finding decisions, focus the current chat finding in the diff, or save an explicit decision. Get the snapshot and revision first; reread before posting. This never authorizes posting.",
+    description: "Read shared finding decisions, focus the current chat finding and locate its saved GitHub conversations, or save an explicit decision for this and later review rounds. Get the snapshot and revision first; reread before posting. This never authorizes posting.",
     args: {
       operation: arg.enum(["get", "focus", "decision"]), snapshot: arg.string({ optional: true }),
       finding_id: arg.string({ optional: true }), status: arg.enum(["pending", "accepted", "rejected", "edited"], { optional: true }),
@@ -846,7 +846,7 @@ async function setup(ctx) {
     }
     if (!investigationReady(state)) return
     event.system ??= []
-    event.system.push({ type: "text", text: "PRR finding decisions are shared between chat and diff through prr_findings. Read them when resuming review and before confirmation or posting; retain rejected findings and exact approved edits. Before each original finding's rich block/menu, call prr_findings focus with its ID and the current snapshot so reopening the diff follows the active chat finding. Save explicit original-finding decisions through prr_findings using the current revision. Never overwrite a newer choice or treat navigation or acceptance as permission to post." })
+    event.system.push({ type: "text", text: "PRR finding decisions are shared between chat and diff through prr_findings. Read them when resuming review and before confirmation or posting; retain rejected findings and exact approved edits. Before each original finding's rich block/menu, call prr_findings focus with its ID and the current snapshot so reopening the diff follows the active chat finding. Read its github_conversations matches and related saved discussion, then show the GitHub conversation section with authors, timestamps, and replies before the finding menu. A possible_location match requires topic verification. Save explicit original-finding decisions through prr_findings using the current revision; report any round-history warning. Never overwrite a newer choice or treat navigation or acceptance as permission to post." })
   })
 
   const recordedModels = new Set()
@@ -951,10 +951,19 @@ async function setup(ctx) {
           }
           let statisticsWarning = ""
           if (name === "prr-start") {
+            const previous = await reviewState.get(sessionID)
+            if (investigationReady(previous) && previous.findings) {
+              try {
+                const saved = await reader.findings({ sessionID })
+                if (saved.warning) statisticsWarning = `\nReport this saved-round warning: ${saved.warning}`
+              } catch {
+                statisticsWarning = "\nReport this saved-round warning: Previous local decisions could not be exported; the next round may lack their rejection context."
+              }
+            }
             const runID = randomUUID()
             await reviewState.reset(sessionID, runID)
             try { statistics.start(runID, prompt.text) }
-            catch (error) { statisticsWarning = `\nReport this local statistics warning without stopping the review: ${error.message}` }
+            catch (error) { statisticsWarning += `\nReport this local statistics warning without stopping the review: ${error.message}` }
           }
           await ctx.session.prompt({
             ...prompt,

@@ -81,6 +81,8 @@ pub fn build_review(
             ("{{context_path}}", &context_path),
             ("{{repo_docs}}", &repo_docs),
             ("{{previous_review}}", &previous_review),
+            ("{{previous_decisions}}", &evidence_section(base, "previous-decisions.md")),
+            ("{{github_discussions}}", &evidence_section(base, "github-discussions.md")),
             ("{{changed_files}}", &changed_files),
             ("{{change_history}}", &change_history_section(base)),
             ("{{diff}}", &diff),
@@ -162,6 +164,9 @@ pub fn build_arbiter(context_dir: &str) -> Result<(), Box<dyn std::error::Error>
             ("{{repo_docs}}", &repo_docs),
             ("{{reviews}}", &reviews),
             ("{{change_history}}", &change_history_section(base)),
+            ("{{previous_review}}", &evidence_section(base, "previous-review.md")),
+            ("{{previous_decisions}}", &evidence_section(base, "previous-decisions.md")),
+            ("{{github_discussions}}", &evidence_section(base, "github-discussions.md")),
             ("{{round_history}}", &round_history),
             ("{{final_qa_guidance}}", FINAL_QA_GUIDANCE),
             ("{{reviewer_tasks}}", &reviewer_tasks_section),
@@ -281,7 +286,7 @@ fn prepare_evidence(base: &Path) -> Result<(), Box<dyn std::error::Error>> {
         return Err("Evidence directory must not be a symbolic link".into());
     }
     std::fs::create_dir_all(&directory)?;
-    for name in ["diff.txt", "changed-files.txt", "repo-docs.md", "change-history.md", "previous-review.md", "pr-metadata.json", "reviewer-tasks.md", "ticket-context.md"] {
+    for name in ["diff.txt", "changed-files.txt", "repo-docs.md", "change-history.md", "previous-review.md", "previous-decisions.md", "github-discussions.md", "pr-metadata.json", "reviewer-tasks.md", "ticket-context.md"] {
         let source = if name == "ticket-context.md" { base.join("context").join(name) } else { base.join("results").join(name) };
         let target = directory.join(name);
         if target.symlink_metadata().is_ok_and(|meta| meta.file_type().is_symlink()) {
@@ -891,7 +896,7 @@ mod tests {
         let diff = "diff --git a/source b/source\n+complete 🙂 diff evidence\n".repeat(50_000);
         std::fs::write(base.join("results/diff.txt"), &diff).unwrap();
         let context = "full convention and ticket evidence 漢字\n".repeat(4000);
-        for name in ["repo-docs.md", "change-history.md", "previous-review.md", "changed-files.txt"] {
+        for name in ["repo-docs.md", "change-history.md", "previous-review.md", "previous-decisions.md", "github-discussions.md", "changed-files.txt"] {
             std::fs::write(base.join("results").join(name), &context).unwrap();
         }
         std::fs::write(base.join("context/ticket-context.md"), &context).unwrap();
@@ -907,6 +912,12 @@ mod tests {
         }
         assert_eq!(std::fs::read_to_string(base.join("results/evidence/diff.txt")).unwrap(), diff);
         assert_eq!(std::fs::read_to_string(base.join("results/evidence/ticket-context.md")).unwrap(), context);
+        for name in ["previous-decisions.md", "github-discussions.md"] {
+            assert_eq!(std::fs::read_to_string(base.join("results/evidence").join(name)).unwrap(), context);
+            for prompt in ["review-prompt.md", "arbiter-prompt.md"] {
+                assert!(std::fs::read_to_string(base.join("results").join(prompt)).unwrap().contains(&format!("results/evidence/{name}")));
+            }
+        }
         assert!(!base.join("results/evidence/codex-review.md").exists());
         let reviewer = std::fs::read_to_string(base.join("results/review-prompt.md")).unwrap();
         assert!(!reviewer.contains("Current reviewer private evidence"));

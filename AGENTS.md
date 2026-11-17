@@ -51,6 +51,18 @@ The visual view's **Continue review** action (`c`) sends a request to resume the
 
 It shows the full 8b/8c rich block (focused code, location/origin, why it matters, fix, comment) and Accept/Reject/Edit/Add finding/Finish findings menu, not a brief summary or generic question. Prior decisions and edits survive view switches. Questions investigate the same finding and return to its menu without deciding it; reopening the diff never repeats the briefing or mode chooser.
 
+`review-reader.js` also mirrors explicit OpenCode 2 decisions into `results/finding-decisions.json`.
+Report, diff, and metadata hashes bind this history to its source snapshot. Context gathering copies
+the previous report and validated local decisions into common evidence; IDs are round-local and
+rejections are context, not automatic decisions or correctness judgments for a new round.
+Reading saved shared decisions backfills older session-only choices before re-review.
+
+`src/discussion.rs` snapshots paginated GitHub PR comments, review summaries, and inline threads
+with replies for each round. Full discussion Markdown is common evidence; per-thread files and
+the JSON index support the chat finding view. Focus returns exact comment matches or explicitly
+tentative current-head location matches. The orchestrator verifies topics and shows related
+messages before the usual finding menu; comments never control the workflow or authorize posting.
+
 `statistics.js` keeps a private, append-only local event ledger under `~/.prr/statistics/v1/`, outside cleaned workspaces. OpenCode 2 records command starts, bound rounds, original reviewer candidates, arbiter attribution, and explicit human decisions. `/prr-stats` uses a read-only role; it does not replace an active review orchestrator.
 
 The arbiter's final report includes a structured `Review Statistics` section, validated against original and final finding IDs and saved Q&A bounds. Arbiter precision and explicit human correctness judgments are separate measures; accept/reject/edit alone never proves true/false. Missing attribution, unverified claims, and old reviews remain unassessed, and statistics never enter GitHub review bodies.

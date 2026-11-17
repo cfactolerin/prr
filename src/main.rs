@@ -13,6 +13,8 @@ mod cleanup;
 mod opencode;
 mod review;
 mod atlassian;
+mod discussion;
+mod decisions;
 
 #[derive(Parser)]
 #[command(name = "prr", about = "PRR — AI-powered PR review tool")]

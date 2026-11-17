@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process"
-import { createHash } from "node:crypto"
-import { readFileSync, realpathSync, statSync } from "node:fs"
+import { createHash, randomUUID } from "node:crypto"
+import { lstatSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { basename, join } from "node:path"
 import { promisify } from "node:util"
 import { diffFiles, findingRows, referencePatch, safeRepoPath } from "./review-diff.js"
@@ -8,6 +8,39 @@ import { investigationReady } from "./review-state.js"
 
 const execute = promisify(execFile)
 const limit = 32 * 1024 * 1024
+const hash = (text) => createHash("sha256").update(text).digest("hex")
+
+export function relatedConversations(threads, finding, head, overriddenBody) {
+  const normalize = (text) => (text ?? "").replace(/^\*\*Pre-existing:\*\* this predates the PR, so fixing it here is optional\.\s*/, "").trim().replace(/\s+/g, " ")
+  const bodies = [finding.suggested_comment, overriddenBody].filter((body) => body?.trim()).map(normalize)
+  return threads.flatMap((thread) => {
+    if (!Number.isSafeInteger(thread.id) || thread.id < 1 || thread.file !== `github-discussions/thread-${thread.id}.md`) return []
+    const exact = bodies.includes(normalize(thread.root_body)) && thread.path === finding.path
+    const location = thread.path === finding.path && thread.side === "RIGHT" && head && thread.commit_id === head
+      && Number.isSafeInteger(thread.line) && thread.line >= 1 && Number.isSafeInteger(finding.line)
+      && (thread.start_line ?? thread.line) <= finding.line && (finding.start_line ?? finding.line) <= thread.line
+    if (!exact && !location) return []
+    return [{ id: thread.id, file: thread.file, match: exact ? "comment" : "possible_location" }]
+  })
+}
+
+function saveDecisions(result, saved) {
+  const target = join(result.round, "results/finding-decisions.json")
+  try {
+    if (!lstatSync(target).isFile()) throw new Error("Saved decisions must be a regular file")
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error
+  }
+  const temporary = `${target}.${randomUUID()}.tmp`
+  const content = JSON.stringify({ version: 1, ...result.history, revision: saved.revision, decisions: saved.decisions })
+  if (Buffer.byteLength(content) > 2 * 1024 * 1024) throw new Error("Saved decisions exceed the 2 MiB round-history limit")
+  try {
+    writeFileSync(temporary, content, { flag: "wx", mode: 0o600 })
+    renameSync(temporary, target)
+  } finally {
+    rmSync(temporary, { force: true })
+  }
+}
 
 function artifact(round, name, optional = false) {
   const path = join(round, "results", name)
@@ -44,7 +77,10 @@ export function createReviewReader({ state, resolveRound, binary, onDecision = a
     if (latest?.round !== saved.round || !investigationReady(latest)) throw new Error("The review round changed; reopen diff investigation")
     const report = JSON.parse(stdout)
     const files = diffFiles(diff)
-    const result = { snapshot, round, report, files, metadata: metadataText ? JSON.parse(metadataText) : {}, warnings: stderr.trim() }
+    const result = {
+      snapshot, round, report, files, metadata: metadataText ? JSON.parse(metadataText) : {}, warnings: stderr.trim(),
+      history: { report_sha256: hash(reportText), diff_sha256: hash(diff), metadata_sha256: hash(metadataText) },
+    }
     if (cache.size >= 32) cache.delete(cache.keys().next().value)
     cache.set(sessionID, result)
     return result
@@ -81,10 +117,31 @@ export function createReviewReader({ state, resolveRound, binary, onDecision = a
         value.decisions = { ...value.decisions, [findingID]: { status, ...(status === "edited" ? { overridden_body: overriddenBody } : {}) } }
         value.revision++
       }
-    }, operation !== "decision" ? undefined : async () => {
-      try { await onDecision({ sessionID, round: result.round, finding_id: findingID, status }) }
-      catch (error) { return `Decision saved. Statistics warning: ${error.message}` }
+    }, operation === "focus" ? undefined : async (value) => {
+      const warnings = []
+      try { if (Object.keys(value.decisions).length) saveDecisions(result, value) }
+      catch (error) { warnings.push(`Round history warning: ${error.message}. This decision may be missing from the next round.`) }
+      try { if (operation === "decision") await onDecision({ sessionID, round: result.round, finding_id: findingID, status }) }
+      catch (error) { warnings.push(`Statistics warning: ${error.message}`) }
+      if (warnings.length) return `${operation === "decision" ? "Decision saved." : "Shared decisions retained."} ${warnings.join(" ")}`
     })
+    if (operation === "focus") {
+      const source = join(result.round, "results/github-discussions.md")
+      try {
+        const discussion = artifact(result.round, "github-discussions.json", true)
+        const data = discussion ? JSON.parse(discussion) : null
+        const finding = result.report.findings.find((item) => item.id === findingID)
+        saved.github_conversations = {
+          source,
+          matches: relatedConversations(data?.threads ?? [], finding, result.metadata.headRefOid,
+            saved.decisions.find((item) => item.finding_id === findingID)?.overridden_body)
+            .map(({ file, ...match }) => ({ ...match, filePath: join(result.round, "results", file) })),
+          ...(data ? { unavailable: data.unavailable ?? [] } : { warning: "No GitHub discussion snapshot is available for this saved round." }),
+        }
+      } catch {
+        saved.github_conversations = { source, matches: [], warning: "GitHub discussion matching is unavailable; inspect the saved discussion with bounded reads." }
+      }
+    }
     return saved
   }
   return {

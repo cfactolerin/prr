@@ -55,6 +55,8 @@ pub fn run_with_atlassian(
 
     // Fetch Jira ticket if configured and ticket found
     let context_dir = round_dir.join("context");
+    eprintln!("Fetching GitHub discussions...");
+    let discussion_summary = crate::discussion::fetch(&pr_ref, &round_dir.join("results"))?;
     if let Some(tid) = ticket_id.as_ref().filter(|_| !defer_atlassian) {
         if let Some(client) = jira::JiraClient::new(&config) {
             eprintln!("Fetching Jira ticket {tid}...");
@@ -133,6 +135,7 @@ pub fn run_with_atlassian(
     if previous_review.is_some() {
         manifest.push_str(&format!("- Previous review: r{}\n", round_num - 1));
     }
+    manifest.push_str(&format!("- GitHub discussions: {discussion_summary}\n"));
     if !repo_docs.rendered.is_empty() {
         let mut summary = Vec::new();
         if !repo_docs.root_files.is_empty() {
@@ -179,6 +182,11 @@ pub fn run_with_atlassian(
     }
     if let Some(prev) = &previous_review {
         std::fs::write(round_dir.join("results/previous-review.md"), prev)?;
+        let previous_round = pr_dir.join(format!("r{}", round_num - 1));
+        std::fs::write(
+            round_dir.join("results/previous-decisions.md"),
+            crate::decisions::previous(&previous_round, prev),
+        )?;
     }
 
     // Write PR info at PR dir level (used by cleanup to identify owner/repo/number)

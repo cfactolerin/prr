@@ -184,6 +184,16 @@ To override automatic ticket detection:
 
 PRR gathers the context and shows it before dispatching either reviewer. You can add focus areas, ask the session to consult another OpenCode agent for additional context at any point, investigate the final findings, edit or reject proposed comments, and choose whether to approve, comment, request changes, or post nothing. User-requested context agents run in the foreground, so their answers remain in the active session context.
 
+Each round downloads GitHub PR comments, review summaries, and inline threads with replies.
+Related discussions appear in the chat finding view with authors, timestamps, and quoted messages.
+This is a snapshot from the start of the round; unavailable sources are marked incomplete.
+
+OpenCode 2 also saves explicit finding decisions with each round. The next round receives the
+previous report and its accepted, rejected, and edited choices. Reviewers must acknowledge a
+previous rejection and explain the current evidence if they raise that claim again; old decisions
+do not automatically decide new findings. Older rounds without saved decisions are marked
+unavailable rather than treated as accepted.
+
 In the OpenCode 2 terminal, the sidebar keeps seven review stages and the context manifest summary visible: PRR version, PR, title, author, branches, ticket, and round. After arbitration, **Review briefing** shows what changed, the implementation assessment, and findings needing attention. It pauses for an explicit next step, even when no findings were identified. You can ask for an explanation or stop without posting.
 
 With an **APPROVE** verdict, **Continue to review action** skips investigation and the findings walk.
