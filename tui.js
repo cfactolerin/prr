@@ -43,6 +43,17 @@ export function watchDiffRequests(context, rpc) {
   onCleanup(() => { disposed = true; stop() })
 }
 
+export function watchReviewSessions(context, rpc) {
+  const stop = rpc.events.on("openSession", (event) => {
+    const location = context.location ?? context.data.location.default()
+    const route = context.ui.router.current()
+    if (route.type !== "session" || route.sessionID !== event.data.sourceSessionID
+      || event.location.directory !== location.directory || event.location.workspaceID !== location.workspaceID) return
+    context.ui.router.navigate({ type: "session", sessionID: event.data.sessionID })
+  })
+  onCleanup(stop)
+}
+
 export function reviewSidebar(context, props, rpc) {
   const [review, { refetch }] = createResource(
     () => props.sessionID,
@@ -125,7 +136,8 @@ export default Plugin.define({
       stops.push(context.ui.slot({
         append: "app",
         render: () => {
-          watchDiffRequests(context, rpc)
+           watchDiffRequests(context, rpc)
+           watchReviewSessions(context, rpc)
           context.keymap.layer(() => ({ mode: "global", commands: [{
             id: "prr.diff.open", title: "PRR: Open diff investigation", group: "PRR", palette: true,
             slash: { name: "prr-diff" },

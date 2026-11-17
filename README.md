@@ -184,6 +184,79 @@ To override automatic ticket detection:
 
 PRR gathers the context and shows it before dispatching either reviewer. You can add focus areas, ask the session to consult another OpenCode agent for additional context at any point, investigate the final findings, edit or reject proposed comments, and choose whether to approve, comment, request changes, or post nothing. User-requested context agents run in the foreground, so their answers remain in the active session context.
 
+On OpenCode 2, an unchanged saved review opens its existing session at the briefing instead of
+running again. An active review opens its current session. If the head changed, PRR starts a fresh
+review; an older active review of that same PR is stopped first. Unrelated manual sessions are not
+interrupted or limited by the automatic queue.
+
+### Background Review Inbox
+
+```text
+/prr-review-list enable
+/prr-review-list
+/prr-review-list disable
+```
+
+`enable` initializes missing defaults and starts immediately without `/prr-setup` or a configuration
+questionnaire. Existing GitHub, Codex, and OpenCode authentication is required. It watches personal
+review requests and requests to any of your GitHub teams, including outstanding requests. Drafts,
+your own PRs, and closed or merged PRs are excluded. Personal and team requests for the same PR
+share one queue entry and session.
+
+Only one automatic PR review runs at a time. Each gets its own OpenCode session, runs both
+independent reviewers and arbitration, and stops at the review briefing without posting anything.
+Manual reviews retain their context confirmation and normal interactive workflow. The automatic
+limit does not serialize unrelated manual reviews.
+
+The inbox groups **Ready**, **Running**, **Queued**, and **Needs attention**, in that order.
+Rows show repository, linked PR number, full title, waiting hours, verdict, and findings count.
+Running rows also show the current stage. Ready reviews show oldest-waiting first; queued rows show
+their execution position. Waiting starts when a review is requested and the PR is ready, not when
+the PR is created. Duplicate requests, new commits, and retries do not reset that waiting period.
+
+Open a Ready review to resume its briefing and choose diff or chat investigation. For an APPROVE
+verdict, the inbox also offers an approval shortcut: it shows the verdict and findings count,
+then opens the existing session's confirmation for `LGTM!` with no inline comments. Findings
+remain unchanged. Posting still requires confirmation and the usual shell permission prompt.
+The live head, base branch, open state, and draft status are checked before submission.
+
+New commits invalidate unfinished or ready results and trigger a fresh review after a short
+settling delay. Submitted GitHub reviews complete the task; a lingering team request or later push
+does not reopen it. Only an explicit re-request starts another waiting period. Interrupted reviews
+resume completed checkpoints where possible and retry incomplete work. After bounded retries,
+the PR moves to Needs attention and other queued reviews continue.
+
+`disable` stops polling and new automatic review starts. The running review finishes at its
+briefing, and the queue remains saved. Viewing, investigation, explicit approval, and manual
+`/prr-start` remain available. Enabling again resumes the queue and catches up with GitHub.
+
+Settings are created in `~/.prr/background.yml`:
+
+```yaml
+enabled: true
+poll_minutes: 5
+max_attempts: 3
+settle_seconds: 60
+model:
+  providerID: openai
+  id: gpt-6.1-sol
+```
+
+The initial background model comes from OpenCode's configured default, not a hardcoded model.
+An existing background model choice is preserved; `null` lets new sessions use the current server
+default. Codex continues using `codex_model` in the existing PRR runtime configuration. Editing
+`poll_minutes` affects the next polling check without changing manual sessions.
+
+The readable queue is `~/.prr/review-queue.json`. Updates use a process lock and atomic replacement;
+do not edit it while reviews are running. The queue contains review metadata and session references,
+not credentials or review source code.
+
+On macOS, enable installs `~/Library/LaunchAgents/com.prr.review-inbox.plist`. It uses the local
+`opencode api` CLI to wake the managed OpenCode background service, so reviews continue with the UI
+closed while you are logged in and the Mac is awake. Sleep pauses work; waking catches up. Keep the owning project
+directory and OpenCode executable available. Background mode currently targets the local managed
+OpenCode 2 service, not a remote or standalone server.
+
 Each round downloads GitHub PR comments, review summaries, and inline threads with replies.
 Related discussions appear in the chat finding view with authors, timestamps, and quoted messages.
 This is a snapshot from the start of the round; unavailable sources are marked incomplete.

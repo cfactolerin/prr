@@ -118,6 +118,8 @@ test("forced-colour GitHub CLI output still supplies all discussion sources", (t
   const { context } = fixture(t, "", true)
   const round = context()
   const manifest = readFileSync(join(round, "context-manifest.md"), "utf8")
+  const { version } = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"))
+  assert.ok(manifest.includes(`- **PRR**: v${version}`), "Packaged binary must match the package version")
   assert.match(manifest, /GitHub discussions: 1 inline threads, 1 PR comments, 1 review summaries/)
   assert.ok(!manifest.includes("(incomplete)"))
   const discussion = readFileSync(join(round, "results/github-discussions.md"), "utf8")

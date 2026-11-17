@@ -23,18 +23,33 @@ pub fn run(workspace: &Path, pr: &str, payload: &str) -> Result<(), Box<dyn std:
     if !is_commit(&reviewed_head) || payload["commit_id"].as_str() != Some(reviewed_head.as_str()) {
         return Err("review payload commit does not match the PRR clone".into());
     }
-    let current_head = gh(&[
+    let current = gh(&[
         "pr", "view", &target.number.to_string(), "--repo", &target.gh_repo(),
-        "--json", "headRefOid", "--jq", ".headRefOid",
+        "--json", "headRefOid,state,isDraft,baseRefName",
     ])?;
-    if current_head.trim() != reviewed_head {
-        return Err("pull request head changed after this review; start a new PRR round before posting".into());
-    }
+    let current: Value = serde_json::from_str(&current)?;
+    let metadata: Value = serde_json::from_str(
+        &std::fs::read_to_string(round.join("results/pr-metadata.json"))?,
+    )?;
+    validate_live_pr(&current, &reviewed_head, metadata["baseRefName"].as_str())?;
 
     let endpoint = format!("repos/{}/pulls/{}/reviews", target.gh_repo(), target.number);
     let response = gh(&["api", &endpoint, "--method", "POST", "--input", &payload_path.to_string_lossy()])?;
     let response = response.trim();
     println!("{}", if response.is_empty() { "GitHub review posted" } else { response });
+    Ok(())
+}
+
+fn validate_live_pr(current: &Value, reviewed_head: &str, base: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    if current["headRefOid"].as_str() != Some(reviewed_head) {
+        return Err("pull request head changed after this review; start a new PRR round before posting".into());
+    }
+    if current["state"].as_str() != Some("OPEN") || current["isDraft"].as_bool() != Some(false) {
+        return Err("pull request must still be open and ready for review before posting".into());
+    }
+    if base.is_some_and(|name| current["baseRefName"].as_str() != Some(name)) {
+        return Err("pull request base branch changed after this review; start a new PRR round before posting".into());
+    }
     Ok(())
 }
 
@@ -137,6 +152,25 @@ mod tests {
     use serde_json::json;
 
     const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    #[test]
+    fn test_live_pr_must_match_the_review_and_still_be_ready() {
+        let current = json!({"headRefOid": SHA, "state": "OPEN", "isDraft": false, "baseRefName": "main"});
+        assert!(validate_live_pr(&current, SHA, Some("main")).is_ok());
+        assert!(validate_live_pr(&current, SHA, None).is_ok());
+        for (key, value) in [
+            ("headRefOid", json!("a".repeat(40))),
+            ("state", json!("CLOSED")),
+            ("state", json!("MERGED")),
+            ("isDraft", json!(true)),
+            ("isDraft", json!(null)),
+            ("baseRefName", json!("other")),
+        ] {
+            let mut changed = current.clone();
+            changed[key] = value;
+            assert!(validate_live_pr(&changed, SHA, Some("main")).is_err(), "{key}");
+        }
+    }
 
     fn round_fixture() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().unwrap();

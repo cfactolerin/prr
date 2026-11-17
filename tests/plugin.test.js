@@ -6,6 +6,7 @@ import { test } from "node:test"
 import { parse } from "yaml"
 import { atlassianReadTools } from "../atlassian.js"
 import PrrPlugin from "../index.js"
+import { createInboxStore } from "../review-inbox.js"
 
 function fakeV2Context({ agents = [], sessionAgent = "build", model } = {}) {
   const registered = { hooks: {}, sessionHooks: {}, tools: [], agents: new Map(agents.map((agent) => [agent.id, agent])), skills: [], commands: [] }
@@ -79,6 +80,7 @@ test("registers PRR commands, agents, skills, and binary environment", async () 
 
   assert.deepEqual(Object.keys(config.command).sort(), [
     "prr-cleanup",
+    "prr-review-list",
     "prr-setup",
     "prr-start",
     "prr-stats",
@@ -86,6 +88,7 @@ test("registers PRR commands, agents, skills, and binary environment", async () 
   assert.deepEqual(Object.keys(config.agent).sort(), [
     "prr-arbiter",
     "prr-codex-reviewer",
+    "prr-inbox",
     "prr-opencode-reviewer",
     "prr-orchestrator",
     "prr-setup-orchestrator",
@@ -555,7 +558,7 @@ test("V2 setup registers PRR tools, agents, skills, commands, and binary environ
   await PrrPlugin.setup(ctx)
 
   assert.deepEqual(registered.tools.map((item) => item.name).sort(), [
-    "prr_artifact", "prr_atlassian_context", "prr_bind_round", "prr_capability", "prr_codex", "prr_codex_health", "prr_findings", "prr_progress", "prr_read", "prr_stats_record", "prr_stats_summary", "prr_write",
+    "prr_artifact", "prr_atlassian_context", "prr_bind_round", "prr_capability", "prr_codex", "prr_codex_health", "prr_findings", "prr_inbox", "prr_progress", "prr_read", "prr_stats_record", "prr_stats_summary", "prr_write",
   ])
   for (const item of registered.tools) assert.equal(item.options.codemode, false)
   const read = registered.tools.find((item) => item.name === "prr_read")
@@ -563,7 +566,7 @@ test("V2 setup registers PRR tools, agents, skills, commands, and binary environ
   assert.equal(read.input.properties.limit.maximum, 2000)
 
   assert.deepEqual([...registered.agents.keys()].sort(), [
-    "build", "prr-arbiter", "prr-codex-reviewer", "prr-opencode-reviewer", "prr-orchestrator", "prr-setup-orchestrator", "prr-stats",
+    "build", "prr-arbiter", "prr-codex-reviewer", "prr-inbox", "prr-opencode-reviewer", "prr-orchestrator", "prr-setup-orchestrator", "prr-stats",
   ])
   const build = registered.agents.get("build")
   assert.ok(build.permissions.some((rule) => rule.action === "prr_read" && rule.effect === "deny"))
@@ -598,9 +601,9 @@ test("V2 setup registers PRR tools, agents, skills, commands, and binary environ
   assert.ok(codexReviewer.permissions.some((rule) => rule.action === "external_directory"
     && !rule.resource.startsWith("~") && rule.resource.endsWith("/.prr/workspace/*/r*/repo/**")))
 
-  assert.deepEqual(registered.skills.map((skill) => skill.id).sort(), ["prr-cleanup", "prr-setup", "prr-start", "prr-stats"])
+  assert.deepEqual(registered.skills.map((skill) => skill.id).sort(), ["prr-cleanup", "prr-review-list", "prr-setup", "prr-start", "prr-stats"])
   assert.match(registered.skills.find((skill) => skill.id === "prr-start").path, /skills\/prr-start\/SKILL\.md$/)
-  assert.deepEqual(registered.commands.map((command) => command.name).sort(), ["prr-cleanup", "prr-setup", "prr-start", "prr-stats"])
+  assert.deepEqual(registered.commands.map((command) => command.name).sort(), ["prr-cleanup", "prr-review-list", "prr-setup", "prr-start", "prr-stats"])
 
   const event = { env: {} }
   registered.hooks["create.before"](event)
@@ -638,6 +641,70 @@ test("statistics command preserves an active review agent and cannot mutate deci
   assert.equal(calls[0][0], "prompt")
   assert.match(calls[0][1].text, /acme\/repo#1/)
   await assert.rejects(registered.tools.find((tool) => tool.name === "prr_stats_record").execute({ operation: "finish", status: "posted" }, { agent: "prr-stats", sessionID: "review" }), /not allowed/)
+})
+
+test("V2 manual commands work while background reviews are disabled and reuse an already starting session", async (t) => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "prr-manual-inbox-")))
+  const previousHome = process.env.HOME
+  const previousPath = process.env.PATH
+  process.env.HOME = root
+  const bin = join(root, "tools")
+  mkdirSync(bin)
+  writeFileSync(join(bin, "gh"), `#!${process.execPath}
+process.stdout.write(JSON.stringify({head:{sha:"${"a".repeat(40)}"},base:{ref:"main"},state:"open",draft:false}))
+`)
+  chmodSync(join(bin, "gh"), 0o755)
+  process.env.PATH = `${bin}:${previousPath}`
+  t.after(() => { process.env.HOME = previousHome; process.env.PATH = previousPath; rmSync(root, { recursive: true, force: true }) })
+  const { ctx, registered, calls } = fakeV2Context()
+  ctx.location = { directory: root }
+  const dispose = await PrrPlugin.setup(ctx)
+  t.after(dispose)
+  const start = registered.commands.find((command) => command.name === "prr-start")
+  await start.execute({ sessionID: "first", prompt: { text: "acme/repo#1" }, delivery: "steer" })
+  await start.execute({ sessionID: "second", prompt: { text: "acme/repo#2" }, delivery: "steer" })
+  assert.equal(calls.filter(([name]) => name === "prompt").length, 2)
+  const store = createInboxStore(join(root, ".prr"))
+  assert.equal(store.config().enabled, false)
+  assert.equal(store.read().entries.length, 2)
+  await start.execute({ sessionID: "other", prompt: { text: "acme/repo#1" }, delivery: "steer" })
+  assert.equal(calls.filter(([name]) => name === "prompt").length, 2)
+  assert.equal(registered.rpc.events.at(-1).name, "openSession")
+  assert.equal(registered.rpc.events.at(-1).data.sessionID, "first")
+})
+
+test("V2 unattended sessions cannot manage the inbox, continue the briefing, or decide findings", async (t) => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "prr-background-gates-")))
+  const previousHome = process.env.HOME
+  process.env.HOME = root
+  t.after(() => { process.env.HOME = previousHome; rmSync(root, { recursive: true, force: true }) })
+  const { ctx, registered } = fakeV2Context()
+  ctx.location = { directory: root }
+  const dispose = await PrrPlugin.setup(ctx)
+  t.after(dispose)
+  const store = createInboxStore(join(root, ".prr"))
+  store.transaction((queue) => { queue.entries.push({ key: "acme/repo#1", sessionID: "auto", mode: "background", status: "running" }) })
+  const context = { sessionID: "auto", agent: "prr-orchestrator" }
+  const tool = (name) => registered.tools.find((tool) => tool.name === name)
+  await assert.rejects(tool("prr_inbox").execute({ operation: "enable" }, context), /Unattended reviews cannot/)
+  await assert.rejects(tool("prr_progress").execute({ step: 7, status: "in_progress" }, context), /stop at the review briefing/)
+  await assert.rejects(tool("prr_progress").execute({ step: 6, status: "completed" }, context), /requires human continuation/)
+  await assert.rejects(tool("prr_findings").execute({ operation: "get" }, context), /cannot decide findings/)
+  await tool("prr_progress").execute({ step: 6, status: "in_progress" }, context)
+  const event = { ...context, system: [], tools: { question: {}, shell: {}, prr_read: {}, prr_inbox: {} } }
+  await registered.sessionHooks.context(event)
+  assert.deepEqual(event.tools, {})
+  assert.ok(event.system.some((part) => part.text.includes("End your turn now")))
+  const manual = { sessionID: "manual", agent: "prr-orchestrator", system: [], tools: { question: {}, prr_read: {} } }
+  await registered.sessionHooks.context(manual)
+  assert.deepEqual(Object.keys(manual.tools), ["question", "prr_read"])
+  store.transaction((queue) => { queue.entries[0].mode = "interactive"; queue.entries[0].approvalRequested = true })
+  const approval = { ...context, system: [], tools: { question: {} } }
+  await registered.sessionHooks.context(approval)
+  assert.ok(approval.system.some((part) => part.text.includes("Follow prr-start INBOX_APPROVAL")))
+  assert.ok(!approval.system.some((part) => part.text.includes("Keep the briefing paused until an explicit choice")))
+  await tool("prr_progress").execute({ step: 6, status: "completed" }, context)
+  assert.equal(store.read().entries[0].approvalRequested, undefined)
 })
 
 test("V2 briefing reminders offer the APPROVE shortcut to resumed sessions only", async () => {

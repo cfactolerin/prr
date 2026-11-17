@@ -72,3 +72,31 @@ test("sidebar renders progress, context and links, refreshes live, and isolates 
   `], { cwd: new URL("..", import.meta.url), encoding: "utf8", timeout: 30_000 })
   assert.equal(result.status, 0, result.stdout + result.stderr)
 })
+
+test("review inbox navigation targets only the requesting terminal session and location", () => {
+  const result = spawnSync(process.execPath, ["--conditions=browser", "--input-type=module", "-e", `
+    import assert from "node:assert/strict"
+    import { testRender } from "@opentui/solid"
+    import { createElement } from "@opentui/solid"
+    import { watchReviewSessions } from "./tui.js"
+    let handler
+    let stopped = false
+    const destinations = []
+    const context = {
+      location: {directory: "/repo"},
+      ui: {router: {current: () => ({type:"session", sessionID:"source"}), navigate: (route) => destinations.push(route)}},
+    }
+    const rpc = {events:{on:(name, callback) => {assert.equal(name,"openSession"); handler=callback; return () => {stopped=true}}}}
+    const view = await testRender(() => {watchReviewSessions(context,rpc); return createElement("box")}, {width:20,height:3})
+    const data = {sourceSessionID:"source", sessionID:"target", request:"one"}
+    try {
+      handler({location:{directory:"/other"}, data})
+      handler({location:{directory:"/repo"}, data:{...data,sourceSessionID:"other"}})
+      assert.equal(destinations.length,0)
+      handler({location:{directory:"/repo"}, data})
+      assert.deepEqual(destinations,[{type:"session",sessionID:"target"}])
+    } finally {await view.dispose()}
+    assert.equal(stopped,true)
+  `], { cwd: new URL("..", import.meta.url), encoding: "utf8", timeout: 30_000 })
+  assert.equal(result.status, 0, result.stdout + result.stderr)
+})

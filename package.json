@@ -1,6 +1,6 @@
 {
   "name": "opencode-prr",
-  "version": "0.36.0",
+  "version": "0.37.0",
   "description": "OpenCode plugin for independent OpenCode and Codex pull request reviews",
   "type": "module",
   "main": "./index.js",
@@ -22,6 +22,9 @@
     "review-panel.js",
     "text-reader.js",
     "statistics.js",
+    "review-inbox.js",
+    "background-review.js",
+    "background-service.js",
     "tui.js",
     "README.md"
   ],

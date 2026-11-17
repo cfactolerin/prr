@@ -30,6 +30,10 @@ const findingState = {
 export const reviewRpc = Rpc.define({
   id: "prr.review",
   methods: {
+    wake: {
+      input: { type: "object", properties: {}, additionalProperties: false },
+      output: { type: "null" },
+    },
     decide: {
       input: {
         type: "object", properties: {
@@ -106,6 +110,11 @@ export const reviewRpc = Rpc.define({
     },
   },
   events: {
+    openSession: { schema: {
+      type: "object",
+      properties: { sourceSessionID: { type: "string" }, sessionID: { type: "string" }, request: { type: "string" } },
+      required: ["sourceSessionID", "sessionID", "request"], additionalProperties: false,
+    } },
     updated: { schema: session },
     openDiff: { schema: { ...session, properties: { ...session.properties, diffRequest: { type: "string" } }, required: ["sessionID", "diffRequest"] } },
   },

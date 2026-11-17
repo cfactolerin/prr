@@ -28,6 +28,28 @@ Do not infer that a role is unavailable merely because it is absent from a displ
 
 ## Preflight
 
+### Saved-session and unattended entry
+
+When the plugin routes an unchanged saved review to this session, resume at Phase 6 using its
+bound round and saved report. Do not reset progress, gather context, or launch another review.
+Keep all finding decisions and approved edits. An existing unanswered form remains the user's
+next action; navigation does not answer or replace it.
+
+Only when the plugin's system instructions mark this session as unattended, run Phases 1–6
+without questions: skip workspace deletion in Phase 1, proceed directly after context in Phase 3,
+require both independent reviewers, and stop at the briefing with step 6 in progress and step 7
+pending. End the turn without a question form so the worker can process the next PR. A failure
+blocks the stage and ends the turn for bounded worker retries; never grant permissions or reduce
+coverage. Retain completed stages after interruption and retry only incomplete work. These
+exceptions do not apply to ordinary manual `/prr-start`.
+
+For an explicit inbox approval handoff with `INBOX_APPROVAL`, revalidate the saved APPROVE report
+and current PR head, show its verdict and findings count, then enter the Phase 9 posting preview
+with exactly `LGTM!` and an empty comments array. Do not accept Pending findings or post their
+inline/reference/body comments. Preserve all existing decisions. The user must explicitly confirm
+the exact approval payload, then grant the usual `post-review` shell permission. Cancel returns
+to the briefing; this flag is round-local and never applies to ordinary manual posting.
+
 1. Run exactly `"$PRR_BIN" config runtime` as one standalone shell command and parse its JSON output. Do not prepend `printf`, `echo`, `pwd`, `env`, or any other command; do not use `&&`, `;`, a pipe, `bash -lc`, or retry with a different form. Never read `~/.prr/config.yml`; it may contain credentials.
 2. If `configured` is false, tell the user to run `/prr-setup` and stop.
 3. Use the returned `workspace_path`, `codex_timeout`, and `arbiter_rounds`. The Codex tools read `codex_model` from PRR configuration themselves; do not pass or override it in reviewer dispatches.
@@ -710,6 +732,14 @@ List all Accepted and Edited entries, split into inline and report-only groups. 
 Omit **Review more findings** when no finding was ever parsed or added, since the walk has nothing to show.
 
 ## Phase 9: Generate and Post GitHub Review
+
+For `INBOX_APPROVAL`, skip 9a and initialize the preview to APPROVE, exactly `LGTM!`, and no inline
+or report-only comments. Complete step 6 and mark step 7 completed as bypassed without setting
+`view`, without deciding findings, and without starting investigation. Show the saved verdict and findings count, then retain the usual 9b–9e
+confirmation, fresh-metadata, payload, permission, and posting safeguards. Do not accept findings
+or add the report's body sections. If the user chooses another action or wants findings included,
+clear this flag and build a fresh normal preview from shared decisions. Cancellation clears the
+flag and returns to the briefing without posting. Ordinary manual posting is unchanged.
 
 ### 9a. Regenerate Body
 
