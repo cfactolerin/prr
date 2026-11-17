@@ -90,7 +90,7 @@ export function createInboxStore(directory) {
         const current = config()
         atomic(configPath, stringify({ ...current, enabled: true, model: current.model ?? model }))
         queue.owner = owner
-        queue.lastPoll = null
+        if (!current.enabled) queue.lastPoll = null
         const runtimePath = join(directory, "config.yml")
         if (!existsSync(runtimePath)) writeFileSync(runtimePath, "workspace_path: ~/.prr/workspace\nagents:\n  - opencode\n  - codex\n", { flag: "wx", mode: 0o600 })
       })

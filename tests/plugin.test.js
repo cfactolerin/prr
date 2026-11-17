@@ -136,6 +136,9 @@ test("registers PRR commands, agents, skills, and binary environment", async () 
   assert.equal(config.agent["prr-orchestrator"].permission.bash['echo "$PRR_BIN"; "$PRR_BIN" config runtime'], "allow")
   assert.equal(config.agent["prr-orchestrator"].permission.prr_post_review, undefined)
   assert.equal(config.agent["prr-orchestrator"].permission.bash['"$PRR_BIN" post-review * --payload *'], "ask")
+  for (const name of ["prr-inbox", "prr-orchestrator"]) {
+    assert.equal(config.agent[name].permission.bash['node "$PRR_PLUGIN_ROOT/background-install.js"'], "ask")
+  }
   assert.equal(config.agent["prr-orchestrator"].permission.prr_codex, "deny")
   const setupBash = config.agent["prr-setup-orchestrator"].permission.bash
   assert.equal(setupBash["bash -lc 'command -v gh'"], "allow")
@@ -597,6 +600,10 @@ test("V2 setup registers PRR tools, agents, skills, commands, and binary environ
   assert.ok(setup.permissions.some((rule) => rule.action === "shell"
     && rule.resource === "bash -lc 'codex login status'" && rule.effect === "allow"))
   const codexReviewer = registered.agents.get("prr-codex-reviewer")
+  for (const name of ["prr-inbox", "prr-orchestrator"]) {
+    assert.ok(registered.agents.get(name).permissions.some((rule) => rule.action === "shell"
+      && rule.resource === 'node "$PRR_PLUGIN_ROOT/background-install.js"' && rule.effect === "ask"))
+  }
   assert.equal(codexReviewer.hidden, false)
   assert.ok(codexReviewer.permissions.some((rule) => rule.action === "external_directory"
     && !rule.resource.startsWith("~") && rule.resource.endsWith("/.prr/workspace/*/r*/repo/**")))

@@ -28,7 +28,7 @@ import { createStatistics } from "./statistics.js"
 import { readTextFile } from "./text-reader.js"
 import { createInboxStore } from "./review-inbox.js"
 import { createBackgroundReviews, inboxCommand } from "./background-review.js"
-import { installBackgroundService, pauseBackgroundService } from "./background-service.js"
+import { inspectBackgroundService } from "./background-service.js"
 
 const packageRoot = dirname(fileURLToPath(import.meta.url))
 const assetRoot = join(packageRoot, ".opencode")
@@ -843,8 +843,7 @@ async function setup(ctx) {
       ctx, store: createInboxStore(join(homedir(), ".prr")), reviewState, binary,
       resolveRound: (round) => roundRoot(configuredWorkspace(), round),
       emit: (name, data) => registration.events.emit(name, data),
-      install: installBackgroundService,
-      pause: pauseBackgroundService,
+      inspectService: inspectBackgroundService,
       onStart: async (sessionID, entry) => {
         const runID = randomUUID()
         await reviewState.reset(sessionID, runID)

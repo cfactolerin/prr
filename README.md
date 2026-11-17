@@ -192,13 +192,27 @@ interrupted or limited by the automatic queue.
 ### Background Review Inbox
 
 ```text
+/prr-review-list install
 /prr-review-list enable
 /prr-review-list
 /prr-review-list disable
 ```
 
-`enable` initializes missing defaults and starts immediately without `/prr-setup` or a configuration
-questionnaire. Existing GitHub, Codex, and OpenCode authentication is required. It watches personal
+`install` is a separate, permission-gated macOS setup action. It leaves a matching registered
+service alone; it registers a missing service or updates a changed definition only after explicit
+confirmation. It does not enable reviews. The installer still uses Node.js and launchctl, so it
+may trigger endpoint-security rules. If registration was blocked, obtain security approval before
+using this command. Do not disable protection, change interpreters to evade a rule, or automatically
+retry a refusal.
+
+An existing matching registration is reused, including installations made by earlier versions.
+You do not need to run `install` again merely to update PRR or re-enable reviews.
+
+Once the service is installed, `enable` initializes missing defaults and starts without
+`/prr-setup` or a configuration questionnaire. It only inspects the service read-only and changes
+the review flag; it never creates or registers a LaunchAgent. If the service is missing, unloaded,
+or incompatible, it stops with explicit installation instructions. Existing GitHub, Codex,
+and OpenCode authentication is required. It watches personal
 review requests and requests to any of your GitHub teams, including outstanding requests. Drafts,
 your own PRs, and closed or merged PRs are excluded. Personal and team requests for the same PR
 share one queue entry and session.
@@ -229,6 +243,8 @@ the PR moves to Needs attention and other queued reviews continue.
 `disable` stops polling and new automatic review starts. The running review finishes at its
 briefing, and the queue remains saved. Viewing, investigation, explicit approval, and manual
 `/prr-start` remain available. Enabling again resumes the queue and catches up with GitHub.
+The LaunchAgent stays registered while reviews are disabled. Its scheduled wake-up is a no-op for
+GitHub discovery and new reviews; toggling does not call bootstrap or bootout.
 
 Settings are created in `~/.prr/background.yml`:
 
@@ -251,7 +267,8 @@ The readable queue is `~/.prr/review-queue.json`. Updates use a process lock and
 do not edit it while reviews are running. The queue contains review metadata and session references,
 not credentials or review source code.
 
-On macOS, enable installs `~/Library/LaunchAgents/com.prr.review-inbox.plist`. It uses the local
+On macOS, explicit installation creates `~/Library/LaunchAgents/com.prr.review-inbox.plist`.
+Routine enable/disable commands do not modify this file or re-register the service. It uses the local
 `opencode api` CLI to wake the managed OpenCode background service, so reviews continue with the UI
 closed while you are logged in and the Mac is awake. Sleep pauses work; waking catches up. Keep the owning project
 directory and OpenCode executable available. Background mode currently targets the local managed

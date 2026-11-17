@@ -20,6 +20,7 @@ test("enable and disable are deterministic command operations, not model decisio
   const calls = []
   const background = { operation: async (...input) => { calls.push(input); return { enabled: input[0].operation === "enable" } } }
   assert.equal(await inboxCommand(background, "", "session"), null)
+  assert.equal(await inboxCommand(background, "install", "session"), null)
   assert.deepEqual(await inboxCommand(background, " enable ", "session"), { enabled: true })
   assert.deepEqual(await inboxCommand(background, "disable", "session"), { enabled: false })
   assert.deepEqual(calls, [[{ operation: "enable" }, "session"], [{ operation: "disable" }, "session"]])
@@ -42,6 +43,7 @@ function fixture(t) {
   let clock = Date.parse("2026-11-17T10:00:00Z")
   let remote = [pr(), pr(2)]
   let forms = []
+  let service = { installed: true, compatible: true, loaded: true, registeredCompatible: true }
   const ctx = {
     location: { directory: root },
     model: { default: async () => ({ location: { directory: root }, data: { providerID: "example", id: "default", privateExtra: "not saved" } }) },
@@ -75,7 +77,7 @@ function fixture(t) {
   const manager = () => createBackgroundReviews({
     ctx, store, reviewState: state, binary, resolveRound: (round) => round,
     emit: async (...args) => calls.push(["emit", ...args]),
-    install: async (input) => calls.push(["install", input]),
+    inspectService: async (input) => { calls.push(["inspectService", input]); return service },
     executable: () => "/bin/opencode",
     github, now: () => clock,
   })
@@ -108,6 +110,7 @@ function fixture(t) {
     advance: (minutes) => { clock += minutes * 60_000 },
     remote: (value) => { remote = value },
     forms: (value) => { forms = value },
+    service: (value) => { service = value },
   }
 }
 
@@ -123,17 +126,51 @@ test("worker is inert until enabled and starts only one review", async (t) => {
   assert.equal(f.calls.filter(([name]) => name === "create").length, 1)
   const created = f.calls.find(([name]) => name === "create")[1]
   assert.deepEqual(created.permissions, backgroundPermissions)
+  const installer = 'node "$PRR_PLUGIN_ROOT/background-install.js"'
+  assert.equal(backgroundPermissions.findLast((rule) => rule.action === "shell" && (rule.resource === "*" || rule.resource === installer)).effect, "deny")
   assert.equal(created.model.id, "chosen")
   assert.match(f.calls.find(([name]) => name === "prompt")[1].text, /FULL independent OpenCode and Codex/)
 })
 
-test("enable initializes defaults, resolves the model envelope and installs the wake service", async (t) => {
+test("enable initializes defaults and inspects the service without registering it", async (t) => {
   const f = fixture(t)
   await f.worker.operation({ operation: "enable" }, "inbox")
   await f.worker.tick()
   assert.deepEqual(f.store.config().model, { providerID: "example", id: "default" })
-  assert.equal(f.calls.find(([name]) => name === "install")[1].executable, "/bin/opencode")
+  assert.equal(f.calls.find(([name]) => name === "inspectService")[1].executable, "/bin/opencode")
+  assert.equal(f.calls.filter(([name]) => name === "install" || name === "pause").length, 0)
   assert.equal(f.store.config().poll_minutes, 5)
+})
+
+test("missing and unloaded services require explicit installation, never automatic repair", async (t) => {
+  const f = fixture(t)
+  for (const state of [
+    { installed: false, compatible: false, loaded: false },
+    { installed: true, compatible: true, loaded: false },
+    { installed: true, compatible: true, loaded: true, registeredCompatible: false },
+  ]) {
+    f.service(state)
+    await assert.rejects(f.worker.operation({ operation: "enable" }, "inbox"), /explicit installation/)
+    assert.equal(f.store.config().enabled, false)
+    assert.ok(f.calls.every(([name]) => name === "inspectService"))
+  }
+  await assert.rejects(f.worker.operation({ operation: "install" }, "inbox"), /Unknown PRR inbox operation/)
+})
+
+test("repeated enable preserves polling state and disable never inspects or unloads the service", async (t) => {
+  const f = fixture(t)
+  await f.worker.operation({ operation: "enable" }, "inbox")
+  await f.worker.tick()
+  const previous = f.store.read().lastPoll
+  const polls = f.calls.filter(([name]) => name === "discover").length
+  await f.worker.operation({ operation: "enable" }, "inbox")
+  await f.worker.tick()
+  assert.equal(f.store.read().lastPoll, previous)
+  assert.equal(f.calls.filter(([name]) => name === "discover").length, polls)
+  const checks = f.calls.filter(([name]) => name === "inspectService").length
+  await f.worker.operation({ operation: "disable" }, "inbox")
+  assert.equal(f.calls.filter(([name]) => name === "inspectService").length, checks)
+  assert.equal(f.store.config().enabled, false)
 })
 
 test("disable lets the running review finish but does not fetch or start queued reviews", async (t) => {

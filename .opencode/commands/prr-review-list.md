@@ -1,5 +1,5 @@
 ---
-description: Show the review inbox, or enable/disable automatic background reviews.
+description: Show the review inbox, enable/disable reviews, or explicitly install the background service.
 agent: prr-inbox
 ---
 

@@ -24,6 +24,7 @@ permission:
     "*": deny
   bash:
     "*": deny
+    'node "$PRR_PLUGIN_ROOT/background-install.js"': ask
     '"$PRR_BIN" config runtime': allow
     'printf ''%s\n'' "$PRR_BIN" && "$PRR_BIN" config runtime': allow
     'echo "$PRR_BIN"; "$PRR_BIN" config runtime': allow

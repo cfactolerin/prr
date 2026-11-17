@@ -72,8 +72,13 @@ The seven stages include a user-gated Review briefing between arbiter synthesis 
 `/prr-review-list` shows the local inbox; its `enable` and `disable` arguments control the automatic
 worker. `review-inbox.js` owns the private text queue and GitHub request lifecycle.
 `background-review.js` owns background sessions and manual-session reuse. `background-service.js`
-registers a macOS LaunchAgent that wakes the local managed OpenCode service through the authenticated
-CLI. Only the owning location polls, and only one automatic review runs at a time. Background
+inspects the macOS LaunchAgent read-only; routine enable/disable only change the saved review flag.
+`/prr-review-list install` uses the explicit `background-install.js` shell command with an `ask`
+permission. Only that installer may create/update/register the service; an unchanged registered
+definition is a no-op. The installer still uses Node.js and requires endpoint-security approval
+when registration was blocked. Never repair installation silently or change runtimes to evade a rule.
+The LaunchAgent wakes the local managed OpenCode service through the authenticated CLI.
+Only the owning location polls, and only one automatic review runs at a time. Background
 sessions cannot ask questions, post reviews, or continue beyond step 6. Opening a saved result
 restores interaction without discarding unrelated session permission rules. Manual sessions keep
 their context gate, model inheritance, decisions, and posting confirmation.

@@ -1,19 +1,46 @@
 ---
 name: prr-review-list
-description: Show the PRR review inbox with waiting time, verdicts, and findings; enable or disable automatic background reviews.
+description: Show the PRR inbox, toggle background reviews, or explicitly install the macOS background service.
 compatibility: OpenCode 2 with the PRR plugin installed.
 ---
 
 # PRR Review Inbox
 
 Read the command arguments exactly. With no arguments call `prr_inbox` operation `list`.
-For `enable` or `disable`, call the matching operation once, then display the returned inbox.
-Reject any other arguments with the three supported command forms; do not guess a PR or a setting.
+For `enable` or `disable`, the command handler already applies the matching operation; do not
+repeat it when the prompt says it completed. Otherwise call the matching operation once.
+Display the returned inbox. Reject arguments other than empty, `enable`, `disable`, or `install`.
 
-Enabling initializes missing defaults without overwriting existing configuration, installs the
-local macOS worker, and immediately starts discovery. Disabling stops automatic polling and new
+Enabling initializes missing defaults without overwriting existing configuration, checks the
+existing service read-only, and starts discovery. It never creates, registers, or reloads a
+LaunchAgent. Missing, unloaded, or incompatible service definitions require explicit installation;
+do not repair them from an enable failure. Disabling changes only the saved flag; it never calls
+launchctl or unregisters the service. It stops automatic polling and new
 review starts, preserves the queue, and lets the active automatic review finish at its briefing.
 It never disables manual `/prr-start` or investigation and posting from saved reviews.
+
+## Explicit installation
+
+For `install`, explain that this is a separate system setup action that creates or updates
+`~/Library/LaunchAgents/com.prr.review-inbox.plist` and registers it with launchctl.
+The installer still uses Node.js and may trigger endpoint-security rules. It is not a workaround
+for Cortex. If endpoint protection blocked registration, require security approval before retrying;
+never disable protection, alter exclusions, change runtimes to evade detection, or retry a refusal.
+
+Use the question tool with **Install approved service** and **Cancel**. Only on explicit confirmation
+run exactly:
+
+```bash
+node "$PRR_PLUGIN_ROOT/background-install.js"
+```
+
+The shell's `ask` rule supplies a separate permission prompt. Do not invoke the installer through
+a plugin tool, an alternate command, or a subagent. An already matching registered service is left
+alone. Installation does not enable reviews, clear the queue, or change credentials. After a
+successful installation, show `/prr-review-list enable`; do not enable automatically. End this
+turn after reporting installation success or failure.
+
+## Inbox
 
 Show whether background reviews are enabled, the polling interval, and any needs-attention error.
 When `checkingRequests` is true, say that outstanding requests are being fetched; an initially

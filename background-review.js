@@ -10,10 +10,10 @@ const execute = promisify(execFile)
 
 export async function inboxCommand(background, text, sessionID) {
   const operation = text.trim()
-  if (!["", "enable", "disable"].includes(operation)) {
-    throw new Error("Use /prr-review-list, /prr-review-list enable, or /prr-review-list disable")
+  if (!["", "enable", "disable", "install"].includes(operation)) {
+    throw new Error("Use /prr-review-list with no arguments, enable, disable, or install")
   }
-  if (!operation) return null
+  if (!operation || operation === "install") return null
   if (!background) throw new Error("Background review inbox requires OpenCode 2")
   return background.operation({ operation }, sessionID)
 }
@@ -49,7 +49,7 @@ function briefingForm(form, sessionID) {
     && options.size === 5 && ["Continue to review action", "Investigate in diff view", "Investigate in chat", "Explain this briefing", "Stop here"].every((option) => options.has(option))
 }
 
-export function createBackgroundReviews({ ctx, store, reviewState, binary, resolveRound, emit, install, pause = async () => {}, onStart, executable, github = createGitHubInbox(), now = Date.now }) {
+export function createBackgroundReviews({ ctx, store, reviewState, binary, resolveRound, emit, inspectService, onStart, executable, github = createGitHubInbox(), now = Date.now }) {
   const directory = ctx.location.directory
   const activeJobs = new Set()
   let ticking
@@ -325,17 +325,20 @@ export function createBackgroundReviews({ ctx, store, reviewState, binary, resol
     tick,
     async operation({ operation = "list", key }, sourceSessionID) {
       if (operation === "enable") {
+        const owner = store.read().owner ?? { directory }
+        const service = await inspectService({ directory: owner.directory, executable: typeof executable === "function" ? executable() : executable })
+        if (!service.compatible || !service.loaded || !service.registeredCompatible) {
+          store.disable()
+          throw new Error("The PRR background service needs explicit installation. Enable never registers a LaunchAgent. After endpoint-security approval, run /prr-review-list install once, then enable again.")
+        }
         const selected = await ctx.model.default({ location: { directory } })
         const value = selected?.data ?? selected
         const model = value?.providerID && value?.id ? { providerID: value.providerID, id: value.id, ...(value.variant ? { variant: value.variant } : {}) } : null
-        store.enable({ directory }, model)
-        try { await install({ directory, executable: typeof executable === "function" ? executable() : executable }) }
-        catch (error) { store.disable(); throw error }
+        store.enable(owner, model)
         // Admission returns immediately; discovery and review execution do not block the inbox.
         void tick().catch(() => {})
       } else if (operation === "disable") {
         store.disable()
-        await pause()
       }
       else if (["open", "approve"].includes(operation)) {
         const entry = store.read().entries.find((candidate) => candidate.key === key)
