@@ -1,11 +1,12 @@
 use crate::pr::PrRef;
+use regex::Regex;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
 
 pub fn fetch(pr: &PrRef, results: &Path) -> Result<String, Box<dyn std::error::Error>> {
-    let mut data = json!({"issue_comments": [], "review_comments": [], "reviews": [], "unavailable": []});
+    let mut data = json!({"issue_comments": [], "review_comments": [], "reviews": [], "unavailable": [], "failures": {}});
     for (key, endpoint) in [
         ("issue_comments", format!("repos/{}/issues/{}/comments?per_page=100", pr.gh_repo(), pr.number)),
         ("review_comments", format!("repos/{}/pulls/{}/comments?per_page=100", pr.gh_repo(), pr.number)),
@@ -13,9 +14,10 @@ pub fn fetch(pr: &PrRef, results: &Path) -> Result<String, Box<dyn std::error::E
     ] {
         match fetch_pages(&endpoint) {
             Ok(items) => data[key] = Value::Array(items),
-            Err(_) => {
-                eprintln!("warning: GitHub {key} unavailable; discussion context is incomplete");
+            Err(error) => {
+                eprintln!("warning: GitHub {key} unavailable: {error}; discussion context is incomplete");
                 data["unavailable"].as_array_mut().ok_or("Invalid discussion state")?.push(json!(key));
+                data["failures"][key] = json!(error.to_string());
             }
         }
     }
@@ -26,11 +28,20 @@ fn fetch_pages(endpoint: &str) -> Result<Vec<Value>, Box<dyn std::error::Error>>
     let output = Command::new("gh")
         .args(["api", "--paginate", "--slurp", endpoint])
         .env("NO_COLOR", "1")
-        .output()?;
+        .env("CLICOLOR_FORCE", "0")
+        .output()
+        .map_err(|_| "GitHub CLI could not be started")?;
     if !output.status.success() {
         return Err("GitHub discussion request failed".into());
     }
-    flatten_pages(serde_json::from_slice(&output.stdout)?)
+    parse_pages(&output.stdout)
+}
+
+fn parse_pages(output: &[u8]) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
+    let text = std::str::from_utf8(output).map_err(|_| "GitHub CLI response is not UTF-8")?;
+    let clean = Regex::new(r"\x1b\[[0-9;]*m")?.replace_all(text, "");
+    let pages = serde_json::from_str(&clean).map_err(|_| "GitHub CLI response is not valid JSON")?;
+    flatten_pages(pages)
 }
 
 fn flatten_pages(pages: Value) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
@@ -65,6 +76,12 @@ fn save(data: &Value, results: &Path) -> Result<String, Box<dyn std::error::Erro
     if !unavailable.is_empty() {
         out.push_str(&format!("Unavailable sources: {}. This snapshot is incomplete.\n\n",
             unavailable.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", ")));
+        if let Some(failures) = data["failures"].as_object() {
+            for (source, reason) in failures {
+                out.push_str(&format!("- {source}: {}\n", reason.as_str().unwrap_or("unavailable")));
+            }
+            out.push('\n');
+        }
     }
     let mut threads: BTreeMap<u64, Vec<Value>> = BTreeMap::new();
     let comments = data["review_comments"].as_array().ok_or("Missing review comments")?;
@@ -104,7 +121,7 @@ fn save(data: &Value, results: &Path) -> Result<String, Box<dyn std::error::Erro
             out.push_str(&message(item));
         }
     }
-    let snapshot = json!({"threads": index, "issue_comments": data["issue_comments"], "reviews": data["reviews"], "unavailable": unavailable});
+    let snapshot = json!({"threads": index, "issue_comments": data["issue_comments"], "reviews": data["reviews"], "unavailable": unavailable, "failures": data["failures"]});
     std::fs::write(results.join("github-discussions.json"), serde_json::to_string_pretty(&snapshot)?)?;
     std::fs::write(results.join("github-discussions.md"), out)?;
     let summary = format!("{} inline threads, {} PR comments, {} review summaries{}",
@@ -122,6 +139,16 @@ mod tests {
     fn pagination_keeps_every_page_and_rejects_invalid_shapes() {
         assert_eq!(flatten_pages(json!([[{"id": 1}], [], [{"id": 2}]])).unwrap().len(), 2);
         assert!(flatten_pages(json!([{"message": "error"}])).is_err());
+    }
+
+    #[test]
+    fn parses_coloured_paginated_json_without_changing_escaped_comment_text() {
+        let output = b"\x1b[1;37m[\x1b[m[\x1b[32m{\"id\":1,\"body\":\"Keep \\\\u001b[31m as text\"}\x1b[m],\x1b[1m[{\"id\":2}]\x1b[m]";
+        let items = parse_pages(output).unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0]["body"], r"Keep \u001b[31m as text");
+        assert_eq!(parse_pages(b"not JSON").unwrap_err().to_string(), "GitHub CLI response is not valid JSON");
+        assert!(parse_pages(b"\xff").is_err());
     }
 
     #[test]

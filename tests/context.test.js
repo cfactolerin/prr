@@ -31,7 +31,7 @@ COMMENT
 - **Suggested comment:** Correct the value.
 `
 
-function fixture(t, failedSource = "") {
+function fixture(t, failedSource = "", colored = false) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "prr-context-")))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const bin = join(root, "bin")
@@ -39,6 +39,7 @@ function fixture(t, failedSource = "") {
   writeFileSync(join(bin, "gh"), `#!${process.execPath}
 const fs = require("node:fs")
 const args = process.argv.slice(2)
+const print = (value) => console.log(${colored} ? "\\x1b[1;37m" + JSON.stringify(value) + "\\x1b[m" : JSON.stringify(value))
 fs.appendFileSync(process.env.CALLS, JSON.stringify(args) + "\\n")
 if (args[0] === "repo") {
   fs.mkdirSync(args[3], { recursive: true })
@@ -49,14 +50,14 @@ if (args[0] === "repo") {
   if (!args.includes("--paginate") || !args.includes("--slurp")) process.exit(2)
   if (process.env.FAILED_SOURCE && endpoint.includes(process.env.FAILED_SOURCE)) process.exit(1)
   if (endpoint.includes("/issues/")) {
-    console.log(JSON.stringify([[{id: 10, body: "General PR discussion", user: {login: "author"}, created_at: "2026-01-01", html_url: "https://github.com/acme/repo/pull/1#issuecomment-10"}]]))
+    print([[{id: 10, body: "General PR discussion", user: {login: "author"}, created_at: "2026-01-01", html_url: "https://github.com/acme/repo/pull/1#issuecomment-10"}]])
   } else if (endpoint.includes("/reviews")) {
-    console.log(JSON.stringify([[{id: 20, body: "Review summary discussion", user: {login: "reviewer"}, submitted_at: "2026-01-02", state: "COMMENTED"}]]))
+    print([[{id: 20, body: "Review summary discussion", user: {login: "reviewer"}, submitted_at: "2026-01-02", state: "COMMENTED"}]])
   } else {
-    console.log(JSON.stringify([
+    print([
       [{id: 30, body: "Correct the value.", path: "a.rb", line: 1, side: "RIGHT", commit_id: "head", user: {login: "reviewer"}, created_at: "2026-01-03"}],
       [{id: 31, in_reply_to_id: 30, body: "This is intentional; see the contract.", path: "a.rb", line: 1, user: {login: "author"}, created_at: "2026-01-04"}]
-    ]))
+    ])
   }
 } else process.exit(2)
 `, { mode: 0o755 })
@@ -108,6 +109,20 @@ test("unavailable GitHub sources do not erase other discussions or masquerade as
   assert.match(readFileSync(join(round, "context-manifest.md"), "utf8"), /GitHub discussions:.*\(incomplete\)/)
   const discussion = readFileSync(join(round, "results/github-discussions.md"), "utf8")
   assert.match(discussion, /Unavailable sources: issue_comments/)
+  assert.match(discussion, /issue_comments: GitHub discussion request failed/)
   assert.match(discussion, /This is intentional/)
   assert.match(discussion, /Review summary discussion/)
+})
+
+test("forced-colour GitHub CLI output still supplies all discussion sources", (t) => {
+  const { context } = fixture(t, "", true)
+  const round = context()
+  const manifest = readFileSync(join(round, "context-manifest.md"), "utf8")
+  assert.match(manifest, /GitHub discussions: 1 inline threads, 1 PR comments, 1 review summaries/)
+  assert.ok(!manifest.includes("(incomplete)"))
+  const discussion = readFileSync(join(round, "results/github-discussions.md"), "utf8")
+  assert.match(discussion, /General PR discussion/)
+  assert.match(discussion, /Review summary discussion/)
+  assert.match(discussion, /This is intentional/)
+  assert.ok(!discussion.includes("\x1b"))
 })
