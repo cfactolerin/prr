@@ -4,6 +4,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmdirSync, 
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { parse, stringify } from "yaml"
+import { parseCliJson } from "./cli-json.js"
 
 const execute = promisify(execFile)
 const defaults = { enabled: false, poll_minutes: 5, max_attempts: 3, settle_seconds: 60, model: null }
@@ -221,7 +222,7 @@ export function requestSnapshot(pr, timeline, reviews, login, teamIDs) {
 export function createGitHubInbox(run = async (args) => {
   try {
     const { stdout } = await execute("gh", args, { encoding: "utf8", timeout: 120_000, maxBuffer: 32 * 1024 * 1024 })
-    return JSON.parse(stdout)
+    return parseCliJson(stdout)
   } catch {
     throw new Error("GitHub review discovery failed. Check gh authentication, team access, connectivity, and rate limits.")
   }

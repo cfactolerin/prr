@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
+import { parseCliJson } from "./cli-json.js"
 
 const execute = promisify(execFile)
 const xml = (text) => String(text).replace(/[<>&"']/g, (character) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" })[character])
@@ -49,7 +50,7 @@ export function createOpenCodeControl({ executable, run = execute }) {
       const { stdout } = await run(typeof executable === "function" ? executable() : executable, args, {
         encoding: "utf8", timeout: 30_000, maxBuffer: 8 * 1024 * 1024,
       })
-      const value = stdout.trim() ? JSON.parse(stdout) : null
+      const value = parseCliJson(stdout, { allowEmpty: true })
       return value?.data ?? value
     } catch {
       throw new Error("Could not contact the local managed OpenCode service. Check opencode service status; remote and standalone servers are not supported by the background inbox.")
