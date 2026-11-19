@@ -33,7 +33,7 @@ import { inspectBackgroundService } from "./background-service.js"
 const packageRoot = dirname(fileURLToPath(import.meta.url))
 const assetRoot = join(packageRoot, ".opencode")
 const binary = join(packageRoot, "bin", "prr-darwin-universal")
-const defaultCodexModel = "gpt-6-sol"
+const defaultCodexModel = "gpt-6.2-sol"
 const evidenceNames = ["diff.txt", "changed-files.txt", "repo-docs.md", "change-history.md", "previous-review.md", "previous-decisions.md", "github-discussions.md", "pr-metadata.json", "reviewer-tasks.md", "ticket-context.md"]
 const sessionRounds = new Map()
 const capabilities = new Map()

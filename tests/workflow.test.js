@@ -25,13 +25,13 @@ test("finding chat shows saved GitHub conversations and prior rejections without
 
 test("setup documents current model defaults without pinning native review roles", () => {
   const setup = readFileSync(new URL("../.opencode/skills/prr-setup/SKILL.md", import.meta.url), "utf8")
-  assert.match(setup, /`codex_model` defaults to `gpt-6-sol`/)
+  assert.match(setup, /`codex_model` defaults to `gpt-6\.2-sol`/)
   assert.match(setup, /Preserve an existing choice/)
   assert.match(setup, /Do not infer Codex CLI support from OpenCode's model list/)
   assert.match(setup, /not an authentication failure/)
   assert.match(setup, /inherit the active session model, not `opencode_model`/)
-  assert.match(setup, /"model": "openai\/gpt-6\.1-sol"/)
-  assert.match(setup, /Show `codex_model: gpt-6-sol`/)
+  assert.match(setup, /"model": "openai\/gpt-6\.2-sol"/)
+  assert.match(setup, /Show `codex_model: gpt-6\.2-sol`/)
   assert.match(setup, /Setup must not edit OpenCode configuration or pin reviewer\/arbiter models/)
 })
 

@@ -5,7 +5,7 @@ PRR runs two independent reviews of a GitHub pull request, compares their eviden
 The OpenCode plugin uses:
 
 - OpenCode's active model for a native review.
-- Codex CLI as an independent second review harness, using `gpt-6-sol` by default.
+- Codex CLI as an independent second review harness, using `gpt-6.2-sol` by default.
 - OpenCode's active model in a separate arbiter context for synthesis and follow-up questions.
 
 ## Requirements
@@ -41,7 +41,7 @@ Install PRR directly from GitHub without an npm account, npm publication, manual
 
 ### 1. Set Up OpenCode, External Tools, And Atlassian MCP
 
-**OpenCode and GPT-6.1 Sol**
+**OpenCode and GPT-6.2 Sol**
 
 Install [OpenCode 2](https://opencode.ai), then authenticate in your terminal:
 
@@ -49,16 +49,16 @@ Install [OpenCode 2](https://opencode.ai), then authenticate in your terminal:
 opencode auth login openai
 ```
 
-Select **Codex browser (legacy)** and sign in with your company-provided ChatGPT account. Then launch `opencode`, run `/models`, and select **GPT-6.1 Sol**.
+Select **Codex browser (legacy)** and sign in with your company-provided ChatGPT account. Then launch `opencode`, run `/models`, and select **GPT-6.2 Sol**.
 
 PRR's native reviewer and arbiter inherit the active OpenCode model.
 
-To use GPT-6.1 Sol by default in new sessions, merge this setting into your existing `~/.config/opencode/opencode.json` or `opencode.jsonc`, preserving other settings:
+To use GPT-6.2 Sol by default in new sessions, merge this setting into your existing `~/.config/opencode/opencode.json` or `opencode.jsonc`, preserving other settings:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "openai/gpt-6.1-sol"
+  "model": "openai/gpt-6.2-sol"
 }
 ```
 
@@ -97,7 +97,7 @@ OpenCode watches configuration changes and installs missing packages in the back
 
 ### 3. Configure PRR
 
-Inside OpenCode, with **GPT-6.1 Sol** selected, run:
+Inside OpenCode, with **GPT-6.2 Sol** selected, run:
 
 ```text
 /prr-setup
@@ -105,7 +105,7 @@ Inside OpenCode, with **GPT-6.1 Sol** selected, run:
 
 Setup verifies `gh`, `git`, and Codex, then configures the review workspace. It defaults to `~/.prr/workspace` and stores settings in `~/.prr/config.yml`.
 
-New configurations include `codex_model: gpt-6-sol`. Setup preserves existing model choices. OpenCode uses GPT-6.1 Sol, selected separately as described above; its model availability differs from Codex CLI's.
+New configurations include `codex_model: gpt-6.2-sol`. Setup preserves existing model choices. Select GPT-6.2 Sol in OpenCode separately as described above; model access is checked independently in Codex CLI.
 
 PRR uses the connected Atlassian MCP server first; separate Jira API credentials are optional fallback settings. Setup can preserve or remove existing Jira settings. Add new credentials outside the model session.
 
@@ -160,7 +160,7 @@ Preserve existing settings and unrelated plugin entries. For a private repositor
 - **`opencode plugin add` is unavailable:** the CLI instructions require OpenCode 2. Upgrade OpenCode before following this guide. The plugin also retains compatibility with OpenCode 1.18.29+, but its configuration differs.
 - **Repository not found or permission denied:** verify the matching `git ls-remote` command succeeds with an account or SSH key that can access the repository. Use the explicit SSH or HTTPS installation URL rather than the hosted shortcut.
 - **`/prr-setup` is missing:** check `opencode plugin list`, ensure there is only one PRR entry, and run `/reload` inside OpenCode. Check that your current project's configuration has not disabled the plugin.
-- **Codex health check says the model is unsupported with a ChatGPT account:** use a model available in Codex CLI, not OpenCode's model list. In `~/.prr/config.yml`, set `codex_model: gpt-6-sol` if your account supports it, then retry setup. OpenCode can remain on GPT-6.1 Sol. PRR 0.32.0 incorrectly replaced `gpt-6-sol` with `gpt-6.1-sol`; update PRR first if that version is installed.
+- **Codex health check says the model is unsupported with a ChatGPT account:** choose a model available in Codex CLI's `/model` picker, update `codex_model` in `~/.prr/config.yml`, and retry setup. No change to the OpenCode model is needed.
 
 See the [OpenCode plugin guide](https://opencode.ai/v2/docs/plugins) for package installation and configuration details.
 
@@ -255,7 +255,7 @@ max_attempts: 3
 settle_seconds: 60
 model:
   providerID: openai
-  id: gpt-6.1-sol
+  id: gpt-6.2-sol
 ```
 
 The initial background model comes from OpenCode's configured default, not a hardcoded model.
@@ -428,7 +428,7 @@ For a new installation, OpenCode setup writes these review settings:
 agents:
   - opencode
   - codex
-codex_model: gpt-6-sol
+codex_model: gpt-6.2-sol
 codex_timeout: 900
 arbiter_rounds: 5
 ```
@@ -442,14 +442,14 @@ Arbitration permits up to five Q&A rounds and ends earlier when the arbiter has 
 Codex CLI and OpenCode use separate model settings. To select the Codex model, add or edit this top-level line in `~/.prr/config.yml` with a local editor. Preserve the rest of the file:
 
 ```yaml
-codex_model: gpt-6-sol
+codex_model: gpt-6.2-sol
 ```
 
-Use a model ID available to your account in Codex CLI's `/model` picker. OpenCode availability does not imply Codex CLI support: a ChatGPT login can support `gpt-6-sol` in Codex while rejecting `gpt-6.1-sol`. PRR reads the setting for each review, follow-up answer, and health check, so no restart is needed. Omitting it uses `gpt-6-sol`; setup preserves explicit choices without substituting another model.
+Use a model ID available to your account in Codex CLI's `/model` picker. OpenCode availability does not imply Codex CLI support. PRR reads the setting for each review, follow-up answer, and health check, so no restart is needed. Omitting it uses `gpt-6.2-sol`; setup preserves explicit choices without substituting another model.
 
 PRR ignores Codex's own user configuration for isolated reviews, so set the model here rather than in `~/.codex/config.toml`.
 
-For OpenCode's native reviewer and arbiter, select **GPT-6.1 Sol** with `/models` and set `"model": "openai/gpt-6.1-sol"` in OpenCode's JSON configuration for future sessions. The `opencode_model` field in PRR's YAML is only for the legacy standalone reviewer; it does not select the plugin's active model.
+For OpenCode's native reviewer and arbiter, select **GPT-6.2 Sol** with `/models` and set `"model": "openai/gpt-6.2-sol"` in OpenCode's JSON configuration for future sessions. The `opencode_model` field in PRR's YAML is only for the legacy standalone reviewer; it does not select the plugin's active model.
 
 ### Jira Credentials
 
